@@ -73,19 +73,6 @@ for drive in client.get_drives():
 client.close()
 ```
 
-## Environment Variables
-
-The SDK itself does not read environment variables. The following variables are used by example scripts, tools, and integration tests:
-
-| Variable | Purpose | Example |
-|---|---|---|
-| `BMC_IP` | Target BMC IP or hostname | `192.168.1.100` |
-| `BMC_USER` | BMC login username | `admin` |
-| `BMC_PASSWORD` | BMC login password | `password` |
-| `REDFISH_JSON_DIR` | Offline JSON test data directory | `./testdata` |
-
-**Convention**: Integration tests and tool scripts will explicitly skip or `SystemExit` when required variables are not set, preventing accidental connections to production BMCs with default credentials. Consider using `direnv` or shell profile files to manage these variables.
-
 ## Testing
 
 ```bash

@@ -73,19 +73,6 @@ for drive in client.get_drives():
 client.close()
 ```
 
-## 环境变量
-
-SDK 本身不读环境变量；下列变量由示例代码、工具脚本与集成测试使用：
-
-| 变量 | 用途 | 示例 |
-|---|---|---|
-| `BMC_IP` | 目标 BMC 的 IP 或主机名 | `192.168.1.100` |
-| `BMC_USER` | BMC 登录用户名 | `admin` |
-| `BMC_PASSWORD` | BMC 登录密码 | `password` |
-| `REDFISH_JSON_DIR` | 离线 JSON 测试数据目录 | `./testdata` |
-
-**约定**：集成测试 / 工具脚本若未设置必需变量，会显式跳过或 `SystemExit`，避免使用默认凭证误连生产 BMC。建议结合 `direnv` 或本机 shell rc 文件管理。
-
 ## 测试
 
 ```bash
