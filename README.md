@@ -38,7 +38,7 @@ pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.0.0
 ## Quick Start
 
 > **Credential management**: All BMC credentials should be injected via environment variables. **Never** hardcode them in your source code.
-> Before running examples or tests, set `export BMC_IP=...`, `export BMC_USER=...`, `export BMC_PASSWORD=...`. See the [Environment Variables](#environment-variables) section below.
+> Before running examples or tests, set `export BMC_IP=...`, `export BMC_USER=...`, `export BMC_PASSWORD=...`.
 
 ```python
 import os

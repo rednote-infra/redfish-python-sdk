@@ -38,7 +38,7 @@ pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.0.0
 ## 快速开始
 
 > **凭证管理**：所有 BMC 凭证都通过环境变量注入，**不要**在代码里硬编码。
-> 在运行示例 / 测试前先 `export BMC_IP=...`、`export BMC_USER=...`、`export BMC_PASSWORD=...`，详见下文[环境变量](#环境变量)一节。
+> 在运行示例 / 测试前先 `export BMC_IP=...`、`export BMC_USER=...`、`export BMC_PASSWORD=...`。
 
 ```python
 import os
