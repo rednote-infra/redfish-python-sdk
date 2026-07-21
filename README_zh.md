@@ -73,36 +73,6 @@ for drive in client.get_drives():
 client.close()
 ```
 
-## 异常处理
-
-```python
-import os
-from redfish_sdk import RedfishClient, RedfishException, RedfishAuthError
-
-try:
-    client = RedfishClient(
-        host=os.environ["BMC_IP"],
-        username=os.environ["BMC_USER"],
-        password=os.environ["BMC_PASSWORD"],
-    )
-    system = client.systems.get()
-except RedfishAuthError:
-    print("认证失败")
-except RedfishException as e:
-    print(f"Redfish 错误: {e}")
-```
-
-异常类层级：
-
-```
-RedfishException           # 基础异常
-├── RedfishNotFoundError   # 404 — 资源不存在
-├── RedfishAuthError       # 401/403 — 认证失败
-├── RedfishConnectionError # 网络连接失败
-├── RedfishTimeoutError    # 请求超时
-└── RedfishValidationError # 参数校验失败（如不支持的 reset type）
-```
-
 ## 环境变量
 
 SDK 本身不读环境变量；下列变量由示例代码、工具脚本与集成测试使用：

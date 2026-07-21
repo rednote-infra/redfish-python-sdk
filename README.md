@@ -73,36 +73,6 @@ for drive in client.get_drives():
 client.close()
 ```
 
-## Error Handling
-
-```python
-import os
-from redfish_sdk import RedfishClient, RedfishException, RedfishAuthError
-
-try:
-    client = RedfishClient(
-        host=os.environ["BMC_IP"],
-        username=os.environ["BMC_USER"],
-        password=os.environ["BMC_PASSWORD"],
-    )
-    system = client.systems.get()
-except RedfishAuthError:
-    print("Authentication failed")
-except RedfishException as e:
-    print(f"Redfish error: {e}")
-```
-
-Exception hierarchy:
-
-```
-RedfishException           # Base exception
-├── RedfishNotFoundError   # 404 — resource not found
-├── RedfishAuthError       # 401/403 — authentication failure
-├── RedfishConnectionError # Network connection failure
-├── RedfishTimeoutError    # Request timeout
-└── RedfishValidationError # Parameter validation failure (e.g., unsupported reset type)
-```
-
 ## Environment Variables
 
 The SDK itself does not read environment variables. The following variables are used by example scripts, tools, and integration tests:
