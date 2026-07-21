@@ -1,0 +1,10 @@
+# Redfish Python SDK dependencies
+
+# HTTP client (sync, widely used and well-maintained)
+requests>=2.31.0
+
+# Data model validation and serialization
+pydantic>=2.5.0
+
+# Suppress urllib3 SSL warnings (for self-signed certs)
+urllib3>=2.0.0

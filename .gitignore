@@ -1,0 +1,49 @@
+# IDE
+.vscode
+.idea
+.zed
+.DS_Store
+
+# Project-specific
+/bin/
+/logs
+testdata
+requirement
+/testdata
+
+# Python bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log
+
+# Python packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Type checking
+.mypy_cache/
+.pyright/
+
+# pytest
+.pytest_cache/

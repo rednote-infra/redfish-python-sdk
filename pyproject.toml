@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redfish-python-sdk"
+version = "1.0.0"
+description = "A Python SDK for interacting with Redfish-compliant BMC endpoints"
+requires-python = ">=3.9"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "RedNote Infrastructure"},
+]
+keywords = ["redfish", "bmc", "ipmi", "server", "oob"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Hardware",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
+dependencies = [
+    "requests>=2.31.0",
+    "pydantic>=2.5.0",
+    "urllib3>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rednote-infra/redfish-python-sdk"
+Repository = "https://github.com/rednote-infra/redfish-python-sdk"
+Issues = "https://github.com/rednote-infra/redfish-python-sdk/issues"
+Changelog = "https://github.com/rednote-infra/redfish-python-sdk/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["redfish_sdk*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",   # 行长由 formatter 控制
+    "UP006",  # Use `list` instead of `List` — 保持 typing.List 以兼容 Python 3.9 运行时
+    "UP007",  # Use `X | Y` instead of `Union[X, Y]` — 同上
+    "UP035",  # `typing.List` is deprecated — 同上
+    "UP045",  # Use `X | None` instead of `Optional[X]` — 同上，pydantic v2 在 3.9 运行时需要 Optional
+    "SIM105", # Use contextlib.suppress — 可读性偏好
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["redfish_sdk"]
