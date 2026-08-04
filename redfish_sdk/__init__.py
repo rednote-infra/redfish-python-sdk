@@ -39,6 +39,19 @@ from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.logs import Log, LogEntry
 from .models.managers import KvmService
+from .models.managers import (
+    DnsService,
+    FirewallRules,
+    HttpsCert,
+    LldpService,
+    NtpService,
+    SecurityService,
+    SnmpService,
+    SolSourceControlInfo,
+    SyslogService,
+    VirtualMedia,
+    VncService,
+)
 from .models.resource_key import RedfishResource
 from .models.systems import BootOption
 
@@ -56,10 +69,21 @@ __all__ = [
     "RedfishValidationError",
     # Models commonly used at API boundary.
     "BootOption",
+    "DnsService",
     "Drive",
     "EventService",
+    "FirewallRules",
+    "HttpsCert",
     "KvmService",
+    "LldpService",
     "Log",
     "LogEntry",
+    "NtpService",
+    "SecurityService",
+    "SnmpService",
+    "SolSourceControlInfo",
     "Subscription",
+    "SyslogService",
+    "VirtualMedia",
+    "VncService",
 ]

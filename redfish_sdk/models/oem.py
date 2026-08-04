@@ -123,6 +123,19 @@ class Bmc(BaseModel):
     kvm: Optional[Link] = Field(None, alias="KVM")
     kvm_service: Optional[Link] = Field(None, alias="KvmService")
 
+    # OEM service links (batch SDK-GAP elimination)
+    ntp_service: Optional[Link] = Field(None, alias="NtpService")
+    syslog_service: Optional[Link] = Field(None, alias="SyslogService")
+    snmp_service: Optional[Link] = Field(None, alias="SnmpService")
+    lldp_service: Optional[Link] = Field(None, alias="LldpService")
+    dns_service: Optional[Link] = Field(None, alias="DnsService")
+    rfb_service: Optional[Link] = Field(None, alias="RfbService")
+    security_service: Optional[Link] = Field(None, alias="SecurityService")
+    firewall_rules: Optional[Link] = Field(None, alias="FirewallRules")
+    virtual_media_oem: Optional[Link] = Field(None, alias="VirtualMedia")
+    sol_source_control_info: Optional[Link] = Field(None, alias="SOLSourceControlInfo")
+    smtp_service: Optional[Link] = Field(None, alias="SmtpService")
+
     # Processor OEM
     current_speed_mhz: Optional[int] = Field(None, alias="CurrentSpeedMHz")
     l1_cache_kib: Optional[int] = Field(None, alias="L1CacheKiB")

@@ -54,7 +54,24 @@ from .models.event import EventService, Subscription
 from .models.fru import Fru
 from .models.logs import Log, LogEntry
 from .models.oem import MainBoard
-from .models.managers import EthernetInterface, HostInterface, KvmService, Manager, NetworkProtocol
+from .models.managers import (
+    DnsService,
+    EthernetInterface,
+    FirewallRules,
+    HostInterface,
+    HttpsCert,
+    KvmService,
+    LldpService,
+    Manager,
+    NetworkProtocol,
+    NtpService,
+    SecurityService,
+    SnmpService,
+    SolSourceControlInfo,
+    SyslogService,
+    VirtualMedia,
+    VncService,
+)
 from .models.memory import Memory
 from .models.power import Power, PowerSupply
 from .models.processor import Processor
@@ -950,6 +967,174 @@ class RedfishClient:
             RedfishNotFoundError: If the manager does not expose a KVM link
         """
         return self._managers.kvm_service(manager_id)
+
+    def get_ntp_service(self, manager_id: str = "1") -> NtpService:
+        """
+        Get NTP service configuration for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            NtpService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose NtpService
+        """
+        return self._managers.ntp_service(manager_id)
+
+    def get_syslog_service(self, manager_id: str = "1") -> SyslogService:
+        """
+        Get Syslog service configuration for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            SyslogService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose SyslogService
+        """
+        return self._managers.syslog_service(manager_id)
+
+    def get_snmp_service(self, manager_id: str = "1") -> SnmpService:
+        """
+        Get SNMP service configuration for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            SnmpService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose SnmpService
+        """
+        return self._managers.snmp_service(manager_id)
+
+    def get_lldp_service(self, manager_id: str = "1") -> LldpService:
+        """
+        Get LLDP service configuration for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            LldpService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose LldpService
+        """
+        return self._managers.lldp_service(manager_id)
+
+    def get_dns_service(self, manager_id: str = "1") -> DnsService:
+        """
+        Get DNS service configuration for a BMC manager.
+
+        Note: Not all BMC vendors support this endpoint.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            DnsService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose DnsService
+        """
+        return self._managers.dns_service(manager_id)
+
+    def get_vnc_service(self, manager_id: str = "1") -> VncService:
+        """
+        Get VNC/RFB service configuration for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            VncService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose VncService
+        """
+        return self._managers.vnc_service(manager_id)
+
+    def get_security_service(self, manager_id: str = "1") -> SecurityService:
+        """
+        Get Security service for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            SecurityService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose SecurityService
+        """
+        return self._managers.security_service(manager_id)
+
+    def get_https_cert(self, manager_id: str = "1") -> HttpsCert:
+        """
+        Get HTTPS certificate information for a BMC manager.
+
+        Discovered via SecurityService links.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            HttpsCert resource
+
+        Raises:
+            RedfishNotFoundError: If HttpsCert is not available
+        """
+        return self._managers.https_cert(manager_id)
+
+    def get_firewall_rules(self, manager_id: str = "1") -> FirewallRules:
+        """
+        Get Firewall rules collection for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            FirewallRules collection resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose FirewallRules
+        """
+        return self._managers.firewall_rules(manager_id)
+
+    def get_virtual_media(self, manager_id: str = "1") -> List[VirtualMedia]:
+        """
+        Get the list of virtual media resources for a BMC manager.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            List of VirtualMedia resources
+        """
+        return self._managers.virtual_media(manager_id)
+
+    def get_sol_source(self, manager_id: str = "1") -> SolSourceControlInfo:
+        """
+        Get SOL source control information for a BMC manager.
+
+        Note: Not all BMC vendors support this endpoint.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            SolSourceControlInfo resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose SOLSourceControlInfo
+        """
+        return self._managers.sol_source(manager_id)
 
     # ==================================================================
     # Component query methods — Account service
