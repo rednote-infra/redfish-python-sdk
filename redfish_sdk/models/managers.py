@@ -9,6 +9,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from .common import Entity, Link, Status
+from .oem import Oem
 
 
 class CommandShell(BaseModel):
@@ -57,6 +58,7 @@ class Manager(Entity):
     service_entry_point_uuid: Optional[str] = Field(None, alias="ServiceEntryPointUUID")
     status: Optional[Status] = Field(None, alias="Status")
     uuid: Optional[str] = Field(None, alias="UUID")
+    oem: Optional[Oem] = Field(None, alias="Oem")
 
 
 # ---------------------------------------------------------------------------
@@ -151,3 +153,32 @@ class HostInterface(Entity):
     interface_enabled: Optional[bool] = Field(None, alias="InterfaceEnabled")
     network_protocol: Optional[Link] = Field(None, alias="NetworkProtocol")
     status: Optional[Status] = Field(None, alias="Status")
+
+
+# ---------------------------------------------------------------------------
+# KvmService (OEM extension, dynamically discovered via Manager OEM links)
+# ---------------------------------------------------------------------------
+
+class KvmService(Entity):
+    """
+    KVM service configuration for a manager (BMC).
+
+    This is an OEM extension resource whose URI is dynamically discovered
+    from the Manager's ``Oem.{vendor}.KVM`` link.  Typical endpoint:
+    ``/redfish/v1/Managers/{managerId}/KvmService``
+
+    """
+    kvm_url: Optional[str] = Field(None, alias="KvmUrl")
+    maximum_number_of_sessions: Optional[int] = Field(
+        None, alias="MaximumNumberOfSessions",
+    )
+    number_of_activated_sessions: Optional[int] = Field(
+        None, alias="NumberOfActivatedSessions",
+    )
+    session_timeout_minutes: Optional[int] = Field(
+        None, alias="SessionTimeoutMinutes",
+    )
+    encryption_enabled: Optional[bool] = Field(None, alias="EncryptionEnabled")
+    activated_sessions_type: Optional[str] = Field(
+        None, alias="ActivatedSessionsType",
+    )

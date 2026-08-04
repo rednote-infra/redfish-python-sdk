@@ -118,9 +118,10 @@ class Bmc(BaseModel):
     cpu_usage_percent: Optional[int] = Field(None, alias="CPUUsagePercent")
     memory_usage_percent: Optional[int] = Field(None, alias="MemoryUsagePercent")
 
-    # FRU link (xFusion, Lenovo 等)
+    # FRU link (xFusion, Lenovo etc.)
     fru: Optional[Link] = Field(None, alias="Fru")
     kvm: Optional[Link] = Field(None, alias="KVM")
+    kvm_service: Optional[Link] = Field(None, alias="KvmService")
 
     # Processor OEM
     current_speed_mhz: Optional[int] = Field(None, alias="CurrentSpeedMHz")

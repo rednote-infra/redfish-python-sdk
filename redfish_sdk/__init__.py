@@ -38,6 +38,7 @@ from .exceptions import (
 from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.logs import Log, LogEntry
+from .models.managers import KvmService
 from .models.resource_key import RedfishResource
 from .models.systems import BootOption
 
@@ -57,6 +58,7 @@ __all__ = [
     "BootOption",
     "Drive",
     "EventService",
+    "KvmService",
     "Log",
     "LogEntry",
     "Subscription",
