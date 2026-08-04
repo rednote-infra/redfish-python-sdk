@@ -7,6 +7,7 @@ Provides access to:
 - Network protocol configuration
 - Ethernet interfaces
 - Host interfaces
+- KVM service configuration (OEM extension)
 
 """
 from __future__ import annotations
@@ -15,7 +16,14 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 
 from ..models.logs import Log, LogEntry
-from ..models.managers import EthernetInterface, HostInterface, Manager, NetworkProtocol
+from ..exceptions import RedfishNotFoundError
+from ..models.managers import (
+    EthernetInterface,
+    HostInterface,
+    KvmService,
+    Manager,
+    NetworkProtocol,
+)
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -118,3 +126,38 @@ class ManagersManager:
         return self._client._get_collection(
             manager.host_interfaces.odata_id, HostInterface
         )
+
+    def kvm_service(self, manager_id: str = "1") -> KvmService:
+        """
+        Get KVM service configuration from OEM links.
+
+        The KVM service URI is dynamically discovered from the Manager's
+        ``Oem.{vendor}.KVM`` link rather than being hardcoded.
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            KvmService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose a KVM link
+        """
+        manager = self.get(manager_id)
+
+        # Discover KVM URI from OEM links
+        kvm_link = None
+        if manager.oem and manager.oem.bmc:
+            bmc = manager.oem.bmc
+            # Check both "KVM" and "KvmService" OEM keys (vendor-dependent)
+            if bmc.kvm_service and bmc.kvm_service.odata_id:
+                kvm_link = bmc.kvm_service.odata_id
+            elif bmc.kvm and bmc.kvm.odata_id:
+                kvm_link = bmc.kvm.odata_id
+
+        if not kvm_link:
+            raise RedfishNotFoundError(
+                f"{manager.odata_id}/KvmService"
+            )
+
+        return self._http.get(kvm_link, KvmService)

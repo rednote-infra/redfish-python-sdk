@@ -54,7 +54,7 @@ from .models.event import EventService, Subscription
 from .models.fru import Fru
 from .models.logs import Log, LogEntry
 from .models.oem import MainBoard
-from .models.managers import EthernetInterface, HostInterface, Manager, NetworkProtocol
+from .models.managers import EthernetInterface, HostInterface, KvmService, Manager, NetworkProtocol
 from .models.memory import Memory
 from .models.power import Power, PowerSupply
 from .models.processor import Processor
@@ -932,6 +932,24 @@ class RedfishClient:
             List of HostInterface objects
         """
         return self._managers.host_interfaces(manager_id)
+
+    def get_kvm_service(self, manager_id: str = "1") -> KvmService:
+        """
+        Get KVM service configuration for a BMC manager.
+
+        The KVM service URI is dynamically discovered from the Manager's
+        OEM links (``Oem.{vendor}.KVM``).
+
+        Args:
+            manager_id: Manager ID (default "1")
+
+        Returns:
+            KvmService resource
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose a KVM link
+        """
+        return self._managers.kvm_service(manager_id)
 
     # ==================================================================
     # Component query methods — Account service
