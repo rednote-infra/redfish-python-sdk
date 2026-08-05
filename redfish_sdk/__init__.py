@@ -55,7 +55,7 @@ from .models.managers import (
 from .models.resource_key import RedfishResource
 from .models.systems import BootOption
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [

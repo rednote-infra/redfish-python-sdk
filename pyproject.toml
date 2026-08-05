@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "redfish-python-sdk"
-version = "1.1.0"
+version = "1.2.0"
 description = "A Python SDK for interacting with Redfish-compliant BMC endpoints"
 requires-python = ">=3.9"
 readme = "README.md"
