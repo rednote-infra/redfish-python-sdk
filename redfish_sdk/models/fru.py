@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices
 
 from .common import Entity, Status
 from .oem import MainBoard
@@ -16,8 +16,8 @@ class FruChassis(BaseModel):
     """FRU chassis component info."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    chassis_part_number: Optional[str] = Field(None, alias="ChassisPartNumber")
-    chassis_serial_number: Optional[str] = Field(None, alias="ChassisSerialNumber")
+    chassis_part_number: Optional[str] = Field(None, validation_alias=AliasChoices("ChassisPartNumber", "PartNumber"))
+    chassis_serial_number: Optional[str] = Field(None, validation_alias=AliasChoices("ChassisSerialNumber", "SerialNumber"))
     chassis_type: Optional[str] = Field(None, alias="ChassisType")
 
 
@@ -26,7 +26,7 @@ class FruProduct(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     manufacturer: Optional[str] = Field(None, alias="Manufacturer")
-    name: Optional[str] = Field(None, alias="Name")
+    name: Optional[str] = Field(None, validation_alias=AliasChoices("Name", "PrettyName"))
     part_number: Optional[str] = Field(None, alias="PartNumber")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     version: Optional[str] = Field(None, alias="Version")

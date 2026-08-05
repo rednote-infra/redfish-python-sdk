@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator, AliasChoices, AliasPath
 
 from .check import Field
 from .common import Entity, Link, Status
@@ -33,7 +33,7 @@ class Processor(Entity):
     """
     instruction_set: Optional[str] = Field(None, alias="InstructionSet")
     manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="required,type=str")
-    max_speed_mhz: Optional[int] = Field(None, alias="MaxSpeedMHz", validate="type=int,gt=0")
+    max_speed_mhz: Optional[int] = Field(None, alias=AliasChoices("MaxSpeedMHz", AliasPath("Oem", "BMC", "MaxFrequencyMHz")), validate="type=int,gt=0")
     model: Optional[str] = Field(None, alias="Model", validate="required,type=str")
     operating_speed_mhz: Optional[int] = Field(None, alias="OperatingSpeedMHz")
     processor_architecture: Optional[str] = Field(None, alias="ProcessorArchitecture")
@@ -44,7 +44,7 @@ class Processor(Entity):
     total_threads: Optional[int] = Field(None, alias="TotalThreads", validate="required,type=int,gt=0,gte_field=total_cores")
     max_tdp_watts: Optional[int] = Field(None, alias="MaxTDPWatts")
     tdp_watts: Optional[int] = Field(None, alias="TDPWatts")
-    serial_number: Optional[str] = Field(None, alias="SerialNumber")
+    serial_number: Optional[str] = Field(None, alias=AliasChoices("SerialNumber", AliasPath("Oem", "BMC", "SerialNumber")))
     status: Optional[Status] = Field(None, alias="Status", validate="status")
     oem: Optional[Oem] = Field(None, alias="Oem")
     environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")

@@ -3,7 +3,7 @@ Common base models for Redfish resources.
 """
 from __future__ import annotations
 
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, List, Optional, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,7 +30,7 @@ class Entity(Link):
     odata_context: Optional[str] = Field(None, alias="@odata.context")
     odata_type: Optional[str] = Field(None, alias="@odata.type")
     odata_etag: Optional[str] = Field(None, alias="@odata.etag")
-    id: Optional[str] = Field(None, alias="Id")
+    id: Optional[Union[str, int]] = Field(None, alias="Id")
     name: Optional[str] = Field(None, alias="Name")
     description: Optional[str] = Field(None, alias="Description")
 
