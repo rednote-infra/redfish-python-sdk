@@ -1,4 +1,6 @@
-# Redfish Python SDK
+# redfish-python-sdk
+**redfish-python-sdk** is a typed, high-level Python SDK for managing
+multi-vendor BMCs and bare-metal servers through the DMTF Redfish API.
 
 [![PyPI version](https://img.shields.io/pypi/v/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
 [![Python versions](https://img.shields.io/pypi/pyversions/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
@@ -32,11 +34,11 @@ pip install redfish-python-sdk
 pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
 # Install a specific version
-pip install redfish-python-sdk==1.0.0
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.0.0
+pip install redfish-python-sdk==1.2.0
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.0
 
 # In requirements.txt
-# redfish-python-sdk>=1.0.0
+# redfish-python-sdk>=1.2.0
 ```
 
 ## Quick Start

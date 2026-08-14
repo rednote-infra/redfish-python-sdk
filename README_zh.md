@@ -1,4 +1,5 @@
-# Redfish Python SDK
+# redfish-python-sdk
+**redfish-python-sdk** 是一个类型安全的高级 Python SDK，通过 DMTF Redfish API 管理多厂商 BMC 和裸金属服务器。
 
 [![PyPI version](https://img.shields.io/pypi/v/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
 [![Python versions](https://img.shields.io/pypi/pyversions/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
@@ -32,11 +33,11 @@ pip install redfish-python-sdk
 pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
 # 安装指定版本
-pip install redfish-python-sdk==1.0.0
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.0.0
+pip install redfish-python-sdk==1.2.0
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.0
 
 # 在 requirements.txt 中引用
-# redfish-python-sdk>=1.0.0
+# redfish-python-sdk>=1.2.0
 ```
 
 ## 快速开始
