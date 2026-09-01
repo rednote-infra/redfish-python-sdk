@@ -1,6 +1,9 @@
 """
 Event service manager — manages event subscriptions.
 
+Thin, vendor-agnostic wrapper around ``/redfish/v1/EventService`` that
+covers listing/creating/deleting subscriptions and invoking the
+``#EventService.SubmitTestEvent`` action.
 """
 from __future__ import annotations
 
