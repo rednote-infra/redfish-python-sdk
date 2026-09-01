@@ -1,5 +1,10 @@
 """
 Event service models.
+
+Pydantic models for the Redfish ``EventService`` resource and its
+``EventDestination`` (subscription) children. Fields are intentionally
+``Optional`` to accommodate BMC vendors that omit different subsets of
+the schema.
 """
 from __future__ import annotations
 
