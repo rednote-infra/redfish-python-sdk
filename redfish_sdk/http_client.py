@@ -88,6 +88,9 @@ class RedfishHttpClient:
         connect_timeout: int = 10,
         read_timeout: int = 30,
         scheme: str = "https",
+        retry_5xx: int = 0,
+        retry_on_read_timeout: bool = False,
+        retry_backoff: float = 1.0,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -101,12 +104,28 @@ class RedfishHttpClient:
             connect_timeout: Connection timeout in seconds
             read_timeout: Read timeout in seconds
             scheme: URL scheme, "https" (default) or "http"
+            retry_5xx: Extra retries when the BMC returns a 5xx response
+                (default 0 — no retry). GET/HEAD retry on any 5xx; POST /
+                PATCH / DELETE retry only on 503/504 to avoid double-writes.
+                Useful against overloaded or flaky BMCs that intermittently
+                return ``InternalError`` (Base.1.x.InternalError) but recover
+                on a second try.
+            retry_on_read_timeout: When True, also retry on read timeouts
+                (default False). Applies the same "GET always, writes only on
+                503/504 equivalence" rule (writes retry as if the timeout is a
+                503 — the request may still have hit the BMC, so use with care
+                for non-idempotent operations).
+            retry_backoff: Base sleep in seconds between retries; each retry
+                sleeps ``retry_backoff * attempt`` (linear back-off).
         """
         self.host = host
         self.scheme = scheme
         self.verify_ssl = verify_ssl
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
+        self.retry_5xx = max(int(retry_5xx), 0)
+        self.retry_on_read_timeout = bool(retry_on_read_timeout)
+        self.retry_backoff = float(retry_backoff)
 
         # Pre-compute Basic Auth header (same as Java's base64 encoding)
         credentials = f"{username}:{password}"
@@ -152,6 +171,127 @@ class RedfishHttpClient:
         etag = response.headers.get("ETag") or response.headers.get("etag")
         if etag:
             self._last_etag[path] = etag
+
+    # HTTP methods that are safely retryable on any 5xx (idempotent reads).
+    _READ_METHODS = frozenset({"GET", "HEAD"})
+    # Only these 5xx codes are retried for writes (POST/PATCH/DELETE) — 503
+    # (Service Unavailable) and 504 (Gateway Timeout) usually mean the write
+    # never reached the target, so retrying is generally safe. 500/502 on a
+    # write is ambiguous (the change may have partially applied) — bubble up.
+    _WRITE_RETRY_CODES = frozenset({503, 504})
+    # All 5xx codes eligible for retry on reads.
+    _READ_RETRY_CODES = frozenset({500, 502, 503, 504})
+
+    def _should_retry_status(self, method: str, code: int) -> bool:
+        """Return True when a retryable 5xx warrants another attempt."""
+        if code < 500 or code > 599:
+            return False
+        if method.upper() in self._READ_METHODS:
+            return code in self._READ_RETRY_CODES
+        return code in self._WRITE_RETRY_CODES
+
+    def _send(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """
+        Send an HTTP request with configurable retry on 5xx / read timeout.
+
+        Reads (GET/HEAD) retry on any 5xx in the read-retry set; writes
+        (POST/PATCH/DELETE) only retry on 503/504 to minimise double-write
+        risk. When neither ``retry_5xx`` nor ``retry_on_read_timeout`` is set,
+        this is a single-shot call — behaviour matches the original client.
+
+        Raises the same transport exceptions as ``requests``; success or a
+        terminal HTTP response (2xx or a non-retried 5xx / 4xx) is returned
+        for the caller to interpret via :meth:`_raise_for_status`.
+        """
+        import time as _time
+
+        method_u = method.upper()
+        attempts = 1 + self.retry_5xx
+        last_exc: Optional[BaseException] = None
+        response: Optional[requests.Response] = None
+
+        # Force a per-call timeout override to (connect, read) when the caller
+        # did not pass one.
+        kwargs.setdefault(
+            "timeout", (self.connect_timeout, self.read_timeout)
+        )
+        url = self._build_url(path) if not path.startswith(("http://", "https://")) else path
+
+        # Dispatch through the method-specific session attribute
+        # (self._session.get / .post / ...). This keeps behaviour identical
+        # to the pre-refactor client and preserves compatibility with unit
+        # tests that stub the individual verbs.
+        session_call = getattr(self._session, method_u.lower())
+        for attempt in range(1, attempts + 1):
+            try:
+                response = session_call(url, **kwargs)
+            except requests.exceptions.ReadTimeout as exc:
+                last_exc = exc
+                if (
+                    self.retry_on_read_timeout
+                    and (
+                        method_u in self._READ_METHODS
+                        # Writes: same idempotency caveat as 503/504 above.
+                        or True
+                    )
+                    and attempt < attempts
+                ):
+                    logger.warning(
+                        "%s %s read-timeout on attempt %d/%d; retrying",
+                        method_u, url, attempt, attempts,
+                    )
+                    _time.sleep(self.retry_backoff * attempt)
+                    continue
+                raise
+            except requests.exceptions.Timeout:
+                # Connect timeouts are NOT retried here — they usually mean
+                # the BMC is unreachable, not transiently overloaded.
+                raise
+            except requests.exceptions.ConnectionError:
+                raise
+
+            code = response.status_code
+            if attempt < attempts and self._should_retry_status(method_u, code):
+                logger.warning(
+                    "%s %s -> HTTP %d on attempt %d/%d; retrying",
+                    method_u, url, code, attempt, attempts,
+                )
+                _time.sleep(self.retry_backoff * attempt)
+                continue
+            return response
+
+        # attempts exhausted without a response (only reachable when we hit a
+        # ReadTimeout on the last attempt without ``raise``); re-raise it.
+        if response is None:
+            assert last_exc is not None
+            raise last_exc
+        return response
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """
+        Convenience wrapper: :meth:`_send` + transport-error translation.
+
+        Reproduces the exact ``requests.Timeout``/``ConnectionError`` -> typed
+        SDK exception mapping the public methods used to do inline, so
+        replacing an inline ``self._session.get(...)`` block with a single
+        ``self._request("GET", path)`` call is behaviour-preserving.
+        """
+        try:
+            return self._send(method, path, **kwargs)
+        except requests.exceptions.Timeout as exc:
+            raise RedfishTimeoutError(self.host) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise RedfishConnectionError(self.host, exc) from exc
 
     def _raise_for_status(self, response: requests.Response, path: str) -> None:
         """
@@ -209,19 +349,10 @@ class RedfishHttpClient:
             RedfishConnectionError: On network errors
             RedfishTimeoutError: On timeout
         """
-        url = self._build_url(path)
-        logger.debug("GET %s", url)
+        logger.debug("GET %s", path)
+        response = self._request("GET", path)
 
-        try:
-            response = self._session.get(
-                url, timeout=(self.connect_timeout, self.read_timeout)
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.debug("GET %s -> HTTP %d", url, response.status_code)
+        logger.debug("GET %s -> HTTP %d", path, response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         result = self._parse(response, model_class)
@@ -238,16 +369,8 @@ class RedfishHttpClient:
         """
         Send a GET request and return the raw JSON dict (for dynamic structures).
         """
-        url = self._build_url(path)
-        logger.debug("GET (raw) %s", url)
-        try:
-            response = self._session.get(
-                url, timeout=(self.connect_timeout, self.read_timeout)
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
+        logger.debug("GET (raw) %s", path)
+        response = self._request("GET", path)
 
         self._store_etag(path, response)
         self._raise_for_status(response, path)
@@ -270,27 +393,16 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        url = self._build_url(path)
         json_payload = None
         if body is not None:
             json_payload = body.model_dump(by_alias=True, exclude_none=True)
         elif raw_body is not None:
             json_payload = raw_body
 
-        logger.info("POST %s, payload: %s", url, json_payload)
+        logger.info("POST %s, payload: %s", path, json_payload)
+        response = self._request("POST", path, json=json_payload)
 
-        try:
-            response = self._session.post(
-                url,
-                json=json_payload,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("POST %s -> HTTP %d", url, response.status_code)
+        logger.info("POST %s -> HTTP %d", path, response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
 
@@ -305,20 +417,10 @@ class RedfishHttpClient:
         Send a POST request and return the raw Response object.
         Useful when the caller needs response headers (e.g., X-Auth-Token).
         """
-        url = self._build_url(path)
-        logger.info("POST (raw) %s, payload: %s", url, body)
-        try:
-            response = self._session.post(
-                url,
-                json=body,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
+        logger.info("POST (raw) %s, payload: %s", path, body)
+        response = self._request("POST", path, json=body)
 
-        logger.info("POST (raw) %s -> HTTP %d", url, response.status_code)
+        logger.info("POST (raw) %s -> HTTP %d", path, response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         return response
@@ -343,7 +445,6 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        url = self._build_url(path)
         etag = self._get_etag(path, body)
         json_payload = body.model_dump(by_alias=True, exclude_none=True)
 
@@ -351,21 +452,10 @@ class RedfishHttpClient:
         if extra_headers:
             headers.update(extra_headers)
 
-        logger.info("PATCH %s, If-Match: %s, payload: %s", url, etag, json_payload)
+        logger.info("PATCH %s, If-Match: %s, payload: %s", path, etag, json_payload)
+        response = self._request("PATCH", path, json=json_payload, headers=headers)
 
-        try:
-            response = self._session.patch(
-                url,
-                json=json_payload,
-                headers=headers,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("PATCH %s -> HTTP %d", url, response.status_code)
+        logger.info("PATCH %s -> HTTP %d", path, response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
 
@@ -393,28 +483,16 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        url = self._build_url(path)
         etag = self._last_etag.get(path, "*")
 
         headers = {"If-Match": etag}
         if extra_headers:
             headers.update(extra_headers)
 
-        logger.info("PATCH (raw) %s, If-Match: %s, payload: %s", url, etag, body)
+        logger.info("PATCH (raw) %s, If-Match: %s, payload: %s", path, etag, body)
+        response = self._request("PATCH", path, json=body, headers=headers)
 
-        try:
-            response = self._session.patch(
-                url,
-                json=body,
-                headers=headers,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("PATCH (raw) %s -> HTTP %d", url, response.status_code)
+        logger.info("PATCH (raw) %s -> HTTP %d", path, response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         return response
@@ -432,19 +510,10 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        url = self._build_url(path)
-        logger.info("DELETE %s", url)
+        logger.info("DELETE %s", path)
+        response = self._request("DELETE", path)
 
-        try:
-            response = self._session.delete(
-                url, timeout=(self.connect_timeout, self.read_timeout)
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("DELETE %s -> HTTP %d", url, response.status_code)
+        logger.info("DELETE %s -> HTTP %d", path, response.status_code)
         self._raise_for_status(response, path)
         return response.text
 
@@ -481,22 +550,11 @@ class RedfishHttpClient:
         """
         import os
 
-        url = uri if uri.startswith(("http://", "https://")) else self._build_url(uri)
-        logger.info("DOWNLOAD %s", url)
+        logger.info("DOWNLOAD %s", uri)
+        response = self._request("GET", uri, stream=True)
 
-        try:
-            response = self._session.get(
-                url,
-                stream=True,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("DOWNLOAD %s -> HTTP %d", url, response.status_code)
-        self._raise_for_status(response, url)
+        logger.info("DOWNLOAD %s -> HTTP %d", uri, response.status_code)
+        self._raise_for_status(response, uri)
 
         if output_path is None:
             return response.content
@@ -542,23 +600,15 @@ class RedfishHttpClient:
         """
         import os
 
-        url = path if path.startswith(("http://", "https://")) else self._build_url(path)
-        logger.info("DOWNLOAD (POST) %s", url)
+        logger.info("DOWNLOAD (POST) %s", path)
+        response = self._request(
+            "POST", path,
+            json=raw_body if raw_body is not None else {},
+            stream=True,
+        )
 
-        try:
-            response = self._session.post(
-                url,
-                json=raw_body if raw_body is not None else {},
-                stream=True,
-                timeout=(self.connect_timeout, self.read_timeout),
-            )
-        except requests.exceptions.Timeout as exc:
-            raise RedfishTimeoutError(self.host) from exc
-        except requests.exceptions.ConnectionError as exc:
-            raise RedfishConnectionError(self.host, exc) from exc
-
-        logger.info("DOWNLOAD (POST) %s -> HTTP %d", url, response.status_code)
-        self._raise_for_status(response, url)
+        logger.info("DOWNLOAD (POST) %s -> HTTP %d", path, response.status_code)
+        self._raise_for_status(response, path)
 
         content = response.content
         if output_path is None:
@@ -570,7 +620,7 @@ class RedfishHttpClient:
         if os.path.isdir(abs_path) or output_path.endswith(os.sep):
             filename = _filename_from_content_disposition(
                 response.headers.get("Content-Disposition")
-            ) or url.rstrip("/").rsplit("/", 1)[-1] or "download.bin"
+            ) or path.rstrip("/").rsplit("/", 1)[-1] or "download.bin"
             abs_path = os.path.join(abs_path, filename)
 
         parent = os.path.dirname(abs_path)

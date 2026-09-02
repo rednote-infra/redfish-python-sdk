@@ -117,6 +117,9 @@ class RedfishClient:
         connect_timeout: int = 10,
         read_timeout: int = 30,
         scheme: str = "https",
+        retry_5xx: int = 0,
+        retry_on_read_timeout: bool = False,
+        retry_backoff: float = 1.0,
     ):
         """
         Initialize the Redfish Client.
@@ -132,6 +135,15 @@ class RedfishClient:
             connect_timeout: TCP connection timeout in seconds (default 10)
             read_timeout: HTTP response read timeout in seconds (default 30)
             scheme: URL scheme — "https" (default) or "http"
+            retry_5xx: Extra retries when the BMC returns a 5xx (default 0 —
+                no retry). GET/HEAD retry on 500/502/503/504; POST/PATCH/DELETE
+                retry only on 503/504 to minimise double-write risk. Useful
+                against overloaded / flaky BMCs (e.g. AMI MegaRAC firmware
+                that intermittently returns Base.1.x.InternalError).
+            retry_on_read_timeout: When True, also retry on read timeouts
+                (default False). Same idempotency rule as ``retry_5xx``.
+            retry_backoff: Base seconds between retries (linear back-off:
+                attempt ``n`` sleeps ``retry_backoff * n``). Default 1.0s.
         """
         self._http_client = RedfishHttpClient(
             host=host,
@@ -142,6 +154,9 @@ class RedfishClient:
             connect_timeout=connect_timeout,
             read_timeout=read_timeout,
             scheme=scheme,
+            retry_5xx=retry_5xx,
+            retry_on_read_timeout=retry_on_read_timeout,
+            retry_backoff=retry_backoff,
         )
 
         # Root service cache
