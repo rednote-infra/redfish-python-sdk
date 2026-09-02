@@ -9,7 +9,9 @@ request body and artifact resolution while keeping a single entry point in
 Architecture:
     BaseLogCollectStrategy (ABC)
       ├── GenericLogCollectStrategy — standard Redfish (DMTF) default
-      └── XFusionLogCollectStrategy — xFusion (超聚变), OEM diagnostic body
+      ├── XFusionLogCollectStrategy — xFusion (超聚变), OEM diagnostic body
+      └── InspurLogCollectStrategy  — Inspur (浪潮), collection-level
+                                      CollectAllLog / DownloadAllLog OEM pair
 
 Only vendors that genuinely differ from the standard DMTF behaviour get a
 dedicated strategy. Vendors whose ``CollectDiagnosticData`` matches the
@@ -24,17 +26,20 @@ All strategies are auto-registered when this package is imported.
 
 from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
+from .inspur import InspurLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
 from .xfusion import XFusionLogCollectStrategy
 
 # --- Auto-register vendor strategies that differ from the DMTF default ---
 LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
+LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
 
 __all__ = [
     "BaseLogCollectStrategy",
     "GenericLogCollectStrategy",
     "XFusionLogCollectStrategy",
+    "InspurLogCollectStrategy",
     "LogCollectStrategyRegistry",
     "VendorDetector",
 ]

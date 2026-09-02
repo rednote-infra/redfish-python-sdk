@@ -41,6 +41,28 @@ T = TypeVar("T", bound=BaseModel)
 _SUCCESS_CODES = {200, 201, 202, 204, 302}
 
 
+def _filename_from_content_disposition(value: Optional[str]) -> Optional[str]:
+    """
+    Extract the filename from a ``Content-Disposition`` header, or None.
+
+    Handles both ``filename="x.tar.gz"`` and the RFC 5987 ``filename*=`` form.
+    """
+    if not value:
+        return None
+    import re
+
+    # RFC 5987: filename*=UTF-8''name  (take the part after the last quote/'')
+    m = re.search(r"filename\*\s*=\s*[^']*''([^;]+)", value, re.IGNORECASE)
+    if m:
+        from urllib.parse import unquote
+
+        return unquote(m.group(1).strip().strip('"'))
+    m = re.search(r'filename\s*=\s*"?([^";]+)"?', value, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
 class RedfishHttpClient:
     """
     Low-level HTTP client for Redfish API calls.
@@ -490,6 +512,75 @@ class RedfishHttpClient:
                     fh.write(chunk)
 
         logger.info("DOWNLOAD saved to %s", abs_path)
+        return abs_path
+
+    def download_via_post(
+        self,
+        path: str,
+        output_path: Optional[str] = None,
+        raw_body: Optional[Dict] = None,
+    ) -> "bytes | str":
+        """
+        Trigger a binary download via POST (OEM ``DownloadAllLog`` schemes).
+
+        Some BMCs (e.g. Inspur) return the log bundle directly in the body of
+        a POST action rather than exposing a GET-able ``AdditionalDataURI``.
+
+        Args:
+            path: Redfish action path or absolute URL to POST to.
+            output_path: When ``None``, return the body as ``bytes``. When a
+                directory, the filename from ``Content-Disposition`` is used
+                (falling back to the last path segment). When a file path,
+                the body is written there. Returns the absolute file path.
+            raw_body: Optional POST body dict (defaults to ``{}``).
+
+        Returns:
+            The bundle bytes, or the absolute written file path.
+
+        Raises:
+            RedfishException: On non-2xx HTTP responses.
+        """
+        import os
+
+        url = path if path.startswith(("http://", "https://")) else self._build_url(path)
+        logger.info("DOWNLOAD (POST) %s", url)
+
+        try:
+            response = self._session.post(
+                url,
+                json=raw_body if raw_body is not None else {},
+                stream=True,
+                timeout=(self.connect_timeout, self.read_timeout),
+            )
+        except requests.exceptions.Timeout as exc:
+            raise RedfishTimeoutError(self.host) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise RedfishConnectionError(self.host, exc) from exc
+
+        logger.info("DOWNLOAD (POST) %s -> HTTP %d", url, response.status_code)
+        self._raise_for_status(response, url)
+
+        content = response.content
+        if output_path is None:
+            return content
+
+        abs_path = os.path.abspath(output_path)
+        # When output_path is an existing directory (or ends with a separator),
+        # derive the filename from Content-Disposition.
+        if os.path.isdir(abs_path) or output_path.endswith(os.sep):
+            filename = _filename_from_content_disposition(
+                response.headers.get("Content-Disposition")
+            ) or url.rstrip("/").rsplit("/", 1)[-1] or "download.bin"
+            abs_path = os.path.join(abs_path, filename)
+
+        parent = os.path.dirname(abs_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        with open(abs_path, "wb") as fh:
+            fh.write(content)
+
+        logger.info("DOWNLOAD (POST) saved to %s", abs_path)
         return abs_path
 
     def set_auth_token(self, token: str) -> None:

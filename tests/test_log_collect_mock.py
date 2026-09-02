@@ -33,14 +33,17 @@ from redfish_sdk.models.managers import Manager
 from redfish_sdk.models.task import Task
 from redfish_sdk.managers.log_collect_strategies import (
     GenericLogCollectStrategy,
+    InspurLogCollectStrategy,
     LogCollectStrategyRegistry,
     VendorDetector,
     XFusionLogCollectStrategy,
 )
 
-MOCK_HOST = "10.27.97.153"
-MOCK_USER = "Admin"
-MOCK_PASSWORD = "Admin@2024"
+# Fixed dummy credentials — these tests are fully offline (all HTTP calls are
+# stubbed), so they must never depend on env vars or reach a real BMC.
+MOCK_HOST = "mock-bmc-host"
+MOCK_USER = "mock-user"
+MOCK_PASSWORD = "mock-password"
 
 COLLECT_TARGET = (
     "/redfish/v1/Managers/1/LogServices/Log1/Actions/"
@@ -205,10 +208,11 @@ class TestCollectDiagnosticData(VendorRestoreMixin):
         client = _make_client()
         _stub_manager(client)
         _stub_log_service(client, actions=None)
+        _force_vendor("generic")
 
         with self.assertRaises(RedfishValidationError) as ctx:
             client.collect_diagnostic_data()
-        self.assertIn("CollectDiagnosticData", str(ctx.exception))
+        self.assertIn("collection action", str(ctx.exception))
         client.close()
 
 
@@ -404,7 +408,7 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
         entry = LogEntry.model_construct(id="1", additional_data_uri=None)
         with self.assertRaises(RedfishValidationError) as ctx:
             client.download_diagnostic_data(entry)
-        self.assertIn("download URI", str(ctx.exception))
+        self.assertIn("AdditionalDataURI", str(ctx.exception))
         client.close()
 
 
@@ -428,15 +432,16 @@ class TestCollectAndDownload(VendorRestoreMixin):
         )
         completed = Task.model_construct(
             id="7",
+            odata_id="/redfish/v1/TaskService/Tasks/7",
             task_state="Completed",
             task_status="OK",
-            additional_data_uri="/redfish/v1/download/7.tar.gz",
         )
         client.wait_for_task = (  # type: ignore[assignment]
             lambda task_id, poll_interval, timeout: completed
         )
-        client._managers._resolve_diagnostic_download_uri = (  # type: ignore[assignment]
-            lambda t: "/redfish/v1/download/7.tar.gz"
+        # Generic download resolves AdditionalDataURI from the task raw body.
+        client._http_client.get_raw = (  # type: ignore[assignment]
+            lambda path: {"Id": "7", "AdditionalDataURI": "/redfish/v1/download/7.tar.gz"}
         )
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -503,6 +508,76 @@ class TestStrategies(unittest.TestCase):
         self.assertEqual(body["DiagnosticDataType"], "OEM")
         self.assertEqual(body["OEMDiagnosticDataType"], "Manager")
 
+    def test_inspur_registered(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("inspur"), InspurLogCollectStrategy
+        )
+
+
+# ---------------------------------------------------------------------------
+# Inspur (浪潮) collection-level CollectAllLog / DownloadAllLog OEM flow
+# ---------------------------------------------------------------------------
+
+
+class TestInspurStrategy(VendorRestoreMixin):
+    """Verify Inspur uses the collection-level OEM action pair."""
+
+    _COLLECTION = "/redfish/v1/Managers/1/LogServices"
+    _COLLECT = f"{_COLLECTION}/Actions/Oem/Public/CollectAllLog"
+    _DOWNLOAD = f"{_COLLECTION}/Actions/Oem/Public/DownloadAllLog"
+
+    def _stub_collection_actions(self, client) -> None:
+        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+            "@odata.id": self._COLLECTION,
+            "Actions": {
+                "#LogService.CollectAllLog": {"target": self._COLLECT},
+                "#LogService.DownloadAllLog": {"target": self._DOWNLOAD},
+            },
+        }
+
+    def test_collect_uses_collection_action_and_empty_body(self) -> None:
+        client = _make_client()
+        _stub_manager(client)
+        self._stub_collection_actions(client)
+        _force_vendor("inspur")
+
+        recorder = _CallRecorder()
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                recorder.record(path=path, raw_body=raw_body)
+                or Task.model_construct(id="0")
+            )
+        )
+
+        task = client.collect_diagnostic_data()
+        self.assertEqual(recorder.last["path"], self._COLLECT)
+        self.assertEqual(recorder.last["raw_body"], {})  # empty body
+        self.assertEqual(task.id, "0")
+        client.close()
+
+    def test_download_uses_post_action(self) -> None:
+        client = _make_client()
+        self._stub_collection_actions(client)
+        _force_vendor("inspur")
+
+        recorder = _CallRecorder()
+        client._http_client.download_via_post = (  # type: ignore[assignment]
+            lambda path, output_path=None, raw_body=None: (
+                recorder.record(path=path, output_path=output_path)
+                or "/tmp/out/dump_x.tar.gz"
+            )
+        )
+        # Manager collection path hint used by the strategy.
+        client._get_managers_collection_odata_id = (  # type: ignore[assignment]
+            lambda: "/redfish/v1/Managers"
+        )
+
+        task = Task.model_construct(id="0", odata_id="/redfish/v1/TaskService/Tasks/0")
+        path = client.download_diagnostic_data(task, output_path="/tmp/out/")
+        self.assertEqual(path, "/tmp/out/dump_x.tar.gz")
+        self.assertEqual(recorder.last["path"], self._DOWNLOAD)
+        client.close()
+
 
 # ---------------------------------------------------------------------------
 # RedfishHttpClient.download
@@ -556,6 +631,40 @@ class TestHttpDownload(unittest.TestCase):
 
         with self.assertRaises(RedfishException):
             http.download("/redfish/v1/download/x.bin")
+        client.close()
+
+    def test_download_via_post_uses_content_disposition_filename(self) -> None:
+        client = _make_client()
+        http = client._http_client
+
+        resp = _FakeResponse(b"\x1f\x8bDATA")
+        resp.headers = {
+            "Content-Disposition": 'attachment; filename="dump_ABC_20260902.tar.gz"'
+        }
+        http._session.post = (  # type: ignore[assignment]
+            lambda url, json=None, stream=False, timeout=None: resp
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Pass a directory -> filename taken from Content-Disposition.
+            path = http.download_via_post(
+                "/redfish/v1/.../DownloadAllLog", output_path=tmp + os.sep
+            )
+            self.assertEqual(
+                os.path.basename(path), "dump_ABC_20260902.tar.gz"
+            )
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), b"\x1f\x8bDATA")
+        client.close()
+
+    def test_download_via_post_bytes_mode(self) -> None:
+        client = _make_client()
+        http = client._http_client
+        http._session.post = (  # type: ignore[assignment]
+            lambda url, json=None, stream=False, timeout=None: _FakeResponse(b"BIN")
+        )
+        data = http.download_via_post("/x/Download", output_path=None)
+        self.assertEqual(data, b"BIN")
         client.close()
 
 

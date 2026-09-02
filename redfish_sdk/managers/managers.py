@@ -146,18 +146,17 @@ class ManagersManager:
 
         manager = self.get(manager_id)
         odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
-        log = self._resolve_collect_log_service(odata_id, log_id)
-
-        target = _extract_collect_action_target(log.actions)
-        if not target:
-            raise RedfishValidationError(
-                f"Log service {log.id!r} does not expose "
-                f"#LogService.CollectDiagnosticData action"
-            )
 
         vendor = VendorDetector.detect(self._client)
         strategy = LogCollectStrategyRegistry.get(vendor)
-        body = strategy.build_body(diagnostic_data_type, oem_params)
+
+        target = strategy.discover_collect_target(self._client, odata_id, log_id)
+        if not target:
+            raise RedfishValidationError(
+                f"No diagnostic-data collection action found under {odata_id} "
+                f"(vendor={vendor}, strategy={type(strategy).__name__})"
+            )
+        body = strategy.build_collect_body(diagnostic_data_type, oem_params)
 
         logger.info(
             "CollectDiagnosticData: vendor=%s, strategy=%s, target=%s, body=%s",
@@ -187,13 +186,35 @@ class ManagersManager:
             RedfishValidationError: When no artifact URI can be resolved.
             RedfishException: On download HTTP errors.
         """
-        uri = self._resolve_diagnostic_download_uri(task_or_entry)
+        from ..models.logs import LogEntry
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        # A LogEntry already carries the artifact URI -> plain GET download.
+        if isinstance(task_or_entry, LogEntry):
+            uri = task_or_entry.additional_data_uri
+            if not uri:
+                raise RedfishValidationError(
+                    "LogEntry has no AdditionalDataURI to download"
+                )
+            logger.info("Downloading diagnostic data from %s", uri)
+            return self._http.download(uri, output_path)
+
+        # A Task -> let the vendor strategy decide how to fetch the bundle
+        # (standard AdditionalDataURI GET, or an OEM POST download).
+        if isinstance(task_or_entry, Task):
+            vendor = VendorDetector.detect(self._client)
+            strategy = LogCollectStrategyRegistry.get(vendor)
+            return strategy.download_artifact(self._client, task_or_entry, output_path)
+
+        # Duck-typed fallback: object exposing additional_data_uri.
+        uri = getattr(task_or_entry, "additional_data_uri", None)
         if not uri:
             raise RedfishValidationError(
-                "Could not resolve a diagnostic-data download URI "
-                "(no AdditionalDataURI on the task or log entry)"
+                "Could not resolve a diagnostic-data download URI"
             )
-
         logger.info("Downloading diagnostic data from %s", uri)
         return self._http.download(uri, output_path)
 
@@ -250,97 +271,6 @@ class ManagersManager:
             )
 
         return self.download_diagnostic_data(finished, output_path)
-
-    def _resolve_collect_log_service(
-        self,
-        log_services_odata_id: str,
-        log_id: Optional[str],
-    ) -> Log:
-        """
-        Resolve the LogService to run ``CollectDiagnosticData`` on.
-
-        Extends the generic :func:`resolve_log_service` with a smarter
-        auto-selection: when ``log_id`` is ``None`` and multiple services
-        exist, the one(s) that actually advertise
-        ``#LogService.CollectDiagnosticData`` are preferred, so unrelated
-        services (e.g. an ``AuditLog``) don't force the caller to guess.
-
-        Behaviour:
-        - Explicit ``log_id`` (bare id or full ``@odata.id``): delegate to
-          :func:`resolve_log_service` unchanged.
-        - Single service: return it.
-        - Multiple services, ``log_id`` is None: fetch each as a single
-          resource (collection members may omit ``Actions``) and keep those
-          exposing the collect action. Exactly one → auto-select; zero or
-          more than one → raise a descriptive error.
-        """
-        from ._log_helpers import _describe_services, resolve_log_service
-
-        if log_id is not None:
-            return resolve_log_service(self._client, log_services_odata_id, log_id)
-
-        services = self._client._get_collection(log_services_odata_id, Log)
-        if not services:
-            from ..exceptions import RedfishException
-
-            raise RedfishException(
-                404, f"No log services found under {log_services_odata_id}"
-            )
-        if len(services) == 1:
-            return services[0]
-
-        # Multiple services: fetch each single resource (to get Actions) and
-        # keep the ones that support CollectDiagnosticData.
-        supported: List[Log] = []
-        for svc in services:
-            if not svc.odata_id:
-                continue
-            try:
-                full = self._http.get(svc.odata_id, Log)
-            except RedfishNotFoundError:
-                continue
-            if _extract_collect_action_target(full.actions):
-                supported.append(full)
-
-        if len(supported) == 1:
-            logger.info(
-                "Auto-selected log service %r for CollectDiagnosticData",
-                supported[0].id,
-            )
-            return supported[0]
-
-        if not supported:
-            raise RedfishValidationError(
-                f"No log service under {log_services_odata_id} exposes "
-                f"#LogService.CollectDiagnosticData. "
-                f"Available: {_describe_services(services)}"
-            )
-
-        raise RedfishValidationError(
-            f"Multiple log services support CollectDiagnosticData, "
-            f"please specify log_id. "
-            f"Candidates: {_describe_services(supported)}"
-        )
-
-    def _resolve_diagnostic_download_uri(self, task_or_entry) -> Optional[str]:
-        """Resolve the artifact URI from a Task or LogEntry input."""
-        from ..models.logs import LogEntry
-        from ..models.task import Task
-        from .log_collect_strategies import (
-            LogCollectStrategyRegistry,
-            VendorDetector,
-        )
-
-        if isinstance(task_or_entry, LogEntry):
-            return task_or_entry.additional_data_uri
-
-        if isinstance(task_or_entry, Task):
-            vendor = VendorDetector.detect(self._client)
-            strategy = LogCollectStrategyRegistry.get(vendor)
-            return strategy.extract_download_uri(self._client, task_or_entry)
-
-        # Duck-typed fallback: any object exposing additional_data_uri.
-        return getattr(task_or_entry, "additional_data_uri", None)
 
     def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """
@@ -677,19 +607,3 @@ class ManagersManager:
             manager_id, "sol_source_control_info", None,
             SolSourceControlInfo, "SOLSourceControlInfo"
         )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers — Actions block parsing
-# ---------------------------------------------------------------------------
-
-def _extract_collect_action_target(actions: Optional[dict]) -> Optional[str]:
-    """
-    Return the ``#LogService.CollectDiagnosticData`` action target URL, or None.
-
-    Reuses the shared Actions-parsing helper from ``systems`` so both log
-    services follow the same discovery rules (no string concatenation).
-    """
-    from .systems import _extract_action_target
-
-    return _extract_action_target(actions, "#LogService.CollectDiagnosticData")
