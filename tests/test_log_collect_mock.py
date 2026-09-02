@@ -1,5 +1,9 @@
 """
-Mock tests for out-of-band diagnostic log collection + download.
+Unit tests for out-of-band diagnostic log collection + download.
+
+Pure-stdlib (``unittest``) tests — no pytest required. Run with:
+
+    python -m unittest tests.test_log_collect_mock -v
 
 Covers:
   - collect_diagnostic_data: action discovery, vendor default body,
@@ -12,23 +16,25 @@ Covers:
   - RedfishHttpClient.download: relative/absolute URI, bytes and file modes.
   - LogEntry.additional_data_uri model field.
 
-These tests never hit a real BMC; HTTP calls are stubbed via monkeypatch.
+These tests never hit a real BMC; HTTP calls are stubbed on the client.
 """
 from __future__ import annotations
 
 import os
+import tempfile
+import unittest
 from typing import Any, Dict, List, Optional
-
-import pytest
 
 from redfish_sdk import LogEntry, RedfishClient, RedfishValidationError
 from redfish_sdk.exceptions import RedfishException
 from redfish_sdk.models.common import Link
 from redfish_sdk.models.logs import Log
+from redfish_sdk.models.managers import Manager
 from redfish_sdk.models.task import Task
 from redfish_sdk.managers.log_collect_strategies import (
     GenericLogCollectStrategy,
     LogCollectStrategyRegistry,
+    VendorDetector,
     XFusionLogCollectStrategy,
 )
 
@@ -59,33 +65,67 @@ class _CallRecorder:
         return self.calls[-1]
 
 
-def _stub_manager(monkeypatch, client) -> None:
-    from redfish_sdk.models.managers import Manager
-
+def _stub_manager(client: RedfishClient) -> None:
     manager = Manager.model_construct(
         id="1",
         odata_id="/redfish/v1/Managers/1",
         log_services=Link(**{"@odata.id": "/redfish/v1/Managers/1/LogServices"}),
     )
-    monkeypatch.setattr(client._managers, "get", lambda manager_id="1": manager)
+    client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
 
 
-def _stub_log_service(monkeypatch, client, *, actions) -> None:
+def _stub_log_service(client: RedfishClient, *, actions) -> None:
     log = Log.model_construct(
         id="Log1",
         odata_id="/redfish/v1/Managers/1/LogServices/Log1",
         actions=actions,
     )
-    monkeypatch.setattr(
-        client, "_get_collection",
-        lambda odata_id, mc: [log] if mc is Log else [],
+    client._get_collection = (  # type: ignore[assignment]
+        lambda odata_id, mc: [log] if mc is Log else []
     )
 
 
-def _force_vendor(monkeypatch, vendor: str) -> None:
-    from redfish_sdk.managers.log_collect_strategies import VendorDetector
+# Track VendorDetector.detect overrides so tearDown can restore the original.
+_ORIGINAL_DETECT = VendorDetector.detect
 
-    monkeypatch.setattr(VendorDetector, "detect", classmethod(lambda cls, c: vendor))
+
+def _force_vendor(vendor: str) -> None:
+    VendorDetector.detect = classmethod(lambda cls, c: vendor)  # type: ignore[assignment]
+
+
+def _restore_vendor() -> None:
+    VendorDetector.detect = _ORIGINAL_DETECT  # type: ignore[assignment]
+
+
+class _FakeResponse:
+    """Minimal stand-in for requests.Response used by download tests."""
+
+    class _Req:
+        method = "GET"
+
+    def __init__(self, body: bytes, status: int = 200) -> None:
+        self._body = body
+        self.status_code = status
+        self.headers: Dict[str, str] = {}
+        self.request = self._Req()
+
+    @property
+    def content(self) -> bytes:
+        return self._body
+
+    def iter_content(self, chunk_size: int = 65536):
+        yield self._body
+
+    @property
+    def text(self) -> str:
+        return ""
+
+
+class VendorRestoreMixin(unittest.TestCase):
+    """Restore VendorDetector.detect after every test that may override it."""
+
+    def tearDown(self) -> None:  # noqa: D401
+        _restore_vendor()
 
 
 # ---------------------------------------------------------------------------
@@ -93,79 +133,82 @@ def _force_vendor(monkeypatch, vendor: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-class TestCollectDiagnosticData:
-    def test_generic_default_body(self, monkeypatch):
+class TestCollectDiagnosticData(VendorRestoreMixin):
+    def test_generic_default_body(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
+        _stub_manager(client)
         _stub_log_service(
-            monkeypatch, client,
+            client,
             actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
         )
-        _force_vendor(monkeypatch, "generic")
+        _force_vendor("generic")
 
         recorder = _CallRecorder()
 
         def fake_post(path, model_class, body=None, raw_body=None):
             recorder.record(path=path, raw_body=raw_body)
-            return Task.model_construct(id="42", odata_id="/redfish/v1/TaskService/Tasks/42")
+            return Task.model_construct(
+                id="42", odata_id="/redfish/v1/TaskService/Tasks/42"
+            )
 
-        monkeypatch.setattr(client._http_client, "post", fake_post)
+        client._http_client.post = fake_post  # type: ignore[assignment]
 
         task = client.collect_diagnostic_data()
-        assert recorder.last["path"] == COLLECT_TARGET
-        assert recorder.last["raw_body"] == {"DiagnosticDataType": "Manager"}
-        assert task.id == "42"
+        self.assertEqual(recorder.last["path"], COLLECT_TARGET)
+        self.assertEqual(recorder.last["raw_body"], {"DiagnosticDataType": "Manager"})
+        self.assertEqual(task.id, "42")
         client.close()
 
-    def test_explicit_type_overrides_default(self, monkeypatch):
+    def test_explicit_type_overrides_default(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
+        _stub_manager(client)
         _stub_log_service(
-            monkeypatch, client,
+            client,
             actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
         )
-        _force_vendor(monkeypatch, "xfusion")  # default would be OEM
+        _force_vendor("xfusion")  # default would be OEM
 
         recorder = _CallRecorder()
-        monkeypatch.setattr(
-            client._http_client, "post",
-            lambda path, mc, body=None, raw_body=None: (
-                recorder.record(raw_body=raw_body) or Task.model_construct(id="1")
-            ),
-        )
+
+        def fake_post(path, mc, body=None, raw_body=None):
+            recorder.record(raw_body=raw_body)
+            return Task.model_construct(id="1")
+
+        client._http_client.post = fake_post  # type: ignore[assignment]
 
         client.collect_diagnostic_data(diagnostic_data_type="Manager")
-        assert recorder.last["raw_body"]["DiagnosticDataType"] == "Manager"
+        self.assertEqual(recorder.last["raw_body"]["DiagnosticDataType"], "Manager")
         client.close()
 
-    def test_oem_params_merged(self, monkeypatch):
+    def test_oem_params_merged(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
+        _stub_manager(client)
         _stub_log_service(
-            monkeypatch, client,
+            client,
             actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
         )
-        _force_vendor(monkeypatch, "generic")
+        _force_vendor("generic")
 
         recorder = _CallRecorder()
-        monkeypatch.setattr(
-            client._http_client, "post",
-            lambda path, mc, body=None, raw_body=None: (
-                recorder.record(raw_body=raw_body) or Task.model_construct(id="1")
-            ),
-        )
+
+        def fake_post(path, mc, body=None, raw_body=None):
+            recorder.record(raw_body=raw_body)
+            return Task.model_construct(id="1")
+
+        client._http_client.post = fake_post  # type: ignore[assignment]
 
         client.collect_diagnostic_data(oem_params={"OEMDiagnosticDataType": "Full"})
-        assert recorder.last["raw_body"]["OEMDiagnosticDataType"] == "Full"
+        self.assertEqual(recorder.last["raw_body"]["OEMDiagnosticDataType"], "Full")
         client.close()
 
-    def test_missing_action_raises(self, monkeypatch):
+    def test_missing_action_raises(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
-        _stub_log_service(monkeypatch, client, actions=None)
+        _stub_manager(client)
+        _stub_log_service(client, actions=None)
 
-        with pytest.raises(RedfishValidationError, match="CollectDiagnosticData"):
+        with self.assertRaises(RedfishValidationError) as ctx:
             client.collect_diagnostic_data()
+        self.assertIn("CollectDiagnosticData", str(ctx.exception))
         client.close()
 
 
@@ -174,8 +217,8 @@ class TestCollectDiagnosticData:
 # ---------------------------------------------------------------------------
 
 
-class TestDownloadDiagnosticData:
-    def test_from_log_entry_bytes(self, monkeypatch):
+class TestDownloadDiagnosticData(VendorRestoreMixin):
+    def test_from_log_entry_bytes(self) -> None:
         client = _make_client()
         entry = LogEntry.model_construct(
             id="1", additional_data_uri="/redfish/v1/download/bundle.tar.gz"
@@ -187,48 +230,46 @@ class TestDownloadDiagnosticData:
             recorder.record(uri=uri, output_path=output_path)
             return b"BUNDLE"
 
-        monkeypatch.setattr(client._http_client, "download", fake_download)
+        client._http_client.download = fake_download  # type: ignore[assignment]
 
         data = client.download_diagnostic_data(entry)
-        assert data == b"BUNDLE"
-        assert recorder.last["uri"] == "/redfish/v1/download/bundle.tar.gz"
-        assert recorder.last["output_path"] is None
+        self.assertEqual(data, b"BUNDLE")
+        self.assertEqual(recorder.last["uri"], "/redfish/v1/download/bundle.tar.gz")
+        self.assertIsNone(recorder.last["output_path"])
         client.close()
 
-    def test_from_task_resolves_uri(self, monkeypatch):
+    def test_from_task_resolves_uri(self) -> None:
         client = _make_client()
-        _force_vendor(monkeypatch, "generic")
+        _force_vendor("generic")
         task = Task.model_construct(
             id="42", odata_id="/redfish/v1/TaskService/Tasks/42"
         )
 
         # Generic strategy resolves via raw task body AdditionalDataURI.
-        monkeypatch.setattr(
-            client._http_client, "get_raw",
-            lambda path: {
-                "Id": "42",
-                "AdditionalDataURI": "/redfish/v1/download/42.tar.gz",
-            },
-        )
+        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+            "Id": "42",
+            "AdditionalDataURI": "/redfish/v1/download/42.tar.gz",
+        }
 
         recorder = _CallRecorder()
-        monkeypatch.setattr(
-            client._http_client, "download",
-            lambda uri, output_path=None, chunk_size=65536: (
-                recorder.record(uri=uri, output_path=output_path) or "/tmp/42.tar.gz"
-            ),
-        )
+
+        def fake_download(uri, output_path=None, chunk_size=65536):
+            recorder.record(uri=uri, output_path=output_path)
+            return "/tmp/42.tar.gz"
+
+        client._http_client.download = fake_download  # type: ignore[assignment]
 
         path = client.download_diagnostic_data(task, output_path="/tmp/42.tar.gz")
-        assert path == "/tmp/42.tar.gz"
-        assert recorder.last["uri"] == "/redfish/v1/download/42.tar.gz"
+        self.assertEqual(path, "/tmp/42.tar.gz")
+        self.assertEqual(recorder.last["uri"], "/redfish/v1/download/42.tar.gz")
         client.close()
 
-    def test_missing_uri_raises(self, monkeypatch):
+    def test_missing_uri_raises(self) -> None:
         client = _make_client()
         entry = LogEntry.model_construct(id="1", additional_data_uri=None)
-        with pytest.raises(RedfishValidationError, match="download URI"):
+        with self.assertRaises(RedfishValidationError) as ctx:
             client.download_diagnostic_data(entry)
+        self.assertIn("download URI", str(ctx.exception))
         client.close()
 
 
@@ -237,62 +278,61 @@ class TestDownloadDiagnosticData:
 # ---------------------------------------------------------------------------
 
 
-class TestCollectAndDownload:
-    def test_end_to_end(self, monkeypatch):
+class TestCollectAndDownload(VendorRestoreMixin):
+    def test_end_to_end(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
+        _stub_manager(client)
         _stub_log_service(
-            monkeypatch, client,
+            client,
             actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
         )
-        _force_vendor(monkeypatch, "generic")
+        _force_vendor("generic")
 
-        monkeypatch.setattr(
-            client._http_client, "post",
-            lambda path, mc, body=None, raw_body=None: Task.model_construct(id="7"),
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: Task.model_construct(id="7")
         )
         completed = Task.model_construct(
-            id="7", task_state="Completed", task_status="OK",
+            id="7",
+            task_state="Completed",
+            task_status="OK",
             additional_data_uri="/redfish/v1/download/7.tar.gz",
         )
-        monkeypatch.setattr(
-            client, "wait_for_task",
-            lambda task_id, poll_interval, timeout: completed,
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: completed
         )
-        monkeypatch.setattr(
-            client._managers, "_resolve_diagnostic_download_uri",
-            lambda t: "/redfish/v1/download/7.tar.gz",
+        client._managers._resolve_diagnostic_download_uri = (  # type: ignore[assignment]
+            lambda t: "/redfish/v1/download/7.tar.gz"
         )
-        monkeypatch.setattr(
-            client._http_client, "download",
-            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path),
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
 
         path = client.collect_and_download_diagnostic_data("/tmp/7.tar.gz")
-        assert path == os.path.abspath("/tmp/7.tar.gz")
+        self.assertEqual(path, os.path.abspath("/tmp/7.tar.gz"))
         client.close()
 
-    def test_task_failure_raises(self, monkeypatch):
+    def test_task_failure_raises(self) -> None:
         client = _make_client()
-        _stub_manager(monkeypatch, client)
+        _stub_manager(client)
         _stub_log_service(
-            monkeypatch, client,
+            client,
             actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
         )
-        _force_vendor(monkeypatch, "generic")
+        _force_vendor("generic")
 
-        monkeypatch.setattr(
-            client._http_client, "post",
-            lambda path, mc, body=None, raw_body=None: Task.model_construct(id="9"),
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: Task.model_construct(id="9")
         )
-        failed = Task.model_construct(id="9", task_state="Exception", task_status="Warning")
-        monkeypatch.setattr(
-            client, "wait_for_task",
-            lambda task_id, poll_interval, timeout: failed,
+        failed = Task.model_construct(
+            id="9", task_state="Exception", task_status="Warning"
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: failed
         )
 
-        with pytest.raises(RedfishException, match="did not succeed"):
+        with self.assertRaises(RedfishException) as ctx:
             client.collect_and_download_diagnostic_data("/tmp/9.tar.gz")
+        self.assertIn("did not succeed", str(ctx.exception))
         client.close()
 
 
@@ -301,32 +341,32 @@ class TestCollectAndDownload:
 # ---------------------------------------------------------------------------
 
 
-class TestStrategies:
-    def test_registered_vendors(self):
+class TestStrategies(unittest.TestCase):
+    def test_registered_vendors(self) -> None:
         vendors = LogCollectStrategyRegistry.registered_vendors()
         # Only vendors that differ from the DMTF default get a strategy.
         for v in ("generic", "xfusion"):
-            assert v in vendors
+            self.assertIn(v, vendors)
 
-    def test_standard_vendors_fall_back_to_generic(self):
+    def test_standard_vendors_fall_back_to_generic(self) -> None:
         # Lenovo / Nettrix match the standard body -> generic fallback.
         for v in ("lenovo", "nettrix"):
-            assert isinstance(
+            self.assertIsInstance(
                 LogCollectStrategyRegistry.get(v), GenericLogCollectStrategy
             )
 
-    def test_unknown_vendor_falls_back_to_generic(self):
+    def test_unknown_vendor_falls_back_to_generic(self) -> None:
         strategy = LogCollectStrategyRegistry.get("does-not-exist")
-        assert isinstance(strategy, GenericLogCollectStrategy)
+        self.assertIsInstance(strategy, GenericLogCollectStrategy)
 
-    def test_generic_default_type(self):
+    def test_generic_default_type(self) -> None:
         body = GenericLogCollectStrategy().build_body(None)
-        assert body == {"DiagnosticDataType": "Manager"}
+        self.assertEqual(body, {"DiagnosticDataType": "Manager"})
 
-    def test_xfusion_oem_default(self):
+    def test_xfusion_oem_default(self) -> None:
         body = XFusionLogCollectStrategy().build_body(None)
-        assert body["DiagnosticDataType"] == "OEM"
-        assert body["OEMDiagnosticDataType"] == "Manager"
+        self.assertEqual(body["DiagnosticDataType"], "OEM")
+        self.assertEqual(body["OEMDiagnosticDataType"], "Manager")
 
 
 # ---------------------------------------------------------------------------
@@ -334,32 +374,8 @@ class TestStrategies:
 # ---------------------------------------------------------------------------
 
 
-class TestHttpDownload:
-    def _fake_response(self, content: bytes, status: int = 200):
-        class _Resp:
-            status_code = status
-            headers: Dict[str, str] = {}
-
-            class request:  # noqa: N801 — mimic requests.Response.request
-                method = "GET"
-
-            def __init__(self, body: bytes):
-                self._body = body
-
-            @property
-            def content(self) -> bytes:
-                return self._body
-
-            def iter_content(self, chunk_size: int = 65536):
-                yield self._body
-
-            @property
-            def text(self) -> str:
-                return ""
-
-        return _Resp(content)
-
-    def test_bytes_mode_and_relative_uri(self, monkeypatch):
+class TestHttpDownload(unittest.TestCase):
+    def test_bytes_mode_and_relative_uri(self) -> None:
         client = _make_client()
         http = client._http_client
         captured: Dict[str, Any] = {}
@@ -367,41 +383,43 @@ class TestHttpDownload:
         def fake_get(url, stream=False, timeout=None):
             captured["url"] = url
             captured["stream"] = stream
-            return self._fake_response(b"DATA")
+            return _FakeResponse(b"DATA")
 
-        monkeypatch.setattr(http._session, "get", fake_get)
+        http._session.get = fake_get  # type: ignore[assignment]
 
         data = http.download("/redfish/v1/download/x.bin")
-        assert data == b"DATA"
-        assert captured["url"] == f"https://{http.host}/redfish/v1/download/x.bin"
-        assert captured["stream"] is True
+        self.assertEqual(data, b"DATA")
+        self.assertEqual(
+            captured["url"], f"https://{http.host}/redfish/v1/download/x.bin"
+        )
+        self.assertTrue(captured["stream"])
         client.close()
 
-    def test_file_mode_absolute_uri(self, monkeypatch, tmp_path):
+    def test_file_mode_absolute_uri(self) -> None:
         client = _make_client()
         http = client._http_client
 
-        monkeypatch.setattr(
-            http._session, "get",
-            lambda url, stream=False, timeout=None: self._fake_response(b"HELLO"),
+        http._session.get = (  # type: ignore[assignment]
+            lambda url, stream=False, timeout=None: _FakeResponse(b"HELLO")
         )
 
-        out = tmp_path / "sub" / "bundle.bin"
-        path = http.download("https://files.example.com/bundle.bin", str(out))
-        assert path == str(out)
-        assert out.read_bytes() == b"HELLO"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "sub", "bundle.bin")
+            path = http.download("https://files.example.com/bundle.bin", out)
+            self.assertEqual(path, os.path.abspath(out))
+            with open(out, "rb") as fh:
+                self.assertEqual(fh.read(), b"HELLO")
         client.close()
 
-    def test_non_2xx_raises(self, monkeypatch):
+    def test_non_2xx_raises(self) -> None:
         client = _make_client()
         http = client._http_client
 
-        monkeypatch.setattr(
-            http._session, "get",
-            lambda url, stream=False, timeout=None: self._fake_response(b"", status=500),
+        http._session.get = (  # type: ignore[assignment]
+            lambda url, stream=False, timeout=None: _FakeResponse(b"", status=500)
         )
 
-        with pytest.raises(RedfishException):
+        with self.assertRaises(RedfishException):
             http.download("/redfish/v1/download/x.bin")
         client.close()
 
@@ -411,8 +429,15 @@ class TestHttpDownload:
 # ---------------------------------------------------------------------------
 
 
-def test_log_entry_additional_data_uri_alias():
-    entry = LogEntry.model_validate(
-        {"Id": "1", "AdditionalDataURI": "/redfish/v1/download/y.tar.gz"}
-    )
-    assert entry.additional_data_uri == "/redfish/v1/download/y.tar.gz"
+class TestLogEntryModel(unittest.TestCase):
+    def test_additional_data_uri_alias(self) -> None:
+        entry = LogEntry.model_validate(
+            {"Id": "1", "AdditionalDataURI": "/redfish/v1/download/y.tar.gz"}
+        )
+        self.assertEqual(
+            entry.additional_data_uri, "/redfish/v1/download/y.tar.gz"
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
