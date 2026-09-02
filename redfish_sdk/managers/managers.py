@@ -225,12 +225,29 @@ class ManagersManager:
         manager_id: str = "1",
         poll_interval: int = 5,
         timeout: int = 1800,
+        *,
+        reuse_existing: bool = True,
+        max_retries: int = 0,
+        retry_backoff: int = 30,
     ) -> str:
         """
         End-to-end helper: trigger collection, wait, then download.
 
-        Chains :meth:`collect_diagnostic_data` -> the existing
-        ``wait_for_task`` -> :meth:`download_diagnostic_data`.
+        Chains :meth:`collect_diagnostic_data` -> :meth:`wait_for_task` (or a
+        vendor-specific waiter) -> :meth:`download_diagnostic_data`.
+
+        Resilience:
+        - **Reuse of prior collections** (``reuse_existing=True``, default):
+          before triggering a new collection, the strategy is asked whether
+          the BMC already has a matching task. If found and already
+          ``Completed``, its artifact is downloaded directly (avoids piling
+          up tasks on BMCs that don't allow concurrent collections or that
+          break after repeated triggers). If found and still ``Running``, the
+          waiter runs on it directly instead of triggering a duplicate.
+        - **Retry** (``max_retries`` > 0): a failed collection
+          (:class:`LogCollectFailedError`) is retried up to ``max_retries``
+          extra times with ``retry_backoff`` seconds between attempts. Retry
+          is opt-in because a full collection is slow (minutes).
 
         Args:
             output_path: Destination file path for the downloaded bundle.
@@ -239,32 +256,108 @@ class ManagersManager:
             manager_id: Manager ID (default "1").
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
+            reuse_existing: When True (default), look for a matching prior
+                task and reuse its artifact/wait on it. Set False to always
+                trigger a fresh collection.
+            max_retries: Extra retries after a failed collection (default 0
+                — no retry). Applies only to trigger-and-wait failures; a
+                reused prior task is never retried.
+            retry_backoff: Seconds to sleep between retries (default 30).
 
         Returns:
             The absolute path of the downloaded file.
 
         Raises:
-            RedfishException: When the collection task ends in a non-OK state.
+            LogCollectFailedError: When collection ultimately fails (all
+                retries exhausted); carries BMC messages / progress history.
         """
+        import time as _time
+
         from .log_collect_strategies import (
             LogCollectStrategyRegistry,
             VendorDetector,
         )
+        from ..exceptions import LogCollectFailedError
 
         vendor = VendorDetector.detect(self._client)
         strategy = LogCollectStrategyRegistry.get(vendor)
 
-        task = self.collect_diagnostic_data(
-            diagnostic_data_type, log_id, manager_id, oem_params=None
-        )
+        # --- Step 1: reuse a prior collection when available -------------
+        if reuse_existing:
+            existing = self._find_existing_collect_task(strategy, manager_id)
+            if existing is not None:
+                state = (existing.task_state or "").lower()
+                if state == "completed":
+                    logger.info(
+                        "collect_and_download: reusing completed prior task %r",
+                        existing.id,
+                    )
+                    return strategy.download_artifact(
+                        self._client, existing, output_path
+                    )
+                # Non-terminal -> just wait on it.
+                logger.info(
+                    "collect_and_download: waiting on in-flight prior task %r",
+                    existing.id,
+                )
+                finished = strategy.wait_until_ready(
+                    self._client, existing, poll_interval, timeout
+                )
+                return strategy.download_artifact(
+                    self._client, finished, output_path
+                )
 
-        # The strategy owns the "wait until the bundle is ready" step because
-        # vendors differ: standard uses the Redfish TaskService, while some
-        # OEM schemes (e.g. ZTE) poll a bespoke progress endpoint instead.
-        finished = strategy.wait_until_ready(
-            self._client, task, poll_interval, timeout
-        )
-        return strategy.download_artifact(self._client, finished, output_path)
+        # --- Step 2: trigger + wait + download, with optional retry ------
+        last_exc: Optional[LogCollectFailedError] = None
+        attempts = max_retries + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                task = self.collect_diagnostic_data(
+                    diagnostic_data_type, log_id, manager_id, oem_params=None
+                )
+                finished = strategy.wait_until_ready(
+                    self._client, task, poll_interval, timeout
+                )
+                return strategy.download_artifact(
+                    self._client, finished, output_path
+                )
+            except LogCollectFailedError as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    break
+                logger.warning(
+                    "collect_and_download: attempt %d/%d failed (%s); "
+                    "retrying in %ds",
+                    attempt, attempts, exc, retry_backoff,
+                )
+                _time.sleep(max(int(retry_backoff), 0))
+
+        assert last_exc is not None
+        raise last_exc
+
+    def _find_existing_collect_task(self, strategy, manager_id: str) -> Optional[Task]:
+        """Resolve LogServices link then ask the strategy for a prior task."""
+        from ._log_helpers import require_log_services_link
+
+        try:
+            manager = self.get(manager_id)
+            odata_id = require_log_services_link(
+                manager, f"Manager {manager.id!r}"
+            )
+        except Exception as exc:  # noqa: BLE001 — reuse discovery is best-effort
+            logger.debug(
+                "collect_and_download: skip reuse discovery (%s)", exc
+            )
+            return None
+        try:
+            return strategy.find_existing_task(
+                self._client, odata_id, manager_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "collect_and_download: find_existing_task failed (%s)", exc
+            )
+            return None
 
     def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """

@@ -25,12 +25,17 @@ import tempfile
 import unittest
 from typing import Any, Dict, List, Optional
 
-from redfish_sdk import LogEntry, RedfishClient, RedfishValidationError
+from redfish_sdk import (
+    LogCollectFailedError,
+    LogEntry,
+    RedfishClient,
+    RedfishValidationError,
+)
 from redfish_sdk.exceptions import RedfishException
 from redfish_sdk.models.common import Link
 from redfish_sdk.models.logs import Log
 from redfish_sdk.models.managers import Manager
-from redfish_sdk.models.task import Task
+from redfish_sdk.models.task import Message, Task
 from redfish_sdk.managers.log_collect_strategies import (
     GenericLogCollectStrategy,
     InspurLogCollectStrategy,
@@ -474,6 +479,421 @@ class TestCollectAndDownload(VendorRestoreMixin):
         with self.assertRaises(RedfishException) as ctx:
             client.collect_and_download_diagnostic_data("/tmp/9.tar.gz")
         self.assertIn("did not succeed", str(ctx.exception))
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Reuse-of-prior-task + retry + rich failure details
+# ---------------------------------------------------------------------------
+
+
+class TestReusePriorTask(VendorRestoreMixin):
+    """
+    ``collect_and_download_diagnostic_data(reuse_existing=True)`` should
+    prefer downloading the artifact of a prior collect task on the BMC
+    rather than triggering a new (possibly redundant or failing) collection.
+    """
+
+    def _stub_common(self, client) -> None:
+        _stub_manager(client)
+        _stub_log_service(
+            client,
+            actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
+        )
+        _force_vendor("generic")
+
+    def test_reuse_completed_prior_task_skips_trigger(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+
+        # Strategy reports a completed prior task -> should NOT call post.
+        prior = Task.model_construct(
+            id="7",
+            odata_id="/redfish/v1/TaskService/Tasks/7",
+            task_state="Completed",
+            task_status="OK",
+        )
+        client._managers._find_existing_collect_task = (  # type: ignore[assignment]
+            lambda strategy, manager_id: prior
+        )
+
+        def unexpected_post(*a, **kw):
+            raise AssertionError("collect trigger must not run when reusing")
+
+        client._http_client.post = unexpected_post  # type: ignore[assignment]
+        client._http_client.get_raw = (  # type: ignore[assignment]
+            lambda path: {"Id": "7", "AdditionalDataURI": "/redfish/v1/dl/7.tgz"}
+        )
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
+        )
+
+        path = client.collect_and_download_diagnostic_data("/tmp/7.tgz")
+        self.assertEqual(path, os.path.abspath("/tmp/7.tgz"))
+        client.close()
+
+    def test_reuse_running_prior_task_waits_only(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+
+        prior = Task.model_construct(
+            id="8",
+            odata_id="/redfish/v1/TaskService/Tasks/8",
+            task_state="Running",
+        )
+        client._managers._find_existing_collect_task = (  # type: ignore[assignment]
+            lambda strategy, manager_id: prior
+        )
+
+        # wait_for_task returns a completed version of the same task.
+        completed = Task.model_construct(
+            id="8",
+            odata_id="/redfish/v1/TaskService/Tasks/8",
+            task_state="Completed",
+            task_status="OK",
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: completed
+        )
+        client._http_client.get_raw = (  # type: ignore[assignment]
+            lambda path: {"Id": "8", "AdditionalDataURI": "/redfish/v1/dl/8.tgz"}
+        )
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
+        )
+
+        def unexpected_post(*a, **kw):
+            raise AssertionError("collect trigger must not run when reusing")
+
+        client._http_client.post = unexpected_post  # type: ignore[assignment]
+
+        path = client.collect_and_download_diagnostic_data("/tmp/8.tgz")
+        self.assertEqual(path, os.path.abspath("/tmp/8.tgz"))
+        client.close()
+
+    def test_reuse_existing_false_forces_new_trigger(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+
+        # Even if a prior task exists, reuse_existing=False must trigger fresh.
+        prior = Task.model_construct(
+            id="99", odata_id="/redfish/v1/TaskService/Tasks/99",
+            task_state="Completed", task_status="OK",
+        )
+        client._managers._find_existing_collect_task = (  # type: ignore[assignment]
+            lambda strategy, manager_id: prior
+        )
+
+        triggered = []
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                triggered.append(path)
+                or Task.model_construct(id="new-1")
+            )
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id="new-1",
+                odata_id="/redfish/v1/TaskService/Tasks/new-1",
+                task_state="Completed",
+                task_status="OK",
+            )
+        )
+        client._http_client.get_raw = (  # type: ignore[assignment]
+            lambda path: {"Id": "new-1", "AdditionalDataURI": "/x"}
+        )
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
+        )
+
+        client.collect_and_download_diagnostic_data(
+            "/tmp/x.tgz", reuse_existing=False
+        )
+        self.assertEqual(len(triggered), 1, "trigger must run when reuse disabled")
+        client.close()
+
+
+class TestRetryOnFailure(VendorRestoreMixin):
+    """
+    ``collect_and_download_diagnostic_data(max_retries=N)`` should retry the
+    trigger-and-wait sequence on :class:`LogCollectFailedError` up to N extra
+    times, and give up (raising the last error) otherwise.
+    """
+
+    def _stub_common(self, client) -> None:
+        _stub_manager(client)
+        _stub_log_service(
+            client,
+            actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
+        )
+        _force_vendor("generic")
+        # Disable reuse and neutralise sleep.
+        client._managers._find_existing_collect_task = (  # type: ignore[assignment]
+            lambda strategy, manager_id: None
+        )
+
+    def test_no_retry_by_default(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+        attempts = []
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                attempts.append(path)
+                or Task.model_construct(id=str(len(attempts)))
+            )
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id=task_id, task_state="Exception", task_status="Critical"
+            )
+        )
+        with self.assertRaises(LogCollectFailedError):
+            client.collect_and_download_diagnostic_data("/tmp/x.tgz")
+        self.assertEqual(len(attempts), 1, "must not retry by default")
+        client.close()
+
+    def test_retry_succeeds_on_second_attempt(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+        attempts = []
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                attempts.append(path)
+                or Task.model_construct(
+                    id=str(len(attempts)),
+                    odata_id=f"/redfish/v1/TaskService/Tasks/{len(attempts)}",
+                )
+            )
+        )
+
+        def fake_wait(task_id, poll_interval, timeout):
+            # First attempt fails, second succeeds.
+            if task_id == "1":
+                return Task.model_construct(
+                    id="1", task_state="Exception", task_status="Warning"
+                )
+            return Task.model_construct(
+                id=task_id,
+                odata_id=f"/redfish/v1/TaskService/Tasks/{task_id}",
+                task_state="Completed",
+                task_status="OK",
+            )
+
+        client.wait_for_task = fake_wait  # type: ignore[assignment]
+        client._http_client.get_raw = (  # type: ignore[assignment]
+            lambda path: {"Id": "2", "AdditionalDataURI": "/dl/2"}
+        )
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
+        )
+
+        path = client.collect_and_download_diagnostic_data(
+            "/tmp/ok.tgz", max_retries=1, retry_backoff=0
+        )
+        self.assertEqual(path, os.path.abspath("/tmp/ok.tgz"))
+        self.assertEqual(len(attempts), 2)
+        client.close()
+
+    def test_retry_exhausted_raises_last_error(self) -> None:
+        client = _make_client()
+        self._stub_common(client)
+        attempts = []
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                attempts.append(path)
+                or Task.model_construct(id=str(len(attempts)))
+            )
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id=task_id, task_state="Exception", task_status="Critical",
+                messages=[Message.model_construct(
+                    message_id="Base.1.13.0.InternalError",
+                    message="Internal service error",
+                )],
+            )
+        )
+
+        with self.assertRaises(LogCollectFailedError) as ctx:
+            client.collect_and_download_diagnostic_data(
+                "/tmp/x.tgz", max_retries=2, retry_backoff=0
+            )
+        # 1 initial + 2 retries = 3 attempts.
+        self.assertEqual(len(attempts), 3)
+        # Last error carries detailed BMC context.
+        self.assertEqual(ctx.exception.task_state, "Exception")
+        self.assertEqual(ctx.exception.task_status, "Critical")
+        self.assertTrue(
+            any("InternalError" in (m.get("MessageId") or "")
+                for m in ctx.exception.messages)
+        )
+        client.close()
+
+
+class TestFailureDetails(VendorRestoreMixin):
+    """LogCollectFailedError must expose full BMC diagnostic context."""
+
+    def test_generic_failure_populates_messages(self) -> None:
+        client = _make_client()
+        _stub_manager(client)
+        _stub_log_service(
+            client,
+            actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
+        )
+        _force_vendor("generic")
+        client._managers._find_existing_collect_task = (  # type: ignore[assignment]
+            lambda strategy, manager_id: None
+        )
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: Task.model_construct(id="42")
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id="42",
+                task_state="Cancelled",
+                task_status="Warning",
+                messages=[
+                    Message.model_construct(
+                        message_id="TaskEvent.1.0.3.TaskStarted",
+                        message="Task started",
+                    ),
+                    Message.model_construct(
+                        message_id="TaskEvent.1.0.3.TaskAborted",
+                        message="Task completed with errors",
+                        severity="Warning",
+                    ),
+                    Message.model_construct(
+                        message_id="Base.1.13.0.InternalError",
+                        message="The request failed due to an internal service error.",
+                        resolution="Retry later.",
+                    ),
+                ],
+            )
+        )
+        with self.assertRaises(LogCollectFailedError) as ctx:
+            client.collect_and_download_diagnostic_data("/tmp/x.tgz")
+        e = ctx.exception
+        self.assertEqual(e.task_id, "42")
+        self.assertEqual(e.task_state, "Cancelled")
+        self.assertEqual(e.task_status, "Warning")
+        self.assertEqual(len(e.messages), 3)
+        # The one-line summary highlights the tail messages.
+        self.assertIn("InternalError", str(e))
+        client.close()
+
+
+class TestFindExistingTaskDiscovery(VendorRestoreMixin):
+    """base find_existing_task (TaskService heuristic) + ZTE override."""
+
+    def test_generic_finds_task_by_payload_target(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        strategy = client._managers  # placeholder just to satisfy signature
+
+        from redfish_sdk.managers.log_collect_strategies import (
+            GenericLogCollectStrategy,
+        )
+        strategy = GenericLogCollectStrategy()
+
+        # get_tasks returns two members; only one is a collection task.
+        client.get_tasks = (  # type: ignore[assignment]
+            lambda: [
+                Task.model_construct(id="1", odata_id="/redfish/v1/TaskService/Tasks/1"),
+                Task.model_construct(id="2", odata_id="/redfish/v1/TaskService/Tasks/2"),
+            ]
+        )
+
+        def fake_get_raw(path):
+            if path.endswith("/Tasks/1"):
+                return {"Id": "1", "TaskState": "Completed", "StartTime": "2026-01-01"}
+            if path.endswith("/Tasks/2"):
+                return {
+                    "Id": "2",
+                    "TaskState": "Running",
+                    "StartTime": "2026-02-01",
+                    "Payload": {
+                        "TargetUri": (
+                            "/redfish/v1/Systems/1/LogServices/Log/Actions/"
+                            "LogService.CollectDiagnosticData"
+                        )
+                    },
+                }
+            raise AssertionError(f"unexpected get_raw: {path}")
+
+        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+
+        found = strategy.find_existing_task(client, "/x", manager_id="1")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.id, "2")
+        client.close()
+
+    def test_generic_returns_none_when_no_collect_task(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        from redfish_sdk.managers.log_collect_strategies import (
+            GenericLogCollectStrategy,
+        )
+        strategy = GenericLogCollectStrategy()
+
+        client.get_tasks = lambda: []  # type: ignore[assignment]
+        self.assertIsNone(
+            strategy.find_existing_task(client, "/x", manager_id="1")
+        )
+        client.close()
+
+    def test_zte_reuses_completed_progress(self) -> None:
+        client = _make_client()
+        _force_vendor("zte")
+        from redfish_sdk.managers.log_collect_strategies import ZteLogCollectStrategy
+
+        strategy = ZteLogCollectStrategy()
+
+        def fake_get_raw(path):
+            if path == "/x/LogServices":
+                return {
+                    "@odata.id": "/x/LogServices",
+                    "Actions": {"Oem": {"#LogServices.Dump": {
+                        "target": "/x/LogServices/Actions/LogServices.Dump"
+                    }}},
+                }
+            if path.endswith("Dump/Progress"):
+                return {
+                    "State": "STATE_COMPLETED",
+                    "Percentage": "100",
+                    "TarPath": "/tmp/logs/ok.tar.gz",
+                    "Type": "AllLogs",
+                }
+            raise AssertionError(f"unexpected: {path}")
+
+        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        found = strategy.find_existing_task(client, "/x/LogServices", "Self")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.task_state, "Completed")
+        self.assertEqual(getattr(found, "_zte_tar_path"), "/tmp/logs/ok.tar.gz")
+        client.close()
+
+    def test_zte_returns_none_when_progress_failed(self) -> None:
+        client = _make_client()
+        _force_vendor("zte")
+        from redfish_sdk.managers.log_collect_strategies import ZteLogCollectStrategy
+
+        strategy = ZteLogCollectStrategy()
+
+        def fake_get_raw(path):
+            if path == "/x/LogServices":
+                return {
+                    "Actions": {"Oem": {"#LogServices.Dump": {
+                        "target": "/x/LogServices/Actions/LogServices.Dump"
+                    }}},
+                }
+            if path.endswith("Dump/Progress"):
+                return {"State": "STATE_FAILED", "TarPath": ".tar.gz"}
+            raise AssertionError(f"unexpected: {path}")
+
+        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        self.assertIsNone(
+            strategy.find_existing_task(client, "/x/LogServices", "Self")
+        )
         client.close()
 
 

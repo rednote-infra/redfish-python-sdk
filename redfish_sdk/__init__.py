@@ -28,6 +28,7 @@ Quick start:
 """
 from .client import RedfishClient
 from .exceptions import (
+    LogCollectFailedError,
     RedfishAuthError,
     RedfishConnectionError,
     RedfishException,
@@ -67,6 +68,7 @@ __all__ = [
     "RedfishConnectionError",
     "RedfishTimeoutError",
     "RedfishValidationError",
+    "LogCollectFailedError",
     # Models commonly used at API boundary.
     "BootOption",
     "DnsService",

@@ -54,3 +54,41 @@ class RedfishValidationError(RedfishException):
 
     def __init__(self, message: str):
         super().__init__(400, message)
+
+
+class LogCollectFailedError(RedfishException):
+    """
+    Raised when out-of-band diagnostic-data collection fails on the BMC.
+
+    Carries the full BMC context so the caller can diagnose without having to
+    re-query the BMC: the terminal task state/status, the complete list of
+    BMC messages, and (when available) the history of progress snapshots
+    observed while polling.
+
+    Attributes:
+        task_id: Task or synthetic-task identifier the collection ran under.
+        task_state: Terminal ``TaskState`` reported by the BMC.
+        task_status: Terminal ``TaskStatus`` reported by the BMC.
+        messages: Full ``Messages`` list from the BMC (each entry retains its
+            ``MessageId`` / ``Message`` / ``Severity`` / ``Resolution`` fields).
+        progress_history: Optional list of intermediate progress snapshots
+            captured during polling — useful for vendors (e.g. ZTE) whose
+            progress endpoint replaces earlier state on each poll.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        task_id: str = "",
+        task_state: str = "",
+        task_status: str = "",
+        messages: list = None,
+        progress_history: list = None,
+    ):
+        super().__init__(500, message)
+        self.task_id = task_id
+        self.task_state = task_state
+        self.task_status = task_status
+        self.messages = messages or []
+        self.progress_history = progress_history or []

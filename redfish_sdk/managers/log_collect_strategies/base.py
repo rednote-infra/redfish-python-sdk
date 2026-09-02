@@ -221,9 +221,11 @@ class BaseLogCollectStrategy(ABC):
         ``Dump/Progress`` endpoint) override this.
 
         Raises:
-            RedfishException: When the task ends in a non-OK terminal state.
+            LogCollectFailedError: When the task ends in a non-OK terminal
+                state; carries the full BMC messages for diagnosis.
+            RedfishException: When there is no Task id to poll.
         """
-        from ...exceptions import RedfishException
+        from ...exceptions import LogCollectFailedError, RedfishException
 
         task_id = task.id
         if not task_id:
@@ -236,12 +238,70 @@ class BaseLogCollectStrategy(ABC):
         state = finished.task_state or ""
         status = finished.task_status or ""
         if state != "Completed" or (status and status != "OK"):
-            raise RedfishException(
-                500,
-                f"Diagnostic data collection task {task_id} did not succeed: "
-                f"state={state!r}, status={status!r}, messages={finished.messages!r}",
+            raise LogCollectFailedError(
+                _format_failure_message(task_id, state, status, finished.messages),
+                task_id=str(task_id),
+                task_state=state,
+                task_status=status,
+                messages=_serialise_messages(finished.messages),
             )
         return finished
+
+    # ------------------------------------------------------------------
+    # Existing-task discovery (for reusing a previous collection artifact)
+    # ------------------------------------------------------------------
+
+    def find_existing_task(
+        self,
+        client: "RedfishClient",
+        log_services_odata_id: str,
+        manager_id: str = "1",
+    ) -> Optional[Task]:
+        """
+        Return the most recent collection task on the BMC, or ``None``.
+
+        The default implementation walks ``/redfish/v1/TaskService/Tasks`` and
+        keeps tasks whose ``Payload.TargetUri`` targets a
+        ``CollectDiagnosticData`` action; the newest match (by ``StartTime``
+        when available, else by id) is returned. This lets
+        :meth:`ManagersManager.collect_and_download_diagnostic_data` reuse a
+        prior artifact instead of triggering a redundant (or failing) run.
+
+        Vendors whose progress is not exposed via TaskService (e.g. ZTE)
+        override this. Returning ``None`` means "no prior task to reuse; go
+        ahead and trigger a fresh collection".
+        """
+        from ...exceptions import RedfishException
+
+        try:
+            tasks = client.get_tasks()
+        except RedfishException as exc:
+            logger.debug("find_existing_task: enumerate failed: %s", exc)
+            return None
+
+        matches = []
+        for t in tasks:
+            if not t.odata_id:
+                continue
+            try:
+                raw = client._http_client.get_raw(t.odata_id)
+            except RedfishException:
+                continue
+            if _looks_like_collect_task(raw):
+                # Re-parse to catch any fields the collection listing dropped.
+                matches.append((raw.get("StartTime") or "", raw))
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda x: x[0], reverse=True)
+        newest_raw = matches[0][1]
+        logger.info(
+            "find_existing_task: reusing Task %s (state=%s)",
+            newest_raw.get("@odata.id"),
+            newest_raw.get("TaskState"),
+        )
+        return Task.model_validate(newest_raw)
 
     def download_artifact(
         self,
@@ -275,6 +335,73 @@ class GenericLogCollectStrategy(BaseLogCollectStrategy):
     Used when the server vendor is not recognised. Sends the DMTF-standard
     body and reads ``AdditionalDataURI`` from the produced log entry.
     """
+
+
+def _serialise_messages(messages) -> list:
+    """
+    Convert a Task's ``Messages`` list to plain dicts, preserving the fields
+    an operator needs to diagnose a failed collection.
+    """
+    out = []
+    if not messages:
+        return out
+    for m in messages:
+        # ``Message`` model — pydantic ``.model_dump`` if available, else best-
+        # effort attribute copy.
+        if hasattr(m, "model_dump"):
+            try:
+                out.append(m.model_dump(by_alias=True, exclude_none=True))
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+        out.append({
+            "MessageId": getattr(m, "message_id", None),
+            "Message": getattr(m, "message", None),
+            "Severity": getattr(m, "severity", None),
+            "Resolution": getattr(m, "resolution", None),
+        })
+    return out
+
+
+def _format_failure_message(
+    task_id: str, state: str, status: str, messages
+) -> str:
+    """Build a human-readable one-line summary used as the exception text."""
+    serialised = _serialise_messages(messages)
+    highlights = []
+    for m in serialised[-3:]:  # last few messages are usually the most useful
+        mid = m.get("MessageId") or ""
+        msg = m.get("Message") or ""
+        if mid or msg:
+            highlights.append(f"{mid}: {msg}".strip(": "))
+    tail = f" | {' | '.join(highlights)}" if highlights else ""
+    return (
+        f"Diagnostic data collection task {task_id} did not succeed: "
+        f"state={state!r}, status={status!r}{tail}"
+    )
+
+
+# Substrings inside ``Payload.TargetUri`` that identify a diagnostic-data
+# collection task published on the standard TaskService.
+_COLLECT_TARGET_HINTS = (
+    "CollectDiagnosticData",
+    "CollectAllLog",
+    "LogServices.Dump",
+)
+
+
+def _looks_like_collect_task(raw: dict) -> bool:
+    """Heuristic: does this Task's Payload target a log-collection action?"""
+    if not isinstance(raw, dict):
+        return False
+    payload = raw.get("Payload") or {}
+    target = payload.get("TargetUri") or ""
+    if isinstance(target, str) and any(h in target for h in _COLLECT_TARGET_HINTS):
+        return True
+    # Fallback: the Task's ``Name`` sometimes reveals it (e.g. Inspur uses
+    # "One-click log collection task").
+    name = (raw.get("Name") or "").lower()
+    return "log collect" in name or "diagnostic" in name
 
 
 def _resolve_task_log_entry(

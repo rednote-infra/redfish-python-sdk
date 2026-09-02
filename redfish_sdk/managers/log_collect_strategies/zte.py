@@ -113,6 +113,67 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         )
 
     # ------------------------------------------------------------------
+    # Existing-task discovery (via Dump/Progress, not TaskService)
+    # ------------------------------------------------------------------
+
+    def find_existing_task(
+        self,
+        client: "RedfishClient",
+        log_services_odata_id: str,
+        manager_id: str = "1",
+    ) -> Optional[Task]:
+        """
+        Probe ``Dump/Progress`` for a reusable collection.
+
+        - ``State`` in DONE + valid ``TarPath`` → synthetic Task marked
+          ``Completed`` with ``_zte_tar_path`` set, so the caller can skip
+          straight to download.
+        - Non-terminal (Running / preparing) → synthetic Task marked
+          ``Running`` carrying the progress URL, so the caller can just wait.
+        - ``State`` in FAIL or missing → return ``None`` (no reuse; a fresh
+          collection should be triggered).
+        """
+        from ...exceptions import RedfishException
+
+        target = self.discover_collect_target(
+            client, log_services_odata_id, log_id=None
+        )
+        if not target:
+            return None
+        progress_url = f"{target}/Progress"
+        try:
+            prog = client._http_client.get_raw(progress_url)
+        except RedfishException:
+            return None
+
+        state = str(prog.get("State", ""))
+        tar_path = prog.get("TarPath") or ""
+        if state in _DONE_STATES and tar_path and tar_path != ".tar.gz":
+            logger.info(
+                "ZTE find_existing_task: reusing completed collection tar=%s",
+                tar_path,
+            )
+            return Task.model_construct(
+                id="zte-dump",
+                task_state="Completed",
+                _zte_progress_url=progress_url,
+                _zte_manager_id=manager_id,
+                _zte_tar_path=tar_path,
+            )
+        if state and state not in _FAIL_STATES:
+            logger.info(
+                "ZTE find_existing_task: reusing in-flight collection (state=%s)",
+                state,
+            )
+            return Task.model_construct(
+                id="zte-dump",
+                task_state="Running",
+                _zte_progress_url=progress_url,
+                _zte_manager_id=manager_id,
+            )
+        return None
+
+    # ------------------------------------------------------------------
     # Wait (bespoke progress endpoint, not TaskService)
     # ------------------------------------------------------------------
 
@@ -124,7 +185,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         timeout: int = 1800,
     ) -> Task:
         """Poll the OEM ``Dump/Progress`` endpoint until completion."""
-        from ...exceptions import RedfishException
+        from ...exceptions import LogCollectFailedError, RedfishException
 
         progress_url = getattr(task, "_zte_progress_url", None)
         if not progress_url:
@@ -137,11 +198,20 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         elapsed = 0
         tar_path: Optional[str] = None
         iteration = 0
+        history: list = []
         while elapsed < timeout:
             prog = client._http_client.get_raw(progress_url)
             state = str(prog.get("State", ""))
             pct = prog.get("Percentage")
             tar_path = prog.get("TarPath") or tar_path
+            snapshot = {
+                "state": state,
+                "percentage": pct,
+                "tar_path": prog.get("TarPath"),
+                "message": prog.get("Message"),
+                "type": prog.get("Type"),
+            }
+            history.append(snapshot)
             logger.info(
                 "ZTE Dump progress: state=%s percent=%s tar=%s",
                 state, pct, tar_path,
@@ -154,18 +224,24 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
             # BMC often keeps the previous run's terminal state until the new
             # task takes over); treat it as terminal on the second read.
             if state in _FAIL_STATES and iteration > 0:
-                raise RedfishException(
-                    500,
+                raise LogCollectFailedError(
                     f"ZTE diagnostic collection failed: state={state!r}, "
-                    f"message={prog.get('Message')!r}",
+                    f"message={prog.get('Message')!r} (tar_path={tar_path!r})",
+                    task_id=str(task.id or "zte-dump"),
+                    task_state=state,
+                    task_status=prog.get("Message", ""),
+                    progress_history=history,
                 )
             time.sleep(step)
             elapsed += step
             iteration += 1
 
-        raise RedfishException(
-            500,
-            f"ZTE diagnostic collection did not complete within {timeout}s",
+        raise LogCollectFailedError(
+            f"ZTE diagnostic collection did not complete within {timeout}s "
+            f"(last state={history[-1]['state'] if history else 'unknown'!r})",
+            task_id=str(task.id or "zte-dump"),
+            task_state=history[-1]["state"] if history else "",
+            progress_history=history,
         )
 
     # ------------------------------------------------------------------

@@ -974,12 +974,19 @@ class RedfishClient:
         manager_id: str = "1",
         poll_interval: int = 5,
         timeout: int = 1800,
+        *,
+        reuse_existing: bool = True,
+        max_retries: int = 0,
+        retry_backoff: int = 30,
     ) -> str:
         """
         One-click helper: trigger collection, wait for the task, then download.
 
-        Chains :meth:`collect_diagnostic_data` -> :meth:`wait_for_task` ->
-        :meth:`download_diagnostic_data`.
+        Reuses a prior matching collection when available (``reuse_existing``,
+        default True) and can retry a failed collection up to ``max_retries``
+        times (default 0 — no retry). See
+        :meth:`ManagersManager.collect_and_download_diagnostic_data` for the
+        full behaviour contract.
 
         Args:
             output_path: Destination file path for the downloaded bundle.
@@ -988,9 +995,16 @@ class RedfishClient:
             manager_id: Manager ID (default "1").
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
+            reuse_existing: Reuse a matching prior task on the BMC when
+                available (default True).
+            max_retries: Extra retries on failure (default 0).
+            retry_backoff: Seconds between retries (default 30).
 
         Returns:
             The absolute path of the downloaded file.
+
+        Raises:
+            LogCollectFailedError: When the collection ultimately fails.
         """
         return self._managers.collect_and_download_diagnostic_data(
             output_path,
@@ -999,6 +1013,9 @@ class RedfishClient:
             manager_id,
             poll_interval,
             timeout,
+            reuse_existing=reuse_existing,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
         )
 
     def get_network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
