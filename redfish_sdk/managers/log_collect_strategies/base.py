@@ -121,6 +121,38 @@ class BaseLogCollectStrategy(ABC):
             f"please specify log_id. Candidates: {_describe_services(supported)}"
         )
 
+    def trigger(
+        self,
+        client: "RedfishClient",
+        log_services_odata_id: str,
+        *,
+        log_id: Optional[str] = None,
+        diagnostic_data_type: Optional[str] = None,
+        oem_params: Optional[Dict[str, Any]] = None,
+        manager_id: str = "1",
+    ) -> Task:
+        """
+        Trigger collection and return a Task. Standard: discover the action
+        target, build the body, POST it and parse a Redfish Task.
+
+        Vendors whose trigger response is not a Redfish Task (e.g. ZTE returns
+        a plain success message and tracks progress separately) override this
+        and return a synthetic Task carrying the context they need later.
+        """
+        from ...exceptions import RedfishValidationError
+
+        target = self.discover_collect_target(
+            client, log_services_odata_id, log_id
+        )
+        if not target:
+            raise RedfishValidationError(
+                f"No diagnostic-data collection action found under "
+                f"{log_services_odata_id} (strategy={type(self).__name__})"
+            )
+        body = self.build_collect_body(diagnostic_data_type, oem_params)
+        logger.info("Collect trigger POST %s body=%s", target, body)
+        return client._http_client.post(target, Task, raw_body=body)
+
     def resolve_diagnostic_data_type(
         self, diagnostic_data_type: Optional[str]
     ) -> str:
@@ -172,6 +204,44 @@ class BaseLogCollectStrategy(ABC):
         if entry is not None and entry.additional_data_uri:
             return entry.additional_data_uri
         return None
+
+    def wait_until_ready(
+        self,
+        client: "RedfishClient",
+        task: Task,
+        poll_interval: int = 5,
+        timeout: int = 1800,
+    ) -> Task:
+        """
+        Block until the collection is ready, then return the finished task.
+
+        Standard behaviour polls the Redfish TaskService via
+        ``wait_for_task`` and validates the terminal state. Vendors whose
+        progress is tracked outside TaskService (e.g. ZTE's bespoke
+        ``Dump/Progress`` endpoint) override this.
+
+        Raises:
+            RedfishException: When the task ends in a non-OK terminal state.
+        """
+        from ...exceptions import RedfishException
+
+        task_id = task.id
+        if not task_id:
+            raise RedfishException(
+                500,
+                "Collection did not return a Task id; cannot poll for completion",
+            )
+
+        finished = client.wait_for_task(task_id, poll_interval, timeout)
+        state = finished.task_state or ""
+        status = finished.task_status or ""
+        if state != "Completed" or (status and status != "OK"):
+            raise RedfishException(
+                500,
+                f"Diagnostic data collection task {task_id} did not succeed: "
+                f"state={state!r}, status={status!r}, messages={finished.messages!r}",
+            )
+        return finished
 
     def download_artifact(
         self,

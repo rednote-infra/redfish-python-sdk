@@ -29,17 +29,20 @@ from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
 from .inspur import InspurLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
 from .xfusion import XFusionLogCollectStrategy
+from .zte import ZteLogCollectStrategy
 
 # --- Auto-register vendor strategies that differ from the DMTF default ---
 LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
+LogCollectStrategyRegistry.register("zte", ZteLogCollectStrategy())
 
 __all__ = [
     "BaseLogCollectStrategy",
     "GenericLogCollectStrategy",
     "XFusionLogCollectStrategy",
     "InspurLogCollectStrategy",
+    "ZteLogCollectStrategy",
     "LogCollectStrategyRegistry",
     "VendorDetector",
 ]

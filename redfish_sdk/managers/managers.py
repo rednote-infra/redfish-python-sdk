@@ -150,19 +150,18 @@ class ManagersManager:
         vendor = VendorDetector.detect(self._client)
         strategy = LogCollectStrategyRegistry.get(vendor)
 
-        target = strategy.discover_collect_target(self._client, odata_id, log_id)
-        if not target:
-            raise RedfishValidationError(
-                f"No diagnostic-data collection action found under {odata_id} "
-                f"(vendor={vendor}, strategy={type(strategy).__name__})"
-            )
-        body = strategy.build_collect_body(diagnostic_data_type, oem_params)
-
         logger.info(
-            "CollectDiagnosticData: vendor=%s, strategy=%s, target=%s, body=%s",
-            vendor, type(strategy).__name__, target, body,
+            "CollectDiagnosticData: vendor=%s, strategy=%s, log_services=%s",
+            vendor, type(strategy).__name__, odata_id,
         )
-        return self._http.post(target, Task, raw_body=body)
+        return strategy.trigger(
+            self._client,
+            odata_id,
+            log_id=log_id,
+            diagnostic_data_type=diagnostic_data_type,
+            oem_params=oem_params,
+            manager_id=manager_id,
+        )
 
     def download_diagnostic_data(
         self,
@@ -247,30 +246,25 @@ class ManagersManager:
         Raises:
             RedfishException: When the collection task ends in a non-OK state.
         """
-        from ..exceptions import RedfishException
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        vendor = VendorDetector.detect(self._client)
+        strategy = LogCollectStrategyRegistry.get(vendor)
 
         task = self.collect_diagnostic_data(
             diagnostic_data_type, log_id, manager_id, oem_params=None
         )
-        task_id = task.id
-        if not task_id:
-            raise RedfishException(
-                500,
-                "CollectDiagnosticData did not return a Task id; "
-                "cannot poll for completion",
-            )
 
-        finished = self._client.wait_for_task(task_id, poll_interval, timeout)
-        state = finished.task_state or ""
-        status = finished.task_status or ""
-        if state != "Completed" or (status and status != "OK"):
-            raise RedfishException(
-                500,
-                f"Diagnostic data collection task {task_id} did not succeed: "
-                f"state={state!r}, status={status!r}, messages={finished.messages!r}",
-            )
-
-        return self.download_diagnostic_data(finished, output_path)
+        # The strategy owns the "wait until the bundle is ready" step because
+        # vendors differ: standard uses the Redfish TaskService, while some
+        # OEM schemes (e.g. ZTE) poll a bespoke progress endpoint instead.
+        finished = strategy.wait_until_ready(
+            self._client, task, poll_interval, timeout
+        )
+        return strategy.download_artifact(self._client, finished, output_path)
 
     def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """

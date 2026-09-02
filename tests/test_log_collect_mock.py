@@ -37,6 +37,7 @@ from redfish_sdk.managers.log_collect_strategies import (
     LogCollectStrategyRegistry,
     VendorDetector,
     XFusionLogCollectStrategy,
+    ZteLogCollectStrategy,
 )
 
 # Fixed dummy credentials — these tests are fully offline (all HTTP calls are
@@ -513,6 +514,11 @@ class TestStrategies(unittest.TestCase):
             LogCollectStrategyRegistry.get("inspur"), InspurLogCollectStrategy
         )
 
+    def test_zte_registered(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("zte"), ZteLogCollectStrategy
+        )
+
 
 # ---------------------------------------------------------------------------
 # Inspur (浪潮) collection-level CollectAllLog / DownloadAllLog OEM flow
@@ -576,6 +582,149 @@ class TestInspurStrategy(VendorRestoreMixin):
         path = client.download_diagnostic_data(task, output_path="/tmp/out/")
         self.assertEqual(path, "/tmp/out/dump_x.tar.gz")
         self.assertEqual(recorder.last["path"], self._DOWNLOAD)
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# ZTE (中兴) Dump / Dump/Progress / GeneralDownload OEM flow
+# ---------------------------------------------------------------------------
+
+
+class TestZteStrategy(VendorRestoreMixin):
+    """
+    Verify ZTE uses the OEM Dump action + bespoke progress endpoint +
+    Manager.GeneralDownload for the artifact.
+    """
+
+    _LOGSVCS = "/redfish/v1/Managers/Self/LogServices"
+    _DUMP = f"{_LOGSVCS}/Actions/LogServices.Dump"
+    _PROGRESS = f"{_DUMP}/Progress"
+    _MANAGER = "/redfish/v1/Managers/Self"
+    _GD = f"{_MANAGER}/Actions/Manager.GeneralDownload"
+
+    def _stub_manager(self, client) -> None:
+        """Stub a ZTE-style Manager (id='Self') with a LogServices link."""
+        manager = Manager.model_construct(
+            id="Self",
+            odata_id=self._MANAGER,
+            log_services=Link(**{"@odata.id": self._LOGSVCS}),
+        )
+        client._managers.get = lambda manager_id="Self": manager  # type: ignore[assignment]
+
+    def _stub_get_raw(self, client, *, progress_state="STATE_COMPLETED",
+                     tar_path="/tmp/logs/xxx.tar.gz"):
+        """Stub get_raw for: LogServices collection, Dump/Progress, Managers
+        collection, and Manager resource (for GeneralDownload discovery)."""
+        managers_col = "/redfish/v1/Managers"
+
+        def fake(path):
+            if path == self._LOGSVCS:
+                return {
+                    "@odata.id": self._LOGSVCS,
+                    "Actions": {"Oem": {"#LogServices.Dump": {"target": self._DUMP}}},
+                }
+            if path == self._PROGRESS:
+                return {
+                    "State": progress_state,
+                    "Percentage": "100" if "COMPLETED" in progress_state else "50",
+                    "TarPath": tar_path,
+                    "Type": "AllLogs",
+                    "Message": "",
+                }
+            if path == managers_col:
+                return {"Members": [{"@odata.id": self._MANAGER}]}
+            if path == self._MANAGER:
+                return {
+                    "@odata.id": self._MANAGER,
+                    "Actions": {"#Manager.GeneralDownload": {"target": self._GD}},
+                }
+            raise AssertionError(f"unexpected get_raw path: {path}")
+
+        client._http_client.get_raw = fake  # type: ignore[assignment]
+        client._get_managers_collection_odata_id = (  # type: ignore[assignment]
+            lambda: managers_col
+        )
+
+    def test_trigger_posts_dump_with_default_type(self) -> None:
+        client = _make_client()
+        self._stub_manager(client)
+        self._stub_get_raw(client)
+        _force_vendor("zte")
+
+        recorder = _CallRecorder()
+
+        def fake_post(path, mc, body=None, raw_body=None):
+            recorder.record(path=path, raw_body=raw_body)
+            # Dump returns a plain success message, not a Task; the strategy
+            # ignores the parsed body.
+            return mc.model_construct()
+
+        client._http_client.post = fake_post  # type: ignore[assignment]
+
+        task = client.collect_diagnostic_data(manager_id="Self")
+        self.assertEqual(recorder.last["path"], self._DUMP)
+        self.assertEqual(recorder.last["raw_body"], {"Type": "AllLogs"})
+        # Synthetic task should carry progress URL context.
+        self.assertEqual(getattr(task, "_zte_progress_url"), self._PROGRESS)
+        client.close()
+
+    def test_wait_until_ready_polls_progress_endpoint(self) -> None:
+        client = _make_client()
+        self._stub_get_raw(client, progress_state="STATE_COMPLETED",
+                          tar_path="/tmp/logs/ok.tar.gz")
+        strategy = ZteLogCollectStrategy()
+
+        task = Task.model_construct(
+            id="zte-dump",
+            _zte_progress_url=self._PROGRESS,
+            _zte_manager_id="Self",
+        )
+        finished = strategy.wait_until_ready(client, task, poll_interval=1, timeout=5)
+        self.assertEqual(finished.task_state, "Completed")
+        self.assertEqual(getattr(finished, "_zte_tar_path"), "/tmp/logs/ok.tar.gz")
+        client.close()
+
+    def test_wait_until_ready_raises_on_failed_state(self) -> None:
+        client = _make_client()
+        # First poll already terminal-failed after one non-zero elapsed cycle.
+        self._stub_get_raw(client, progress_state="STATE_FAILED")
+        strategy = ZteLogCollectStrategy()
+
+        task = Task.model_construct(
+            id="zte-dump", _zte_progress_url=self._PROGRESS
+        )
+        # iteration 0 treats STATE_FAILED as stale; the second read (at
+        # elapsed=1s) is terminal and raises.
+        with self.assertRaises(RedfishException) as ctx:
+            strategy.wait_until_ready(client, task, poll_interval=1, timeout=3)
+        self.assertIn("ZTE diagnostic collection", str(ctx.exception))
+        client.close()
+
+    def test_download_uses_general_download_with_tar_path(self) -> None:
+        client = _make_client()
+        self._stub_get_raw(client)
+        _force_vendor("zte")
+
+        recorder = _CallRecorder()
+        client._http_client.download_via_post = (  # type: ignore[assignment]
+            lambda path, output_path=None, raw_body=None: (
+                recorder.record(path=path, raw_body=raw_body,
+                                output_path=output_path)
+                or "/tmp/out/ok.tar.gz"
+            )
+        )
+
+        # Task carrying the resolved TarPath from a completed wait.
+        task = Task.model_construct(
+            id="zte-dump",
+            _zte_progress_url=self._PROGRESS,
+            _zte_manager_id="Self",
+            _zte_tar_path="/tmp/logs/ok.tar.gz",
+        )
+        path = client.download_diagnostic_data(task, output_path="/tmp/out/")
+        self.assertEqual(path, "/tmp/out/ok.tar.gz")
+        self.assertEqual(recorder.last["path"], self._GD)
+        self.assertEqual(recorder.last["raw_body"], {"Path": "/tmp/logs/ok.tar.gz"})
         client.close()
 
 

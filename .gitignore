@@ -48,3 +48,7 @@ coverage.xml
 
 # pytest
 .pytest_cache/
+
+# examples output (real-BMC runs)
+examples/*.tar.gz
+examples/*.zip
