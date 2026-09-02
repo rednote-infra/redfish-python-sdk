@@ -914,6 +914,93 @@ class RedfishClient:
         """
         return self._managers.log_entries(log_id, manager_id)
 
+    # ------------------------------------------------------------------
+    # Out-of-band diagnostic log collection + download
+    # ------------------------------------------------------------------
+
+    def collect_diagnostic_data(
+        self,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        oem_params: Optional[dict] = None,
+    ) -> Task:
+        """
+        Trigger ``#LogService.CollectDiagnosticData`` to generate an
+        out-of-band diagnostic log bundle.
+
+        Automatically detects the server vendor and builds the vendor-specific
+        request body; the action target is discovered dynamically from the
+        LogService ``Actions`` block.
+
+        Args:
+            diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
+                the vendor default (OEM when available, else ``Manager``).
+            log_id: Log service ID. ``None`` auto-selects the sole service.
+            manager_id: Manager ID (default "1").
+            oem_params: Optional dict shallow-merged into the request body.
+
+        Returns:
+            A :class:`Task` referencing the asynchronous collection.
+        """
+        return self._managers.collect_diagnostic_data(
+            diagnostic_data_type, log_id, manager_id, oem_params
+        )
+
+    def download_diagnostic_data(
+        self,
+        task_or_entry,
+        output_path: Optional[str] = None,
+    ) -> "bytes | str":
+        """
+        Download the artifact produced by a diagnostic-data collection.
+
+        Args:
+            task_or_entry: A completed :class:`Task` or a :class:`LogEntry`
+                carrying ``AdditionalDataURI``.
+            output_path: When provided, stream the bundle to this path and
+                return the absolute file path; otherwise return ``bytes``.
+
+        Returns:
+            The file bytes, or the absolute written path.
+        """
+        return self._managers.download_diagnostic_data(task_or_entry, output_path)
+
+    def collect_and_download_diagnostic_data(
+        self,
+        output_path: str,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        poll_interval: int = 5,
+        timeout: int = 1800,
+    ) -> str:
+        """
+        One-click helper: trigger collection, wait for the task, then download.
+
+        Chains :meth:`collect_diagnostic_data` -> :meth:`wait_for_task` ->
+        :meth:`download_diagnostic_data`.
+
+        Args:
+            output_path: Destination file path for the downloaded bundle.
+            diagnostic_data_type: See :meth:`collect_diagnostic_data`.
+            log_id: See :meth:`collect_diagnostic_data`.
+            manager_id: Manager ID (default "1").
+            poll_interval: Task poll interval in seconds (default 5).
+            timeout: Max wait in seconds (default 1800 — bundles are slow).
+
+        Returns:
+            The absolute path of the downloaded file.
+        """
+        return self._managers.collect_and_download_diagnostic_data(
+            output_path,
+            diagnostic_data_type,
+            log_id,
+            manager_id,
+            poll_interval,
+            timeout,
+        )
+
     def get_network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """
         Get network protocol configuration for a BMC manager.

@@ -54,3 +54,7 @@ class LogEntry(Entity):
     diagnostic_data_size_bytes: Optional[int] = Field(
         None, alias="DiagnosticDataSizeBytes"
     )
+    # URI of the diagnostic data artifact produced by
+    # ``#LogService.CollectDiagnosticData``. Present on the log entry the
+    # collection task creates once the bundle is ready.
+    additional_data_uri: Optional[str] = Field(None, alias="AdditionalDataURI")

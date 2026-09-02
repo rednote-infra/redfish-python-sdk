@@ -426,6 +426,72 @@ class RedfishHttpClient:
         self._raise_for_status(response, path)
         return response.text
 
+    def download(
+        self,
+        uri: str,
+        output_path: Optional[str] = None,
+        chunk_size: int = 65536,
+    ) -> "bytes | str":
+        """
+        Download a binary artifact (e.g. a diagnostic-data bundle).
+
+        Reuses the session's authentication (Basic/Token), ``verify_ssl`` and
+        proxy configuration, so it works with BMCs whose artifact URIs require
+        the same credentials as the Redfish API.
+
+        A relative ``uri`` (starting with ``/``) is resolved against the BMC
+        ``scheme://host``; an absolute ``http(s)://`` URI is used as-is.
+
+        Args:
+            uri: Absolute URL or Redfish-relative path of the artifact.
+            output_path: When provided, stream the body to this path (creating
+                parent directories) and return the absolute file path. When
+                ``None``, return the full content as ``bytes``.
+            chunk_size: Streaming chunk size in bytes (default 64 KiB).
+
+        Returns:
+            The file bytes when ``output_path`` is ``None``; otherwise the
+            absolute path of the written file.
+
+        Raises:
+            RedfishException: On non-2xx HTTP responses.
+            RedfishConnectionError / RedfishTimeoutError: On transport errors.
+        """
+        import os
+
+        url = uri if uri.startswith(("http://", "https://")) else self._build_url(uri)
+        logger.info("DOWNLOAD %s", url)
+
+        try:
+            response = self._session.get(
+                url,
+                stream=True,
+                timeout=(self.connect_timeout, self.read_timeout),
+            )
+        except requests.exceptions.Timeout as exc:
+            raise RedfishTimeoutError(self.host) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise RedfishConnectionError(self.host, exc) from exc
+
+        logger.info("DOWNLOAD %s -> HTTP %d", url, response.status_code)
+        self._raise_for_status(response, url)
+
+        if output_path is None:
+            return response.content
+
+        abs_path = os.path.abspath(output_path)
+        parent = os.path.dirname(abs_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        with open(abs_path, "wb") as fh:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    fh.write(chunk)
+
+        logger.info("DOWNLOAD saved to %s", abs_path)
+        return abs_path
+
     def set_auth_token(self, token: str) -> None:
         """
         Switch from Basic Auth to Session-based auth (X-Auth-Token).

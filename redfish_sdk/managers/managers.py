@@ -16,7 +16,8 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 
 from ..models.logs import Log, LogEntry
-from ..exceptions import RedfishNotFoundError
+from ..models.task import Task
+from ..exceptions import RedfishNotFoundError, RedfishValidationError
 from ..models.managers import (
     DnsService,
     EthernetInterface,
@@ -104,6 +105,171 @@ class ManagersManager:
         odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
         log = resolve_log_service(self._client, odata_id, log_id)
         return fetch_log_entries(self._client, log)
+
+    # ------------------------------------------------------------------
+    # Out-of-band diagnostic log collection + download
+    # ------------------------------------------------------------------
+
+    def collect_diagnostic_data(
+        self,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        oem_params: Optional[dict] = None,
+    ) -> Task:
+        """
+        Trigger ``#LogService.CollectDiagnosticData`` on a manager log service.
+
+        Automatically detects the server vendor and builds the vendor-specific
+        request body. The action target is discovered dynamically from the
+        LogService ``Actions`` block (never string-concatenated).
+
+        Args:
+            diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
+                the vendor default (OEM when available, else ``Manager``).
+            log_id: Log service ID. ``None`` auto-selects the sole service.
+            manager_id: Manager ID (default "1").
+            oem_params: Optional dict shallow-merged into the request body.
+
+        Returns:
+            A :class:`Task` referencing the asynchronous collection.
+
+        Raises:
+            RedfishValidationError: When the log service does not expose the
+                ``#LogService.CollectDiagnosticData`` action.
+        """
+        from ._log_helpers import require_log_services_link, resolve_log_service
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        manager = self.get(manager_id)
+        odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
+        log = resolve_log_service(self._client, odata_id, log_id)
+
+        target = _extract_collect_action_target(log.actions)
+        if not target:
+            raise RedfishValidationError(
+                f"Log service {log.id!r} does not expose "
+                f"#LogService.CollectDiagnosticData action"
+            )
+
+        vendor = VendorDetector.detect(self._client)
+        strategy = LogCollectStrategyRegistry.get(vendor)
+        body = strategy.build_body(diagnostic_data_type, oem_params)
+
+        logger.info(
+            "CollectDiagnosticData: vendor=%s, strategy=%s, target=%s, body=%s",
+            vendor, type(strategy).__name__, target, body,
+        )
+        return self._http.post(target, Task, raw_body=body)
+
+    def download_diagnostic_data(
+        self,
+        task_or_entry,
+        output_path: Optional[str] = None,
+    ) -> "bytes | str":
+        """
+        Download the artifact produced by a diagnostic-data collection.
+
+        Args:
+            task_or_entry: A completed :class:`Task` (its associated log entry
+                is resolved to find the artifact URI) or a :class:`LogEntry`
+                that already carries ``AdditionalDataURI``.
+            output_path: When provided, stream the bundle to this path and
+                return the absolute file path; otherwise return ``bytes``.
+
+        Returns:
+            The file bytes, or the absolute written path.
+
+        Raises:
+            RedfishValidationError: When no artifact URI can be resolved.
+            RedfishException: On download HTTP errors.
+        """
+        uri = self._resolve_diagnostic_download_uri(task_or_entry)
+        if not uri:
+            raise RedfishValidationError(
+                "Could not resolve a diagnostic-data download URI "
+                "(no AdditionalDataURI on the task or log entry)"
+            )
+
+        logger.info("Downloading diagnostic data from %s", uri)
+        return self._http.download(uri, output_path)
+
+    def collect_and_download_diagnostic_data(
+        self,
+        output_path: str,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        poll_interval: int = 5,
+        timeout: int = 1800,
+    ) -> str:
+        """
+        End-to-end helper: trigger collection, wait, then download.
+
+        Chains :meth:`collect_diagnostic_data` -> the existing
+        ``wait_for_task`` -> :meth:`download_diagnostic_data`.
+
+        Args:
+            output_path: Destination file path for the downloaded bundle.
+            diagnostic_data_type: See :meth:`collect_diagnostic_data`.
+            log_id: See :meth:`collect_diagnostic_data`.
+            manager_id: Manager ID (default "1").
+            poll_interval: Task poll interval in seconds (default 5).
+            timeout: Max wait in seconds (default 1800 — bundles are slow).
+
+        Returns:
+            The absolute path of the downloaded file.
+
+        Raises:
+            RedfishException: When the collection task ends in a non-OK state.
+        """
+        from ..exceptions import RedfishException
+
+        task = self.collect_diagnostic_data(
+            diagnostic_data_type, log_id, manager_id, oem_params=None
+        )
+        task_id = task.id
+        if not task_id:
+            raise RedfishException(
+                500,
+                "CollectDiagnosticData did not return a Task id; "
+                "cannot poll for completion",
+            )
+
+        finished = self._client.wait_for_task(task_id, poll_interval, timeout)
+        state = finished.task_state or ""
+        status = finished.task_status or ""
+        if state != "Completed" or (status and status != "OK"):
+            raise RedfishException(
+                500,
+                f"Diagnostic data collection task {task_id} did not succeed: "
+                f"state={state!r}, status={status!r}, messages={finished.messages!r}",
+            )
+
+        return self.download_diagnostic_data(finished, output_path)
+
+    def _resolve_diagnostic_download_uri(self, task_or_entry) -> Optional[str]:
+        """Resolve the artifact URI from a Task or LogEntry input."""
+        from ..models.logs import LogEntry
+        from ..models.task import Task
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        if isinstance(task_or_entry, LogEntry):
+            return task_or_entry.additional_data_uri
+
+        if isinstance(task_or_entry, Task):
+            vendor = VendorDetector.detect(self._client)
+            strategy = LogCollectStrategyRegistry.get(vendor)
+            return strategy.extract_download_uri(self._client, task_or_entry)
+
+        # Duck-typed fallback: any object exposing additional_data_uri.
+        return getattr(task_or_entry, "additional_data_uri", None)
 
     def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """
@@ -440,3 +606,19 @@ class ManagersManager:
             manager_id, "sol_source_control_info", None,
             SolSourceControlInfo, "SOLSourceControlInfo"
         )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — Actions block parsing
+# ---------------------------------------------------------------------------
+
+def _extract_collect_action_target(actions: Optional[dict]) -> Optional[str]:
+    """
+    Return the ``#LogService.CollectDiagnosticData`` action target URL, or None.
+
+    Reuses the shared Actions-parsing helper from ``systems`` so both log
+    services follow the same discovery rules (no string concatenation).
+    """
+    from .systems import _extract_action_target
+
+    return _extract_action_target(actions, "#LogService.CollectDiagnosticData")
