@@ -38,9 +38,9 @@ from redfish_sdk.managers.log_collect_strategies import (
     XFusionLogCollectStrategy,
 )
 
-MOCK_HOST = os.environ.get("BMC_IP", "mock-bmc-host")
-MOCK_USER = os.environ.get("BMC_USER", "mock-user")
-MOCK_PASSWORD = os.environ.get("BMC_PASSWORD", "mock-password")
+MOCK_HOST = "10.27.97.153"
+MOCK_USER = "Admin"
+MOCK_PASSWORD = "Admin@2024"
 
 COLLECT_TARGET = (
     "/redfish/v1/Managers/1/LogServices/Log1/Actions/"
@@ -209,6 +209,141 @@ class TestCollectDiagnosticData(VendorRestoreMixin):
         with self.assertRaises(RedfishValidationError) as ctx:
             client.collect_diagnostic_data()
         self.assertIn("CollectDiagnosticData", str(ctx.exception))
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-LogService resolution for CollectDiagnosticData
+# ---------------------------------------------------------------------------
+
+
+class TestMultiLogServiceResolution(VendorRestoreMixin):
+    """Auto-selection + duplicate-id handling for collect_diagnostic_data."""
+
+    @staticmethod
+    def _stub_services(client, members, singles):
+        """
+        members: list[Log] returned by the collection listing.
+        singles: dict[odata_id -> Log] returned by single-resource GET.
+        """
+        _stub_manager(client)
+        client._get_collection = (  # type: ignore[assignment]
+            lambda odata_id, mc: members if mc is Log else []
+        )
+        client._http_client.get = (  # type: ignore[assignment]
+            lambda path, mc: singles[path]
+        )
+        _force_vendor("generic")
+
+    def _member(self, log_id, url):
+        return Log.model_construct(id=log_id, odata_id=url)
+
+    def _single(self, log_id, url, *, supports):
+        actions = (
+            {"#LogService.CollectDiagnosticData": {"target": f"{url}/Actions/collect"}}
+            if supports
+            else None
+        )
+        return Log.model_construct(id=log_id, odata_id=url, actions=actions)
+
+    def test_auto_selects_only_supported_service(self) -> None:
+        client = _make_client()
+        u_log = "/redfish/v1/Managers/1/LogServices/Log"
+        u_audit = "/redfish/v1/Managers/1/LogServices/AuditLog"
+        members = [self._member("Log", u_log), self._member("AuditLog", u_audit)]
+        singles = {
+            u_log: self._single("Log", u_log, supports=True),
+            u_audit: self._single("AuditLog", u_audit, supports=False),
+        }
+        self._stub_services(client, members, singles)
+
+        recorder = _CallRecorder()
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                recorder.record(path=path) or Task.model_construct(id="1")
+            )
+        )
+
+        # log_id=None but only "Log" supports the action -> auto-selected.
+        client.collect_diagnostic_data()
+        self.assertEqual(recorder.last["path"], f"{u_log}/Actions/collect")
+        client.close()
+
+    def test_none_supported_raises(self) -> None:
+        client = _make_client()
+        u_a = "/redfish/v1/Managers/1/LogServices/A"
+        u_b = "/redfish/v1/Managers/1/LogServices/B"
+        members = [self._member("A", u_a), self._member("B", u_b)]
+        singles = {
+            u_a: self._single("A", u_a, supports=False),
+            u_b: self._single("B", u_b, supports=False),
+        }
+        self._stub_services(client, members, singles)
+
+        with self.assertRaises(RedfishValidationError) as ctx:
+            client.collect_diagnostic_data()
+        self.assertIn("No log service", str(ctx.exception))
+        client.close()
+
+    def test_multiple_supported_raises(self) -> None:
+        client = _make_client()
+        u_a = "/redfish/v1/Managers/1/LogServices/A"
+        u_b = "/redfish/v1/Managers/1/LogServices/B"
+        members = [self._member("A", u_a), self._member("B", u_b)]
+        singles = {
+            u_a: self._single("A", u_a, supports=True),
+            u_b: self._single("B", u_b, supports=True),
+        }
+        self._stub_services(client, members, singles)
+
+        with self.assertRaises(RedfishValidationError) as ctx:
+            client.collect_diagnostic_data()
+        self.assertIn("specify log_id", str(ctx.exception))
+        client.close()
+
+    def test_duplicate_id_resolved_by_odata_id(self) -> None:
+        client = _make_client()
+        # Two services share id "Log"; caller passes the full @odata.id.
+        u1 = "/redfish/v1/Systems/1/LogServices/Log"
+        u2 = "/redfish/v1/Managers/1/LogServices/Log"
+        members = [self._member("Log", u1), self._member("Log", u2)]
+        # Explicit log_id path uses resolve_log_service (no single GET needed);
+        # the target comes from the matched member's actions.
+        members[1].actions = {
+            "#LogService.CollectDiagnosticData": {"target": f"{u2}/Actions/collect"}
+        }
+        _stub_manager(client)
+        client._get_collection = (  # type: ignore[assignment]
+            lambda odata_id, mc: members if mc is Log else []
+        )
+        _force_vendor("generic")
+
+        recorder = _CallRecorder()
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                recorder.record(path=path) or Task.model_construct(id="1")
+            )
+        )
+
+        client.collect_diagnostic_data(log_id=u2)
+        self.assertEqual(recorder.last["path"], f"{u2}/Actions/collect")
+        client.close()
+
+    def test_duplicate_id_ambiguous_raises(self) -> None:
+        client = _make_client()
+        u1 = "/redfish/v1/Systems/1/LogServices/Log"
+        u2 = "/redfish/v1/Managers/1/LogServices/Log"
+        members = [self._member("Log", u1), self._member("Log", u2)]
+        _stub_manager(client)
+        client._get_collection = (  # type: ignore[assignment]
+            lambda odata_id, mc: members if mc is Log else []
+        )
+        _force_vendor("generic")
+
+        # Bare duplicate id -> ambiguous, must pass full @odata.id.
+        with self.assertRaises(RedfishValidationError) as ctx:
+            client.collect_diagnostic_data(log_id="Log")
+        self.assertIn("full @odata.id", str(ctx.exception))
         client.close()
 
 

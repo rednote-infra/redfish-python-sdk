@@ -92,23 +92,56 @@ def resolve_log_service(
 
     if log_id is None:
         if len(services) > 1:
-            ids = [s.id for s in services if s.id]
             raise RedfishValidationError(
                 f"Multiple log services found, please specify log_id. "
-                f"Available: {ids}"
+                f"Available: {_describe_services(services)}"
             )
         return services[0]
 
-    # Explicit log_id — look it up by ``Log.id`` in the collection rather
-    # than rebuilding the URL by string concatenation.
-    matches = [s for s in services if s.id == log_id]
+    # Explicit log_id — accept either the ``Log.id`` or the full
+    # ``@odata.id`` so callers can disambiguate duplicate ids. Matching the
+    # collection member avoids rebuilding the URL by string concatenation.
+    matches = [
+        s for s in services if s.id == log_id or s.odata_id == log_id
+    ]
     if not matches:
-        available = [s.id for s in services if s.id]
         raise RedfishNotFoundError(
             f"{log_services_odata_id}/{log_id} "
-            f"(no log service with id={log_id!r}; available={available})"
+            f"(no log service with id or @odata.id={log_id!r}; "
+            f"available={_describe_services(services)})"
+        )
+    if len(matches) > 1:
+        # Duplicate ``Log.id`` — the caller must pass the full @odata.id.
+        raise RedfishValidationError(
+            f"Multiple log services share id={log_id!r}; "
+            f"please pass the full @odata.id instead. "
+            f"Candidates: {[s.odata_id for s in matches if s.odata_id]}"
         )
     return matches[0]
+
+
+def _describe_services(services: List[Log]) -> List[str]:
+    """
+    Render log services as ``id`` when unique, else ``id (@odata.id)``.
+
+    Some BMCs publish several services with the same ``Log.id`` (e.g. one
+    on the System side and one on the Manager side). In that case a bare id
+    list is ambiguous, so we surface the full ``@odata.id`` to help callers
+    pick the right one.
+    """
+    seen: dict = {}
+    for s in services:
+        if s.id:
+            seen[s.id] = seen.get(s.id, 0) + 1
+    labels: List[str] = []
+    for s in services:
+        if not s.id and not s.odata_id:
+            continue
+        if s.id and seen.get(s.id, 0) > 1 and s.odata_id:
+            labels.append(f"{s.id} ({s.odata_id})")
+        else:
+            labels.append(s.id or s.odata_id)
+    return labels
 
 
 def fetch_log_entries(client: "RedfishClient", log: Log) -> List[LogEntry]:

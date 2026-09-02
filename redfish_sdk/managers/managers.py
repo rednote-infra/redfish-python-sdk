@@ -138,7 +138,7 @@ class ManagersManager:
             RedfishValidationError: When the log service does not expose the
                 ``#LogService.CollectDiagnosticData`` action.
         """
-        from ._log_helpers import require_log_services_link, resolve_log_service
+        from ._log_helpers import require_log_services_link
         from .log_collect_strategies import (
             LogCollectStrategyRegistry,
             VendorDetector,
@@ -146,7 +146,7 @@ class ManagersManager:
 
         manager = self.get(manager_id)
         odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
-        log = resolve_log_service(self._client, odata_id, log_id)
+        log = self._resolve_collect_log_service(odata_id, log_id)
 
         target = _extract_collect_action_target(log.actions)
         if not target:
@@ -250,6 +250,77 @@ class ManagersManager:
             )
 
         return self.download_diagnostic_data(finished, output_path)
+
+    def _resolve_collect_log_service(
+        self,
+        log_services_odata_id: str,
+        log_id: Optional[str],
+    ) -> Log:
+        """
+        Resolve the LogService to run ``CollectDiagnosticData`` on.
+
+        Extends the generic :func:`resolve_log_service` with a smarter
+        auto-selection: when ``log_id`` is ``None`` and multiple services
+        exist, the one(s) that actually advertise
+        ``#LogService.CollectDiagnosticData`` are preferred, so unrelated
+        services (e.g. an ``AuditLog``) don't force the caller to guess.
+
+        Behaviour:
+        - Explicit ``log_id`` (bare id or full ``@odata.id``): delegate to
+          :func:`resolve_log_service` unchanged.
+        - Single service: return it.
+        - Multiple services, ``log_id`` is None: fetch each as a single
+          resource (collection members may omit ``Actions``) and keep those
+          exposing the collect action. Exactly one → auto-select; zero or
+          more than one → raise a descriptive error.
+        """
+        from ._log_helpers import _describe_services, resolve_log_service
+
+        if log_id is not None:
+            return resolve_log_service(self._client, log_services_odata_id, log_id)
+
+        services = self._client._get_collection(log_services_odata_id, Log)
+        if not services:
+            from ..exceptions import RedfishException
+
+            raise RedfishException(
+                404, f"No log services found under {log_services_odata_id}"
+            )
+        if len(services) == 1:
+            return services[0]
+
+        # Multiple services: fetch each single resource (to get Actions) and
+        # keep the ones that support CollectDiagnosticData.
+        supported: List[Log] = []
+        for svc in services:
+            if not svc.odata_id:
+                continue
+            try:
+                full = self._http.get(svc.odata_id, Log)
+            except RedfishNotFoundError:
+                continue
+            if _extract_collect_action_target(full.actions):
+                supported.append(full)
+
+        if len(supported) == 1:
+            logger.info(
+                "Auto-selected log service %r for CollectDiagnosticData",
+                supported[0].id,
+            )
+            return supported[0]
+
+        if not supported:
+            raise RedfishValidationError(
+                f"No log service under {log_services_odata_id} exposes "
+                f"#LogService.CollectDiagnosticData. "
+                f"Available: {_describe_services(services)}"
+            )
+
+        raise RedfishValidationError(
+            f"Multiple log services support CollectDiagnosticData, "
+            f"please specify log_id. "
+            f"Candidates: {_describe_services(supported)}"
+        )
 
     def _resolve_diagnostic_download_uri(self, task_or_entry) -> Optional[str]:
         """Resolve the artifact URI from a Task or LogEntry input."""
