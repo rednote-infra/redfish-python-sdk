@@ -4,9 +4,9 @@ Task service models.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .common import Entity, Link, Status
 
@@ -52,3 +52,18 @@ class Task(Entity):
     task_state: Optional[str] = Field(None, alias="TaskState")
     task_status: Optional[str] = Field(None, alias="TaskStatus")
     status: Optional[Status] = Field(None, alias="Status")
+
+    @field_validator("messages", mode="before")
+    @classmethod
+    def _normalise_messages(cls, value: Any) -> Any:
+        """
+        Accept a single ``Messages`` dict as if it were a one-element list.
+
+        The DMTF schema declares ``Task.Messages`` as an array, but some BMC
+        firmwares (observed on smoothcompute 6415 X2) put a single Message
+        object there. Wrap it so pydantic validation succeeds instead of
+        failing an otherwise-usable Task response.
+        """
+        if isinstance(value, dict):
+            return [value]
+        return value

@@ -40,6 +40,7 @@ from redfish_sdk.managers.log_collect_strategies import (
     GenericLogCollectStrategy,
     InspurLogCollectStrategy,
     LogCollectStrategyRegistry,
+    SmoothcomputeLogCollectStrategy,
     VendorDetector,
     XFusionLogCollectStrategy,
     ZteLogCollectStrategy,
@@ -939,6 +940,12 @@ class TestStrategies(unittest.TestCase):
             LogCollectStrategyRegistry.get("zte"), ZteLogCollectStrategy
         )
 
+    def test_smoothcompute_registered(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("smoothcompute"),
+            SmoothcomputeLogCollectStrategy,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Inspur (浪潮) collection-level CollectAllLog / DownloadAllLog OEM flow
@@ -1003,6 +1010,186 @@ class TestInspurStrategy(VendorRestoreMixin):
         self.assertEqual(path, "/tmp/out/dump_x.tar.gz")
         self.assertEqual(recorder.last["path"], self._DOWNLOAD)
         client.close()
+
+
+# ---------------------------------------------------------------------------
+# smoothcompute (顺算) DiagnosticService.CollectBlackBox / ExportBlackBox
+# ---------------------------------------------------------------------------
+
+
+class TestSmoothcomputeStrategy(VendorRestoreMixin):
+    """
+    Verify smoothcompute uses the OEM DiagnosticService actions and reuses
+    the standard TaskService wait flow.
+    """
+
+    _LOGSVCS = "/redfish/v1/Managers/1/LogServices"
+    _MANAGER = "/redfish/v1/Managers/1"
+    _DIAG = f"{_MANAGER}/DiagnosticService"
+    _COLLECT = f"{_DIAG}/Actions/DiagnosticService.CollectBlackBox"
+    _EXPORT = f"{_DIAG}/Actions/DiagnosticService.ExportBlackBox"
+
+    def _stub_diag_service(self, client) -> None:
+        """Stub the DiagnosticService resource so both actions are visible."""
+        def fake_get_raw(path):
+            if path == self._DIAG:
+                return {
+                    "@odata.id": self._DIAG,
+                    "Actions": {
+                        "#DiagnosticService.CollectBlackInfo": {"target": self._COLLECT},
+                        "#DiagnosticService.DownloadBlackInfo": {"target": self._EXPORT},
+                    },
+                }
+            if path == "/redfish/v1/Managers":
+                return {"Members": [{"@odata.id": self._MANAGER}]}
+            raise AssertionError(f"unexpected get_raw: {path}")
+
+        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        client._get_managers_collection_odata_id = (  # type: ignore[assignment]
+            lambda: "/redfish/v1/Managers"
+        )
+
+    def test_collect_posts_diagnostic_action_with_empty_body(self) -> None:
+        client = _make_client()
+        _stub_manager(client)
+        self._stub_diag_service(client)
+        _force_vendor("smoothcompute")
+
+        recorder = _CallRecorder()
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                recorder.record(path=path, raw_body=raw_body)
+                or Task.model_construct(
+                    id="CollectBlackBox",
+                    odata_id="/redfish/v1/TaskService/Tasks/1",
+                    task_state="Running",
+                )
+            )
+        )
+
+        task = client.collect_diagnostic_data()
+        self.assertEqual(recorder.last["path"], self._COLLECT)
+        self.assertEqual(recorder.last["raw_body"], {})
+        # Task with a human-friendly Id ("CollectBlackBox") but a numeric
+        # @odata.id — the base wait_until_ready should prefer the URL tail.
+        self.assertEqual(task.id, "CollectBlackBox")
+        client.close()
+
+    def test_download_uses_export_action(self) -> None:
+        client = _make_client()
+        self._stub_diag_service(client)
+        _force_vendor("smoothcompute")
+
+        recorder = _CallRecorder()
+        client._http_client.download_via_post = (  # type: ignore[assignment]
+            lambda path, output_path=None, raw_body=None: (
+                recorder.record(path=path, output_path=output_path)
+                or "/tmp/out/6415_X2_SN_ts.zip.gz"
+            )
+        )
+
+        task = Task.model_construct(
+            id="CollectBlackBox",
+            odata_id="/redfish/v1/TaskService/Tasks/1",
+            task_state="Completed",
+        )
+        path = client.download_diagnostic_data(task, output_path="/tmp/out/")
+        self.assertEqual(path, "/tmp/out/6415_X2_SN_ts.zip.gz")
+        self.assertEqual(recorder.last["path"], self._EXPORT)
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Base.wait_until_ready: task_id resolution from @odata.id
+# ---------------------------------------------------------------------------
+
+
+class TestWaitUntilReadyTaskIdResolution(VendorRestoreMixin):
+    """
+    smoothcompute-style BMCs put a human-friendly name into ``Task.Id`` and
+    the real TaskService key in ``@odata.id``. wait_until_ready must resolve
+    the id from the URL, not blindly use ``task.id``.
+    """
+
+    def test_prefers_odata_id_tail_over_task_id(self) -> None:
+        strategy = GenericLogCollectStrategy()
+
+        # Mimic a smoothcompute trigger response.
+        task = Task.model_construct(
+            id="CollectBlackBox",
+            odata_id="/redfish/v1/TaskService/Tasks/1",
+        )
+
+        client = _make_client()
+        captured = {}
+
+        def fake_wait(task_id, poll_interval, timeout):
+            captured["task_id"] = task_id
+            return Task.model_construct(
+                id=task_id, task_state="Completed", task_status="OK",
+            )
+
+        client.wait_for_task = fake_wait  # type: ignore[assignment]
+
+        strategy.wait_until_ready(client, task, poll_interval=1, timeout=10)
+        # Must have used the numeric tail, not the name.
+        self.assertEqual(captured["task_id"], "1")
+        client.close()
+
+    def test_falls_back_to_task_id_when_no_odata_id(self) -> None:
+        strategy = GenericLogCollectStrategy()
+        task = Task.model_construct(id="42", odata_id=None)
+
+        client = _make_client()
+        captured = {}
+
+        def fake_wait(task_id, poll_interval, timeout):
+            captured["task_id"] = task_id
+            return Task.model_construct(
+                id=task_id, task_state="Completed", task_status="OK",
+            )
+
+        client.wait_for_task = fake_wait  # type: ignore[assignment]
+
+        strategy.wait_until_ready(client, task, poll_interval=1, timeout=10)
+        self.assertEqual(captured["task_id"], "42")
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Task model: normalise non-list Messages
+# ---------------------------------------------------------------------------
+
+
+class TestTaskMessagesNormalisation(unittest.TestCase):
+    def test_single_message_dict_wrapped_as_list(self) -> None:
+        # smoothcompute returns Messages as a single object, not a list.
+        raw = {
+            "Id": "1",
+            "TaskState": "Completed",
+            "Messages": {
+                "@odata.type": "/redfish/v1/$metadata#Message.v1_1_1.Message",
+                "MessageId": "TaskEvent.1.0.0.TaskCompletedOK",
+                "Message": "The task is complete.",
+            },
+        }
+        task = Task.model_validate(raw)
+        self.assertIsInstance(task.messages, list)
+        self.assertEqual(len(task.messages), 1)
+        self.assertEqual(
+            task.messages[0].message_id, "TaskEvent.1.0.0.TaskCompletedOK"
+        )
+
+    def test_list_messages_unchanged(self) -> None:
+        raw = {
+            "Id": "1",
+            "Messages": [
+                {"MessageId": "A"},
+                {"MessageId": "B"},
+            ],
+        }
+        task = Task.model_validate(raw)
+        self.assertEqual(len(task.messages), 2)
 
 
 # ---------------------------------------------------------------------------
@@ -1250,6 +1437,22 @@ class TestLogEntryModel(unittest.TestCase):
         self.assertEqual(
             entry.additional_data_uri, "/redfish/v1/download/y.tar.gz"
         )
+
+
+# ---------------------------------------------------------------------------
+# VendorDetector: smoothcompute recognition
+# ---------------------------------------------------------------------------
+
+
+class TestVendorDetectSmoothcompute(unittest.TestCase):
+    """The Vendor / Manufacturer keyword table must recognise smoothcompute."""
+
+    def test_smoothcompute_in_keyword_table(self) -> None:
+        from redfish_sdk.managers.update_strategies.vendor_detect import (
+            _VENDOR_KEYWORDS,
+        )
+        self.assertIn("smoothcompute", _VENDOR_KEYWORDS)
+        self.assertIn("smoothcompute", _VENDOR_KEYWORDS["smoothcompute"])
 
 
 if __name__ == "__main__":

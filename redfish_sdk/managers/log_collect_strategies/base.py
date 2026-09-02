@@ -227,7 +227,19 @@ class BaseLogCollectStrategy(ABC):
         """
         from ...exceptions import LogCollectFailedError, RedfishException
 
-        task_id = task.id
+        # Prefer the id parsed from ``@odata.id`` because some BMCs
+        # (smoothcompute 6415 X2, observed in the wild) put a human-friendly
+        # name — e.g. "CollectBlackBox" — into the ``Id`` field of the trigger
+        # response while the actual TaskService key sits in the URL path
+        # (``/redfish/v1/TaskService/Tasks/1``). Falling back to ``task.id``
+        # keeps compatibility with BMCs that populate it correctly.
+        task_id: Optional[str] = None
+        if task.odata_id:
+            tail = task.odata_id.rstrip("/").rsplit("/", 1)[-1]
+            if tail:
+                task_id = tail
+        if not task_id:
+            task_id = task.id
         if not task_id:
             raise RedfishException(
                 500,

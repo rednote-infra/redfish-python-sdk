@@ -22,6 +22,9 @@ _VENDOR_KEYWORDS: Dict[str, List[str]] = {
     "nettrix": ["nettrix", "宁畅"],
     "xfusion": ["xfusion", "超聚变", "huawei"],
     "lenovo": ["lenovo", "联想"],
+    # smoothcompute (顺算) — Vendor / System.Manufacturer both report
+    # "smoothcompute" on their 6415 X2 family and similar SKUs.
+    "smoothcompute": ["smoothcompute", "顺算"],
 }
 
 

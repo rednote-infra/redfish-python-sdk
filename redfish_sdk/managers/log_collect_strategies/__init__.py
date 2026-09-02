@@ -8,10 +8,17 @@ request body and artifact resolution while keeping a single entry point in
 
 Architecture:
     BaseLogCollectStrategy (ABC)
-      ├── GenericLogCollectStrategy — standard Redfish (DMTF) default
-      ├── XFusionLogCollectStrategy — xFusion (超聚变), OEM diagnostic body
-      └── InspurLogCollectStrategy  — Inspur (浪潮), collection-level
-                                      CollectAllLog / DownloadAllLog OEM pair
+      ├── GenericLogCollectStrategy       — standard Redfish (DMTF) default
+      ├── XFusionLogCollectStrategy       — xFusion (超聚变), OEM diagnostic body
+      ├── InspurLogCollectStrategy        — Inspur (浪潮), collection-level
+                                            CollectAllLog / DownloadAllLog pair
+      ├── ZteLogCollectStrategy           — ZTE (中兴), Dump + Dump/Progress +
+                                            GeneralDownload
+      └── SmoothcomputeLogCollectStrategy — smoothcompute (顺算), OEM
+                                            DiagnosticService.CollectBlackBox /
+                                            ExportBlackBox (trigger returns a
+                                            standard Task, so waiting reuses
+                                            the base TaskService flow)
 
 Only vendors that genuinely differ from the standard DMTF behaviour get a
 dedicated strategy. Vendors whose ``CollectDiagnosticData`` matches the
@@ -28,6 +35,7 @@ from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
 from .inspur import InspurLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
+from .smoothcompute import SmoothcomputeLogCollectStrategy
 from .xfusion import XFusionLogCollectStrategy
 from .zte import ZteLogCollectStrategy
 
@@ -36,6 +44,9 @@ LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
 LogCollectStrategyRegistry.register("zte", ZteLogCollectStrategy())
+LogCollectStrategyRegistry.register(
+    "smoothcompute", SmoothcomputeLogCollectStrategy()
+)
 
 __all__ = [
     "BaseLogCollectStrategy",
@@ -43,6 +54,7 @@ __all__ = [
     "XFusionLogCollectStrategy",
     "InspurLogCollectStrategy",
     "ZteLogCollectStrategy",
+    "SmoothcomputeLogCollectStrategy",
     "LogCollectStrategyRegistry",
     "VendorDetector",
 ]

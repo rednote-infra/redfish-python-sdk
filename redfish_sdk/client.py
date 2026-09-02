@@ -406,9 +406,20 @@ class RedfishClient:
         return root.systems.odata_id
 
     def _get_task_service(self) -> TaskService:
-        """Get the TaskService resource."""
+        """
+        Get the TaskService resource.
+
+        Prefers the standard ``TaskService`` root link (present on every
+        DMTF-conformant BMC we've seen). Falls back to the non-standard
+        ``Tasks`` link some SDK-internal models also expose, and finally to
+        the well-known path so a very stripped-down BMC still works.
+        """
         root = self._get_root()
-        return self._http_client.get(root.tasks.odata_id, TaskService)
+        link = getattr(root, "task_service", None) or getattr(root, "tasks", None)
+        odata_id = getattr(link, "odata_id", None) if link is not None else None
+        if not odata_id:
+            odata_id = "/redfish/v1/TaskService"
+        return self._http_client.get(odata_id, TaskService)
 
     def _get_update_service(self) -> UpdateService:
         """Get the UpdateService resource."""
