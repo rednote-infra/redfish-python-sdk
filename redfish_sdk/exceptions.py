@@ -35,18 +35,53 @@ class RedfishAuthError(RedfishException):
 
 
 class RedfishConnectionError(RedfishException):
-    """Raised when unable to connect to the BMC."""
+    """
+    Raised when unable to connect to the BMC.
+
+    The message includes a category-specific troubleshooting hint derived
+    from the underlying ``cause`` so operators can quickly tell apart
+    "wrong IP / host down" from "wrong port / Redfish disabled" from
+    "TLS / DNS" issues.
+
+    Attributes:
+        host: The BMC host that failed to connect.
+        cause: The underlying transport exception (usually from ``requests``
+            / ``urllib3``).
+        reason: One of ``"refused"``, ``"unreachable"``, ``"dns"``,
+            ``"tls"``, ``"other"`` — a coarse category derived from ``cause``.
+    """
 
     def __init__(self, host: str, cause: Exception = None):
-        super().__init__(0, f"Unable to connect to host: {host}. Cause: {cause}")
+        self.host = host
         self.cause = cause
+        self.reason = _classify_connection_cause(cause)
+        hint = _connection_hint(host, self.reason)
+        super().__init__(
+            0,
+            f"Unable to connect to host: {host}. Cause: {cause}. {hint}",
+        )
 
 
 class RedfishTimeoutError(RedfishException):
-    """Raised when a request times out."""
+    """
+    Raised when a request times out.
+
+    Timeout usually means the BMC accepted the TCP connection but is too slow
+    to respond (e.g. mid-collection, or under heavy load). It's distinct from
+    :class:`RedfishConnectionError`, which means the TCP handshake itself
+    never succeeded.
+    """
 
     def __init__(self, host: str):
-        super().__init__(0, f"Request timed out connecting to: {host}")
+        self.host = host
+        super().__init__(
+            0,
+            f"Request timed out connecting to: {host}. "
+            f"Hint: the BMC accepted the TCP connection but did not respond "
+            f"within the read timeout — it may be busy (e.g. running a "
+            f"diagnostic collection) or overloaded. Consider raising "
+            f"``read_timeout`` on RedfishClient, or retrying later.",
+        )
 
 
 class RedfishValidationError(RedfishException):
@@ -92,3 +127,74 @@ class LogCollectFailedError(RedfishException):
         self.task_status = task_status
         self.messages = messages or []
         self.progress_history = progress_history or []
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers for RedfishConnectionError diagnosis
+# ---------------------------------------------------------------------------
+
+# Substrings observed in the string form of common transport failures.
+# Ordered so the most specific matches win when combined into a single blob.
+_CAUSE_MARKERS = (
+    ("refused", ("connection refused", "econnrefused", "errno 61", "errno 111")),
+    ("unreachable", (
+        "no route to host", "network is unreachable", "host is down",
+        "ehostunreach", "enetunreach",
+    )),
+    ("dns", (
+        "name or service not known", "nodename nor servname",
+        "temporary failure in name resolution", "getaddrinfo failed",
+    )),
+    ("tls", (
+        "ssl", "certificate", "handshake failed", "wrong version number",
+    )),
+)
+
+
+def _classify_connection_cause(cause) -> str:
+    """
+    Categorise a low-level connection failure so callers can display a
+    targeted hint. Returns one of: ``refused`` / ``unreachable`` / ``dns``
+    / ``tls`` / ``other``.
+    """
+    if cause is None:
+        return "other"
+    blob = f"{cause!r} {cause}".lower()
+    for reason, markers in _CAUSE_MARKERS:
+        for m in markers:
+            if m in blob:
+                return reason
+    return "other"
+
+
+def _connection_hint(host: str, reason: str) -> str:
+    """Return a one-line, action-oriented hint for the given failure reason."""
+    if reason == "refused":
+        return (
+            f"Hint: {host} accepted routing (host is up) but no service is "
+            f"listening on the requested TCP port. Check: 1) the IP is a BMC "
+            f"address (not a host OS address); 2) the BMC Redfish/HTTPS "
+            f"service is enabled; 3) the port matches your RedfishClient "
+            f"``scheme``/port (Redfish default is 443 for https)."
+        )
+    if reason == "unreachable":
+        return (
+            f"Hint: {host} is not routable from this machine. Check network "
+            f"connectivity (VPN / firewall / VLAN / subnet)."
+        )
+    if reason == "dns":
+        return (
+            f"Hint: could not resolve host name {host!r}. Check DNS or use "
+            f"the raw IP address instead."
+        )
+    if reason == "tls":
+        return (
+            f"Hint: TLS/SSL handshake failed with {host}. BMC self-signed "
+            f"certificates are expected — RedfishClient defaults to "
+            f"``verify_ssl=False``. If you enabled verification, provide a "
+            f"trust store; otherwise check the server's TLS version."
+        )
+    return (
+        f"Hint: unclassified connection failure to {host}. Verify basic "
+        f"connectivity with ``ping`` / ``nc -zv {host} 443``."
+    )
