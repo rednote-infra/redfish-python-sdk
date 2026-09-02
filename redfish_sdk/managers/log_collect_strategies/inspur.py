@@ -98,12 +98,23 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
         log_services_odata_id: str,
         action_name: str,
     ) -> Optional[str]:
-        """Read an Actions target from the LogServices collection raw JSON."""
-        raw = client._http_client.get_raw(log_services_odata_id)
-        actions = raw.get("Actions") or {}
-        action = actions.get(action_name) or {}
-        target = action.get("target")
-        return target if isinstance(target, str) and target else None
+        """
+        Read a collection-level OEM ``ActionTarget`` from a
+        :class:`LogServicesCollection`.
+
+        Inspur publishes the collection-level action either directly under
+        ``Actions.Oem`` (``{"Oem": {"#LogService.CollectAllLog": {...}}}``)
+        or nested under a vendor sub-key such as ``Public``
+        (``{"Oem": {"Public": {"#LogService.CollectAllLog": {...}}}}``).
+        :meth:`LogServicesCollection.oem_action` handles both shapes.
+        """
+        from ...models.log_collect import LogServicesCollection
+
+        collection = client._http_client.get(
+            log_services_odata_id, LogServicesCollection
+        )
+        action = collection.oem_action(action_name)
+        return action.target if action else None
 
     @staticmethod
     def _task_log_services_hint(client: "RedfishClient", task: Task) -> str:

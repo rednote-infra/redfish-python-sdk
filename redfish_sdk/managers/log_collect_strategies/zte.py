@@ -60,11 +60,13 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         log_id: Optional[str],
     ) -> Optional[str]:
         """Return the collection-level OEM ``LogServices.Dump`` target."""
-        raw = client._http_client.get_raw(log_services_odata_id)
-        oem = (raw.get("Actions") or {}).get("Oem") or {}
-        action = oem.get(_DUMP_ACTION) or {}
-        target = action.get("target")
-        return target if isinstance(target, str) and target else None
+        from ...models.log_collect import LogServicesCollection
+
+        collection = client._http_client.get(
+            log_services_odata_id, LogServicesCollection
+        )
+        action = collection.oem_action(_DUMP_ACTION)
+        return action.target if action else None
 
     def build_collect_body(
         self,
@@ -135,6 +137,8 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         """
         from ...exceptions import RedfishException
 
+        from ...models.log_collect import ZteDumpProgress
+
         target = self.discover_collect_target(
             client, log_services_odata_id, log_id=None
         )
@@ -142,23 +146,22 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
             return None
         progress_url = f"{target}/Progress"
         try:
-            prog = client._http_client.get_raw(progress_url)
+            prog = client._http_client.get(progress_url, ZteDumpProgress)
         except RedfishException:
             return None
 
-        state = str(prog.get("State", ""))
-        tar_path = prog.get("TarPath") or ""
-        if state in _DONE_STATES and tar_path and tar_path != ".tar.gz":
+        state = prog.state or ""
+        if state in _DONE_STATES and prog.is_valid_tar_path():
             logger.info(
                 "ZTE find_existing_task: reusing completed collection tar=%s",
-                tar_path,
+                prog.tar_path,
             )
             return Task.model_construct(
                 id="zte-dump",
                 task_state="Completed",
                 _zte_progress_url=progress_url,
                 _zte_manager_id=manager_id,
-                _zte_tar_path=tar_path,
+                _zte_tar_path=prog.tar_path,
             )
         if state and state not in _FAIL_STATES:
             logger.info(
@@ -186,6 +189,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
     ) -> Task:
         """Poll the OEM ``Dump/Progress`` endpoint until completion."""
         from ...exceptions import LogCollectFailedError, RedfishException
+        from ...models.log_collect import ZteDumpProgress
 
         progress_url = getattr(task, "_zte_progress_url", None)
         if not progress_url:
@@ -200,18 +204,11 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         iteration = 0
         history: list = []
         while elapsed < timeout:
-            prog = client._http_client.get_raw(progress_url)
-            state = str(prog.get("State", ""))
-            pct = prog.get("Percentage")
-            tar_path = prog.get("TarPath") or tar_path
-            snapshot = {
-                "state": state,
-                "percentage": pct,
-                "tar_path": prog.get("TarPath"),
-                "message": prog.get("Message"),
-                "type": prog.get("Type"),
-            }
-            history.append(snapshot)
+            prog = client._http_client.get(progress_url, ZteDumpProgress)
+            state = prog.state or ""
+            pct = prog.percentage
+            tar_path = prog.tar_path or tar_path
+            history.append(prog.snapshot())
             logger.info(
                 "ZTE Dump progress: state=%s percent=%s tar=%s",
                 state, pct, tar_path,
@@ -226,10 +223,10 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
             if state in _FAIL_STATES and iteration > 0:
                 raise LogCollectFailedError(
                     f"ZTE diagnostic collection failed: state={state!r}, "
-                    f"message={prog.get('Message')!r} (tar_path={tar_path!r})",
+                    f"message={prog.message!r} (tar_path={tar_path!r})",
                     task_id=str(task.id or "zte-dump"),
                     task_state=state,
-                    task_status=prog.get("Message", ""),
+                    task_status=prog.message or "",
                     progress_history=history,
                 )
             time.sleep(step)
@@ -256,14 +253,15 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
     ) -> "bytes | str":
         """POST ``Manager.GeneralDownload`` with the TarPath from progress."""
         from ...exceptions import RedfishValidationError
+        from ...models.log_collect import ZteDumpProgress
 
         tar_path = getattr(task, "_zte_tar_path", None)
         if not tar_path:
             # Fall back to reading progress once more.
             progress_url = getattr(task, "_zte_progress_url", None)
             if progress_url:
-                prog = client._http_client.get_raw(progress_url)
-                tar_path = prog.get("TarPath")
+                prog = client._http_client.get(progress_url, ZteDumpProgress)
+                tar_path = prog.tar_path
         if not tar_path:
             raise RedfishValidationError(
                 "ZTE download failed: no TarPath resolved from Dump/Progress"
@@ -287,20 +285,21 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         caller-supplied ``manager_id`` (which defaults to "1"), resolve the
         actual Manager from the collection's first member.
         """
-        from ...exceptions import RedfishException
+        from ...models.common import Collection
+        from ...models.managers import Manager
 
-        managers_col = client._get_managers_collection_odata_id().rstrip("/")
-        col = client._http_client.get_raw(managers_col)
-        members = col.get("Members") or []
+        managers_col_url = client._get_managers_collection_odata_id().rstrip("/")
+        col = client._http_client.get(managers_col_url, Collection[Manager])
+        members = col.members or []
         manager_url = (
-            members[0].get("@odata.id")
-            if members and isinstance(members[0], dict)
-            else f"{managers_col}/{manager_id}"
+            members[0].odata_id
+            if members and members[0].odata_id
+            else f"{managers_col_url}/{manager_id}"
         )
-        raw = client._http_client.get_raw(manager_url)
-        actions = raw.get("Actions") or {}
+        manager = client._http_client.get(manager_url, Manager)
+        actions = manager.actions or {}
         action = actions.get("#Manager.GeneralDownload") or {}
-        target = action.get("target")
+        target = action.get("target") if isinstance(action, dict) else None
         if isinstance(target, str) and target:
             return target
         return f"{manager_url}/Actions/Manager.GeneralDownload"

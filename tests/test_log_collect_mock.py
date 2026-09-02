@@ -95,6 +95,27 @@ def _stub_log_service(client: RedfishClient, *, actions) -> None:
     )
 
 
+def _install_get_dispatch(client: RedfishClient, fetch) -> None:
+    """
+    Wire both ``_http_client.get_raw`` and ``_http_client.get`` to a single
+    ``fetch(path) -> dict`` callable so a test can describe the BMC as a
+    URL→JSON map exactly once.
+
+    - ``.get_raw(path)`` returns the dict as-is.
+    - ``.get(path, ModelClass)`` runs ``ModelClass.model_validate(dict)`` so
+      strategies that switched from ``get_raw`` to typed ``get`` (see
+      ``models/log_collect.py``) work transparently.
+    """
+    def _get_raw(path):
+        return fetch(path)
+
+    def _get(path, model_class):
+        return model_class.model_validate(fetch(path))
+
+    client._http_client.get_raw = _get_raw  # type: ignore[assignment]
+    client._http_client.get = _get  # type: ignore[assignment]
+
+
 # Track VendorDetector.detect overrides so tearDown can restore the original.
 _ORIGINAL_DETECT = VendorDetector.detect
 
@@ -391,11 +412,11 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
             id="42", odata_id="/redfish/v1/TaskService/Tasks/42"
         )
 
-        # Generic strategy resolves via raw task body AdditionalDataURI.
-        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+        # Generic strategy resolves via task's AdditionalDataURI (now typed).
+        _install_get_dispatch(client, lambda path: {
             "Id": "42",
             "AdditionalDataURI": "/redfish/v1/download/42.tar.gz",
-        }
+        })
 
         recorder = _CallRecorder()
 
@@ -446,10 +467,10 @@ class TestCollectAndDownload(VendorRestoreMixin):
         client.wait_for_task = (  # type: ignore[assignment]
             lambda task_id, poll_interval, timeout: completed
         )
-        # Generic download resolves AdditionalDataURI from the task raw body.
-        client._http_client.get_raw = (  # type: ignore[assignment]
-            lambda path: {"Id": "7", "AdditionalDataURI": "/redfish/v1/download/7.tar.gz"}
-        )
+        # Generic download resolves AdditionalDataURI from the task body.
+        _install_get_dispatch(client, lambda path: {
+            "Id": "7", "AdditionalDataURI": "/redfish/v1/download/7.tar.gz",
+        })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
@@ -522,9 +543,9 @@ class TestReusePriorTask(VendorRestoreMixin):
             raise AssertionError("collect trigger must not run when reusing")
 
         client._http_client.post = unexpected_post  # type: ignore[assignment]
-        client._http_client.get_raw = (  # type: ignore[assignment]
-            lambda path: {"Id": "7", "AdditionalDataURI": "/redfish/v1/dl/7.tgz"}
-        )
+        _install_get_dispatch(client, lambda path: {
+            "Id": "7", "AdditionalDataURI": "/redfish/v1/dl/7.tgz",
+        })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
@@ -556,9 +577,9 @@ class TestReusePriorTask(VendorRestoreMixin):
         client.wait_for_task = (  # type: ignore[assignment]
             lambda task_id, poll_interval, timeout: completed
         )
-        client._http_client.get_raw = (  # type: ignore[assignment]
-            lambda path: {"Id": "8", "AdditionalDataURI": "/redfish/v1/dl/8.tgz"}
-        )
+        _install_get_dispatch(client, lambda path: {
+            "Id": "8", "AdditionalDataURI": "/redfish/v1/dl/8.tgz",
+        })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
@@ -600,9 +621,9 @@ class TestReusePriorTask(VendorRestoreMixin):
                 task_status="OK",
             )
         )
-        client._http_client.get_raw = (  # type: ignore[assignment]
-            lambda path: {"Id": "new-1", "AdditionalDataURI": "/x"}
-        )
+        _install_get_dispatch(client, lambda path: {
+            "Id": "new-1", "AdditionalDataURI": "/x",
+        })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
@@ -681,9 +702,9 @@ class TestRetryOnFailure(VendorRestoreMixin):
             )
 
         client.wait_for_task = fake_wait  # type: ignore[assignment]
-        client._http_client.get_raw = (  # type: ignore[assignment]
-            lambda path: {"Id": "2", "AdditionalDataURI": "/dl/2"}
-        )
+        _install_get_dispatch(client, lambda path: {
+            "Id": "2", "AdditionalDataURI": "/dl/2",
+        })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
         )
@@ -821,7 +842,7 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
                 }
             raise AssertionError(f"unexpected get_raw: {path}")
 
-        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        _install_get_dispatch(client, fake_get_raw)
 
         found = strategy.find_existing_task(client, "/x", manager_id="1")
         self.assertIsNotNone(found)
@@ -866,7 +887,7 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
                 }
             raise AssertionError(f"unexpected: {path}")
 
-        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        _install_get_dispatch(client, fake_get_raw)
         found = strategy.find_existing_task(client, "/x/LogServices", "Self")
         self.assertIsNotNone(found)
         self.assertEqual(found.task_state, "Completed")
@@ -891,7 +912,7 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
                 return {"State": "STATE_FAILED", "TarPath": ".tar.gz"}
             raise AssertionError(f"unexpected: {path}")
 
-        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        _install_get_dispatch(client, fake_get_raw)
         self.assertIsNone(
             strategy.find_existing_task(client, "/x/LogServices", "Self")
         )
@@ -960,13 +981,17 @@ class TestInspurStrategy(VendorRestoreMixin):
     _DOWNLOAD = f"{_COLLECTION}/Actions/Oem/Public/DownloadAllLog"
 
     def _stub_collection_actions(self, client) -> None:
-        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+        _install_get_dispatch(client, lambda path: {
             "@odata.id": self._COLLECTION,
             "Actions": {
-                "#LogService.CollectAllLog": {"target": self._COLLECT},
-                "#LogService.DownloadAllLog": {"target": self._DOWNLOAD},
+                "Oem": {
+                    "Public": {
+                        "#LogService.CollectAllLog": {"target": self._COLLECT},
+                        "#LogService.DownloadAllLog": {"target": self._DOWNLOAD},
+                    }
+                }
             },
-        }
+        })
 
     def test_collect_uses_collection_action_and_empty_body(self) -> None:
         client = _make_client()
@@ -1044,7 +1069,7 @@ class TestSmoothcomputeStrategy(VendorRestoreMixin):
                 return {"Members": [{"@odata.id": self._MANAGER}]}
             raise AssertionError(f"unexpected get_raw: {path}")
 
-        client._http_client.get_raw = fake_get_raw  # type: ignore[assignment]
+        _install_get_dispatch(client, fake_get_raw)
         client._get_managers_collection_odata_id = (  # type: ignore[assignment]
             lambda: "/redfish/v1/Managers"
         )
@@ -1247,7 +1272,7 @@ class TestZteStrategy(VendorRestoreMixin):
                 }
             raise AssertionError(f"unexpected get_raw path: {path}")
 
-        client._http_client.get_raw = fake  # type: ignore[assignment]
+        _install_get_dispatch(client, fake)
         client._get_managers_collection_odata_id = (  # type: ignore[assignment]
             lambda: managers_col
         )
@@ -1437,6 +1462,123 @@ class TestLogEntryModel(unittest.TestCase):
         self.assertEqual(
             entry.additional_data_uri, "/redfish/v1/download/y.tar.gz"
         )
+
+
+# ---------------------------------------------------------------------------
+# Typed models: LogServicesCollection / DiagnosticService / ZteDumpProgress
+# ---------------------------------------------------------------------------
+
+
+class TestLogCollectModels(unittest.TestCase):
+    """
+    Contract tests for the models that replaced ``get_raw`` calls inside
+    log_collect_strategies. If any BMC shape drifts, these should fail
+    before a real device does.
+    """
+
+    def test_log_services_collection_direct_oem_action(self) -> None:
+        # ZTE shape: {"Oem": {"#LogServices.Dump": {"target": "..."}}}
+        from redfish_sdk.models.log_collect import LogServicesCollection
+
+        col = LogServicesCollection.model_validate({
+            "@odata.id": "/x/LogServices",
+            "Members": [],
+            "Actions": {"Oem": {"#LogServices.Dump": {"target": "/x/dump"}}},
+        })
+        action = col.oem_action("#LogServices.Dump")
+        self.assertIsNotNone(action)
+        self.assertEqual(action.target, "/x/dump")
+        self.assertIsNone(col.oem_action("#NoSuch"))
+
+    def test_log_services_collection_nested_oem_action(self) -> None:
+        # Inspur shape: {"Oem": {"Public": {"#LogService.CollectAllLog": {...}}}}
+        from redfish_sdk.models.log_collect import LogServicesCollection
+
+        col = LogServicesCollection.model_validate({
+            "@odata.id": "/x/LogServices",
+            "Members": [],
+            "Actions": {"Oem": {"Public": {
+                "#LogService.CollectAllLog": {"target": "/x/collect"},
+                "#LogService.DownloadAllLog": {"target": "/x/dl"},
+            }}},
+        })
+        self.assertEqual(
+            col.oem_action("#LogService.CollectAllLog").target, "/x/collect"
+        )
+        self.assertEqual(
+            col.oem_action("#LogService.DownloadAllLog").target, "/x/dl"
+        )
+
+    def test_diagnostic_service_action_lookup(self) -> None:
+        from redfish_sdk.models.log_collect import DiagnosticService
+
+        ds = DiagnosticService.model_validate({
+            "@odata.id": "/redfish/v1/Managers/1/DiagnosticService",
+            "Id": "Diagnostic",
+            "Actions": {
+                "#DiagnosticService.CollectBlackBox": {"target": "/x/collect"},
+                "#DiagnosticService.ExportBlackBox": {"target": "/x/export"},
+            },
+        })
+        self.assertEqual(
+            ds.action("#DiagnosticService.CollectBlackBox").target, "/x/collect"
+        )
+        self.assertEqual(
+            ds.action("#DiagnosticService.ExportBlackBox").target, "/x/export"
+        )
+        self.assertIsNone(ds.action("#NoSuch"))
+
+    def test_zte_dump_progress_valid_and_placeholder_tar_path(self) -> None:
+        from redfish_sdk.models.log_collect import ZteDumpProgress
+
+        real = ZteDumpProgress.model_validate({
+            "State": "STATE_COMPLETED",
+            "Percentage": "100",
+            "TarPath": "/tmp/logs/ok.tar.gz",
+            "Type": "AllLogs",
+        })
+        self.assertTrue(real.is_valid_tar_path())
+        self.assertEqual(real.tar_path, "/tmp/logs/ok.tar.gz")
+        self.assertEqual(real.type_, "AllLogs")
+
+        idle = ZteDumpProgress.model_validate({
+            "State": "STATE_FAILED",
+            "TarPath": ".tar.gz",  # BMC's idle placeholder
+        })
+        self.assertFalse(idle.is_valid_tar_path())
+
+        # snapshot() shape is what LogCollectFailedError.progress_history uses.
+        snap = real.snapshot()
+        self.assertEqual(snap["state"], "STATE_COMPLETED")
+        self.assertEqual(snap["tar_path"], "/tmp/logs/ok.tar.gz")
+
+    def test_task_new_fields(self) -> None:
+        # Task now types Payload / Links.CreatedResources / AdditionalDataURI.
+        raw = {
+            "Id": "1",
+            "Name": "Collect Task",
+            "TaskState": "Completed",
+            "Payload": {
+                "HttpOperation": "POST",
+                "TargetUri": (
+                    "/redfish/v1/Systems/1/LogServices/Log/Actions/"
+                    "LogService.CollectDiagnosticData"
+                ),
+            },
+            "Links": {"CreatedResources": [
+                {"@odata.id": "/redfish/v1/Systems/1/LogServices/Log/Entries/9"},
+            ]},
+            "AdditionalDataURI": "/redfish/v1/dl/9.tar.gz",
+        }
+        task = Task.model_validate(raw)
+        self.assertEqual(task.payload.http_operation, "POST")
+        self.assertIn("CollectDiagnosticData", task.payload.target_uri)
+        self.assertEqual(len(task.links.created_resources), 1)
+        self.assertEqual(
+            task.links.created_resources[0].odata_id,
+            "/redfish/v1/Systems/1/LogServices/Log/Entries/9",
+        )
+        self.assertEqual(task.additional_data_uri, "/redfish/v1/dl/9.tar.gz")
 
 
 # ---------------------------------------------------------------------------

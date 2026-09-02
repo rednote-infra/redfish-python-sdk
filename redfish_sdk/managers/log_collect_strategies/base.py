@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from ...models.common import Link
 from ...models.logs import LogEntry
 from ...models.task import Task
 
@@ -291,29 +292,30 @@ class BaseLogCollectStrategy(ABC):
             logger.debug("find_existing_task: enumerate failed: %s", exc)
             return None
 
-        matches = []
+        matches: list = []
         for t in tasks:
             if not t.odata_id:
                 continue
             try:
-                raw = client._http_client.get_raw(t.odata_id)
+                # Fetch the full Task resource — the collection listing often
+                # omits Payload / Links.
+                full = client._http_client.get(t.odata_id, Task)
             except RedfishException:
                 continue
-            if _looks_like_collect_task(raw):
-                # Re-parse to catch any fields the collection listing dropped.
-                matches.append((raw.get("StartTime") or "", raw))
+            if _looks_like_collect_task(full):
+                matches.append((full.start_time or "", full))
 
         if not matches:
             return None
 
         matches.sort(key=lambda x: x[0], reverse=True)
-        newest_raw = matches[0][1]
+        newest = matches[0][1]
         logger.info(
             "find_existing_task: reusing Task %s (state=%s)",
-            newest_raw.get("@odata.id"),
-            newest_raw.get("TaskState"),
+            newest.odata_id,
+            newest.task_state,
         )
-        return Task.model_validate(newest_raw)
+        return newest
 
     def download_artifact(
         self,
@@ -402,17 +404,21 @@ _COLLECT_TARGET_HINTS = (
 )
 
 
-def _looks_like_collect_task(raw: dict) -> bool:
-    """Heuristic: does this Task's Payload target a log-collection action?"""
-    if not isinstance(raw, dict):
-        return False
-    payload = raw.get("Payload") or {}
-    target = payload.get("TargetUri") or ""
-    if isinstance(target, str) and any(h in target for h in _COLLECT_TARGET_HINTS):
+def _looks_like_collect_task(task: Task) -> bool:
+    """
+    Heuristic: does this Task's Payload target a log-collection action?
+
+    Reads typed :class:`Task` fields (``payload.target_uri`` / ``name``) —
+    no raw-dict indexing.
+    """
+    target = ""
+    if task.payload and task.payload.target_uri:
+        target = task.payload.target_uri
+    if target and any(h in target for h in _COLLECT_TARGET_HINTS):
         return True
     # Fallback: the Task's ``Name`` sometimes reveals it (e.g. Inspur uses
     # "One-click log collection task").
-    name = (raw.get("Name") or "").lower()
+    name = (task.name or "").lower()
     return "log collect" in name or "diagnostic" in name
 
 
@@ -426,33 +432,45 @@ def _resolve_task_log_entry(
     Strategy:
     1. If the task itself already carries ``AdditionalDataURI`` (some BMCs
        inline it), wrap it into a synthetic LogEntry.
-    2. Otherwise inspect the task's ``Payload``/links for a log-entry link
-       and GET it as a :class:`LogEntry`.
+    2. Otherwise inspect the task's ``Payload`` / ``Links.CreatedResources``
+       for a log-entry link and GET it as a :class:`LogEntry`.
 
     Returns ``None`` when nothing can be resolved; callers then raise a
     descriptive error.
     """
-    if task.odata_id:
-        try:
-            raw = client._http_client.get_raw(task.odata_id)
-        except Exception:  # noqa: BLE001 — best-effort discovery
-            raw = None
-        if isinstance(raw, dict):
-            uri = raw.get("AdditionalDataURI")
-            if uri:
-                return LogEntry.model_validate(raw)
+    if not task.odata_id:
+        return None
 
-            payload = raw.get("Payload") or {}
-            target = payload.get("HttpOperation") and payload.get("TargetUri")
-            entry_link = (
-                raw.get("Links", {}).get("CreatedResources")
-                or ([{"@odata.id": target}] if target else [])
-            )
-            for link in entry_link:
-                link_id = link.get("@odata.id") if isinstance(link, dict) else None
-                if link_id:
-                    try:
-                        return client._http_client.get(link_id, LogEntry)
-                    except Exception:  # noqa: BLE001
-                        continue
+    from ...exceptions import RedfishException
+
+    # Re-fetch the task as a typed Task so any additional fields that were
+    # dropped by the caller (e.g. collection listing) are populated.
+    try:
+        full = client._http_client.get(task.odata_id, Task)
+    except RedfishException:
+        return None
+
+    # 1. Some BMCs put AdditionalDataURI directly on the task body.
+    if full.additional_data_uri:
+        return LogEntry.model_construct(
+            id=full.id,
+            odata_id=full.odata_id,
+            additional_data_uri=full.additional_data_uri,
+        )
+
+    # 2. Follow a linked log entry when advertised via Links.CreatedResources
+    #    or (some BMCs) via Payload.TargetUri.
+    candidate_links: List[Link] = []
+    if full.links and full.links.created_resources:
+        candidate_links.extend(full.links.created_resources)
+    if full.payload and full.payload.target_uri:
+        candidate_links.append(Link(**{"@odata.id": full.payload.target_uri}))
+
+    for link in candidate_links:
+        if not link.odata_id:
+            continue
+        try:
+            return client._http_client.get(link.odata_id, LogEntry)
+        except RedfishException:
+            continue
     return None

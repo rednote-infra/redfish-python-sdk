@@ -367,7 +367,21 @@ class RedfishHttpClient:
 
     def get_raw(self, path: str) -> Any:
         """
-        Send a GET request and return the raw JSON dict (for dynamic structures).
+        Send a GET request and return the raw JSON dict.
+
+        .. important::
+           **Reserved for low-level exploration and diagnostic tooling.**
+           Production code inside ``redfish_sdk/`` MUST NOT call this: use
+           :meth:`get` with a typed pydantic model instead. Reaching for
+           ``get_raw`` in feature code means the resource has no model yet —
+           add one to ``redfish_sdk/models/`` first. This is enforced by
+           convention (see PR discussion on log-collection refactor); the
+           only sanctioned callers are:
+
+             * ``tools/*.py`` — diagnostic scripts for unknown BMCs
+             * third-party callers exploring OEM structures interactively
+
+        Returns the parsed JSON as a plain ``dict``/``list`` structure.
         """
         logger.debug("GET (raw) %s", path)
         response = self._request("GET", path)

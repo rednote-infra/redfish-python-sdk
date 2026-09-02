@@ -4,9 +4,9 @@ Task service models.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .common import Entity, Link, Status
 
@@ -37,12 +37,34 @@ class Message(Entity):
     severity: Optional[str] = Field(None, alias="Severity")
 
 
+class TaskPayload(BaseModel):
+    """Optional ``Task.Payload`` block — describes the operation the task
+    was created from (target URL, HTTP verb, request headers/body)."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    http_operation: Optional[str] = Field(None, alias="HttpOperation")
+    target_uri: Optional[str] = Field(None, alias="TargetUri")
+    json_body: Optional[str] = Field(None, alias="JsonBody")
+    http_headers: Optional[List[str]] = Field(None, alias="HttpHeaders")
+
+
+class TaskLinks(BaseModel):
+    """Task's ``Links`` sub-object — some BMCs use ``CreatedResources`` here
+    to point at the produced artifact (e.g. a LogEntry)."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    created_resources: Optional[List[Link]] = Field(
+        None, alias="CreatedResources"
+    )
+
+
 class Task(Entity):
     """
     Represents an asynchronous task.
     Endpoint: /redfish/v1/TaskService/Tasks/{taskId}
 
-    Long-running operations (e.g., firmware update) return a Task resource.
+    Long-running operations (e.g., firmware update, diagnostic log
+    collection) return a Task resource.
     """
     end_time: Optional[str] = Field(None, alias="EndTime")
     messages: Optional[List[Message]] = Field(None, alias="Messages")
@@ -52,6 +74,16 @@ class Task(Entity):
     task_state: Optional[str] = Field(None, alias="TaskState")
     task_status: Optional[str] = Field(None, alias="TaskStatus")
     status: Optional[Status] = Field(None, alias="Status")
+    #: Optional payload describing the underlying request (target URI etc.)
+    #: — used by log-collection heuristics to identify collect tasks.
+    payload: Optional[TaskPayload] = Field(None, alias="Payload")
+    #: Task ``Links`` — carries ``CreatedResources`` on some BMCs.
+    links: Optional[TaskLinks] = Field(None, alias="Links")
+    #: Some BMCs inline the produced artifact URI directly on the task body
+    #: (non-standard but observed in the wild).
+    additional_data_uri: Optional[str] = Field(None, alias="AdditionalDataURI")
+    #: Vendor-specific ``Oem`` block (opaque; strategies read it as needed).
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
     @field_validator("messages", mode="before")
     @classmethod

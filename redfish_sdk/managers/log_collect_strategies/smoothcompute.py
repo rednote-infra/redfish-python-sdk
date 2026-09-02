@@ -127,17 +127,16 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
         action_name: str,
     ) -> Optional[str]:
         from ...exceptions import RedfishException
+        from ...models.log_collect import DiagnosticService
 
         diag_url = f"{manager_url.rstrip('/')}/{_DIAG_SUBPATH}"
         try:
-            raw = client._http_client.get_raw(diag_url)
+            diag = client._http_client.get(diag_url, DiagnosticService)
         except RedfishException as exc:
             logger.warning("GET %s failed: %s", diag_url, exc)
             return None
-        actions = raw.get("Actions") or {}
-        action = actions.get(action_name) or {}
-        target = action.get("target")
-        return target if isinstance(target, str) and target else None
+        action = diag.action(action_name)
+        return action.target if action else None
 
     @staticmethod
     def _task_manager_url(client: "RedfishClient", task: Task) -> str:
@@ -148,15 +147,17 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
         single-Manager layout — id="1"). Falls back to
         ``/redfish/v1/Managers/1``.
         """
+        from ...models.common import Collection
+        from ...models.managers import Manager
+
         try:
-            col = client._http_client.get_raw(
-                client._get_managers_collection_odata_id()
+            col = client._http_client.get(
+                client._get_managers_collection_odata_id(),
+                Collection[Manager],
             )
-            members = col.get("Members") or []
-            if members and isinstance(members[0], dict):
-                mid = members[0].get("@odata.id")
-                if mid:
-                    return mid
+            members = col.members or []
+            if members and members[0].odata_id:
+                return members[0].odata_id
         except Exception:  # noqa: BLE001 — best-effort
             pass
         return "/redfish/v1/Managers/1"
