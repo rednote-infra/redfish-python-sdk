@@ -1036,6 +1036,29 @@ class TestInspurStrategy(VendorRestoreMixin):
         self.assertEqual(recorder.last["path"], self._DOWNLOAD)
         client.close()
 
+    def test_find_existing_task_always_none(self) -> None:
+        """
+        Inspur must never reuse a prior task — its collection artifact
+        (/tmp/onekeylog.tar.gz) is transient and DownloadAllLog 404s when
+        it's gone. Return None so the caller triggers a fresh collection.
+        """
+        client = _make_client()
+        _force_vendor("inspur")
+        strategy = InspurLogCollectStrategy()
+        # Even if TaskService is populated, Inspur must return None.
+        client.get_tasks = lambda: [  # type: ignore[assignment]
+            Task.model_construct(
+                id="1",
+                odata_id="/redfish/v1/TaskService/Tasks/1",
+                task_state="Completed",
+                name="One-click log collection task",
+            )
+        ]
+        self.assertIsNone(
+            strategy.find_existing_task(client, self._COLLECTION, manager_id="1")
+        )
+        client.close()
+
 
 # ---------------------------------------------------------------------------
 # smoothcompute (顺算) DiagnosticService.CollectBlackBox / ExportBlackBox
@@ -1475,6 +1498,32 @@ class TestLogCollectModels(unittest.TestCase):
     log_collect_strategies. If any BMC shape drifts, these should fail
     before a real device does.
     """
+
+    def test_log_services_collection_top_level_action(self) -> None:
+        # Inspur cs5280h3 layout (verified against a real BMC 10.27.97.153):
+        # actions live at the TOP of Actions{}, not under Actions.Oem.
+        # Target URL happens to be under /Oem/Public/... but the object key
+        # is the OEM-style "#LogService.CollectAllLog" at the root.
+        from redfish_sdk.models.log_collect import LogServicesCollection
+
+        col = LogServicesCollection.model_validate({
+            "@odata.id": "/x/LogServices",
+            "Members": [],
+            "Actions": {
+                "#LogService.CollectAllLog": {
+                    "target": "/x/Actions/Oem/Public/CollectAllLog"
+                },
+                "#LogService.DownloadAllLog": {
+                    "target": "/x/Actions/Oem/Public/DownloadAllLog"
+                },
+            },
+        })
+        collect = col.oem_action("#LogService.CollectAllLog")
+        self.assertIsNotNone(collect)
+        self.assertEqual(collect.target, "/x/Actions/Oem/Public/CollectAllLog")
+        download = col.oem_action("#LogService.DownloadAllLog")
+        self.assertIsNotNone(download)
+        self.assertEqual(download.target, "/x/Actions/Oem/Public/DownloadAllLog")
 
     def test_log_services_collection_direct_oem_action(self) -> None:
         # ZTE shape: {"Oem": {"#LogServices.Dump": {"target": "..."}}}

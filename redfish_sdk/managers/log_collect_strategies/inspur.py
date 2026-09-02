@@ -43,6 +43,26 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
     action pair instead of the standard per-LogService action.
     """
 
+    def find_existing_task(
+        self,
+        client: "RedfishClient",
+        log_services_odata_id: str,
+        manager_id: str = "1",
+    ) -> Optional[Task]:
+        """
+        Inspur never reuses a prior task — the collection artifact is written
+        to a fixed BMC path (``/tmp/onekeylog.tar.gz``) and overwritten /
+        purged between runs, so a "Completed" Task on the BMC does NOT imply
+        the artifact still exists (verified on cs5280h3: reusing a prior
+        task and calling DownloadAllLog returns 404
+        ``Base.1.13.0.ResourceNotFound`` for the tar.gz).
+
+        Returning ``None`` forces
+        :meth:`ManagersManager.collect_and_download_diagnostic_data` to
+        trigger a fresh collection, which regenerates the file first.
+        """
+        return None
+
     def discover_collect_target(
         self,
         client: "RedfishClient",

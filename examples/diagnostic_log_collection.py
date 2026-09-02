@@ -21,7 +21,7 @@ def main():
     # Credentials are read from environment variables:
     #   BMC_IP, BMC_USER, BMC_PASSWORD
     client = RedfishClient(
-        host=os.environ["BMC_IP"],
+        host="10.27.97.153",
         username=os.environ["BMC_USER"],
         password=os.environ["BMC_PASSWORD"],
         verify_ssl=False,

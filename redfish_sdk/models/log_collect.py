@@ -67,16 +67,37 @@ class LogServicesCollection(Entity):
 
     def oem_action(self, name: str) -> Optional[ActionTarget]:
         """
-        Return the ``ActionTarget`` for ``Actions.Oem[<vendor>][<name>]`` or
-        ``Actions.Oem[<name>]`` (some vendors nest by vendor sub-key such as
-        ``Public``, others don't). Returns ``None`` when absent.
+        Look up a collection-level action by name.
+
+        Real BMCs put "OEM-style" collection actions in one of THREE places
+        (all observed in the field):
+
+        1. Directly under ``Actions`` — Inspur cs5280h3 exposes
+           ``Actions.#LogService.CollectAllLog`` at the top level even though
+           the target URL is nested under ``/Actions/Oem/Public/``.
+        2. Directly under ``Actions.Oem`` — ZTE:
+           ``Actions.Oem.#LogServices.Dump``.
+        3. One level deeper under ``Actions.Oem.<vendor>`` — e.g. hypothetical
+           ``Actions.Oem.Public.#LogService.CollectAllLog``.
+
+        This method probes all three, in that order, and returns the first
+        match. Returns ``None`` when the name is absent everywhere.
         """
-        oem = (self.actions or {}).get("Oem") or {}
-        # Direct child (ZTE style: {"Oem": {"#LogServices.Dump": {"target":...}}}).
+        actions = self.actions or {}
+
+        # 1. Top-level Actions[<name>] (Inspur cs5280h3 layout).
+        top = actions.get(name)
+        if isinstance(top, dict) and top.get("target"):
+            return ActionTarget.model_validate(top)
+
+        oem = actions.get("Oem") or {}
+
+        # 2. Direct child of Oem (ZTE layout).
         direct = oem.get(name)
         if isinstance(direct, dict) and direct.get("target"):
             return ActionTarget.model_validate(direct)
-        # One level deeper (Inspur style: {"Oem": {"Public": {"#LogService.CollectAllLog": {...}}}}).
+
+        # 3. Nested under a vendor sub-key (Oem.Public.<name>, etc.).
         for _vendor_key, inner in oem.items():
             if not isinstance(inner, dict):
                 continue
