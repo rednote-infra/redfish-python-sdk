@@ -304,8 +304,16 @@ class TestCollectAndDownload:
 class TestStrategies:
     def test_registered_vendors(self):
         vendors = LogCollectStrategyRegistry.registered_vendors()
-        for v in ("generic", "xfusion", "lenovo", "inspur", "nettrix", "zte"):
+        # Only vendors that differ from the DMTF default get a strategy.
+        for v in ("generic", "xfusion"):
             assert v in vendors
+
+    def test_standard_vendors_fall_back_to_generic(self):
+        # Lenovo / Nettrix match the standard body -> generic fallback.
+        for v in ("lenovo", "nettrix"):
+            assert isinstance(
+                LogCollectStrategyRegistry.get(v), GenericLogCollectStrategy
+            )
 
     def test_unknown_vendor_falls_back_to_generic(self):
         strategy = LogCollectStrategyRegistry.get("does-not-exist")

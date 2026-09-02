@@ -3,8 +3,9 @@ Out-of-band diagnostic log collection examples.
 
 Demonstrates triggering a multi-vendor Redfish
 ``#LogService.CollectDiagnosticData`` action and downloading the produced
-diagnostic bundle. The SDK auto-detects the server vendor (xFusion, Lenovo,
-Inspur, Nettrix, ZTE) and falls back to the standard DMTF body for others.
+diagnostic bundle. The SDK auto-detects the server vendor and applies a
+vendor-specific body only when it differs from the standard (e.g. xFusion);
+all other vendors use the standard DMTF body.
 
 Three usage levels:
 - collect_diagnostic_data:              trigger only, returns a Task
