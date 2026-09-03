@@ -97,10 +97,15 @@ class Bmc(BaseModel):
     # Drive OEM (Inspur)
     rebuild_led: Optional[str] = Field(None, alias="RebuildLED")
     interface_type: Optional[str] = Field(None, alias="Interface")
+    # Drive temperature (联想 / 浪潮 use lowercase 'temperature')
+    drive_temperature: Optional[float] = Field(None, alias="temperature")
+    drive_temperature_celsius: Optional[float] = Field(None, alias="TemperatureCelsius")
+    drive_id: Optional[int] = Field(None, alias="DriveID")
 
     # Thermal OEM
     fan_speed_adjustment_mode: Optional[str] = Field(None, alias="FanSpeedAdjustmentMode")
     fan_speed_level_percents: Optional[int] = Field(None, alias="FanSpeedLevelPercents")
+    speed_ratio: Optional[float] = Field(None, alias="SpeedRatio")
 
     # Power OEM
     line_output_voltage: Optional[float] = Field(None, alias="LineOutputVoltage")
@@ -154,34 +159,36 @@ class Bmc(BaseModel):
 
 class Oem(BaseModel):
     """
-    Top-level OEM wrapper used in most Redfish resources.
+    Top-level OEM wrapper. Merges vendor-specific keys into a single 'bmc' view.
 
-    The 'bmc' field accepts multiple vendor-specific keys:
-    - Public (华为 iBMC / xFusion)
-    - BMC
-    - xFusion
-    - Lenovo
-
+    Vendor keys (in priority order): Public > BMC > xFusion > Lenovo > Hpe > Dell
+    > gOemCustomeString. Public wins on conflict; others only fill None fields.
     """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    # The SDK resolves vendor-specific OEM keys at parse time
     bmc: Optional[Bmc] = Field(None, alias="Public")
     host_post_code: Optional[List[Link]] = Field(None, alias="HostPostCode")
     fru_service: Optional[str] = Field(None, alias="FruService")
 
+    _VENDOR_KEYS = ("BMC", "xFusion", "Lenovo", "Hpe", "Dell", "gOemCustomeString")
+
     def model_post_init(self, __context: Any) -> None:
-        """
-        After initialization, resolve vendor-specific OEM keys into the 'bmc' field.
-        This replicates Java's @JsonAlias behavior for multi-vendor support.
-        """
-        if self.bmc is None:
-            extra = self.model_extra or {}
-            for key in ("BMC", "xFusion", "Lenovo", "Hpe", "Dell"):
-                if key in extra and extra[key] is not None:
-                    val = extra[key]
-                    if isinstance(val, dict):
-                        self.bmc = Bmc.model_validate(val)
-                    elif isinstance(val, Bmc):
-                        self.bmc = val
-                    break
+        extra = self.model_extra or {}
+        for key in self._VENDOR_KEYS:
+            val = extra.get(key)
+            if val is None:
+                continue
+            if isinstance(val, dict):
+                vendor_bmc = Bmc.model_validate(val)
+            elif isinstance(val, Bmc):
+                vendor_bmc = val
+            else:
+                continue
+            if self.bmc is None:
+                self.bmc = vendor_bmc
+                continue
+            for field_name in Bmc.model_fields:
+                if getattr(self.bmc, field_name) is None:
+                    v = getattr(vendor_bmc, field_name)
+                    if v is not None:
+                        setattr(self.bmc, field_name, v)
