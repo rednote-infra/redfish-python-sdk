@@ -168,3 +168,60 @@ class ZteDumpProgress(BaseModel):
             "message": self.message,
             "type": self.type_,
         }
+
+
+class _OemPublicProgress(BaseModel):
+    """Inner ``Oem.Public`` object of :class:`LenovoCollectProgress`."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    progress: Optional[int] = Field(None, alias="Progress")
+    status: Optional[int] = Field(None, alias="Status")
+
+
+class _OemLenovoWrapper(BaseModel):
+    """The ``Oem`` container as Lenovo returns it: ``{"Public": {...}}``."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    public: Optional[_OemPublicProgress] = Field(None, alias="Public")
+
+
+class LenovoCollectProgress(BaseModel):
+    """
+    Lenovo OEM ``.../LogServices/Actions/Oem/Public/CollectProgress`` payload.
+
+    Not a Redfish TaskService entry — GET-only endpoint that returns::
+
+        {"Oem": {"Public": {"Progress": <0..100>, "Status": <int>}}}
+
+    ``Progress`` is an int percentage (jumps quickly to 100 on this BMC's
+    firmware — observed on Lenovo servers with an AMI MegaRAC base). Lenovo
+    does not appear to expose a distinct terminal state code; the strategy
+    treats ``Progress >= 100`` as done and any non-zero ``Status`` as a
+    failure signal (Status:0 = OK based on real-BMC observation).
+    """
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    oem: Optional[_OemLenovoWrapper] = Field(None, alias="Oem")
+
+    @property
+    def progress(self) -> Optional[int]:
+        """Convenience: return ``Oem.Public.Progress`` or ``None``."""
+        if self.oem and self.oem.public:
+            return self.oem.public.progress
+        return None
+
+    @property
+    def status(self) -> Optional[int]:
+        """Convenience: return ``Oem.Public.Status`` or ``None``."""
+        if self.oem and self.oem.public:
+            return self.oem.public.status
+        return None
+
+    def is_done(self) -> bool:
+        """True when the collection has finished (progress reached 100)."""
+        p = self.progress
+        return p is not None and p >= 100
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Serialisable snapshot dict for LogCollectFailedError.progress_history."""
+        return {"progress": self.progress, "status": self.status}

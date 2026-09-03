@@ -12,6 +12,9 @@ Architecture:
       ├── XFusionLogCollectStrategy       — xFusion (超聚变), OEM diagnostic body
       ├── InspurLogCollectStrategy        — Inspur (浪潮), collection-level
                                             CollectAllLog / DownloadAllLog pair
+      ├── LenovoLogCollectStrategy        — Lenovo (联想, AMI-based),
+                                            CollectAllLog + private
+                                            CollectProgress + DownloadAllLog
       ├── ZteLogCollectStrategy           — ZTE (中兴), Dump + Dump/Progress +
                                             GeneralDownload
       └── SmoothcomputeLogCollectStrategy — smoothcompute (顺算), OEM
@@ -34,6 +37,7 @@ All strategies are auto-registered when this package is imported.
 from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
 from .inspur import InspurLogCollectStrategy
+from .lenovo import LenovoLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
 from .smoothcompute import SmoothcomputeLogCollectStrategy
 from .xfusion import XFusionLogCollectStrategy
@@ -43,6 +47,7 @@ from .zte import ZteLogCollectStrategy
 LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
+LogCollectStrategyRegistry.register("lenovo", LenovoLogCollectStrategy())
 LogCollectStrategyRegistry.register("zte", ZteLogCollectStrategy())
 LogCollectStrategyRegistry.register(
     "smoothcompute", SmoothcomputeLogCollectStrategy()
@@ -53,6 +58,7 @@ __all__ = [
     "GenericLogCollectStrategy",
     "XFusionLogCollectStrategy",
     "InspurLogCollectStrategy",
+    "LenovoLogCollectStrategy",
     "ZteLogCollectStrategy",
     "SmoothcomputeLogCollectStrategy",
     "LogCollectStrategyRegistry",

@@ -39,6 +39,7 @@ from redfish_sdk.models.task import Message, Task
 from redfish_sdk.managers.log_collect_strategies import (
     GenericLogCollectStrategy,
     InspurLogCollectStrategy,
+    LenovoLogCollectStrategy,
     LogCollectStrategyRegistry,
     SmoothcomputeLogCollectStrategy,
     VendorDetector,
@@ -932,8 +933,10 @@ class TestStrategies(unittest.TestCase):
             self.assertIn(v, vendors)
 
     def test_standard_vendors_fall_back_to_generic(self) -> None:
-        # Lenovo / Nettrix match the standard body -> generic fallback.
-        for v in ("lenovo", "nettrix"):
+        # Nettrix has no dedicated strategy yet -> generic fallback.
+        # (Lenovo used to be here, but a real Lenovo BMC turned out to use an
+        # OEM CollectAllLog trio — see TestLenovoStrategy.)
+        for v in ("nettrix",):
             self.assertIsInstance(
                 LogCollectStrategyRegistry.get(v), GenericLogCollectStrategy
             )
@@ -965,6 +968,11 @@ class TestStrategies(unittest.TestCase):
         self.assertIsInstance(
             LogCollectStrategyRegistry.get("smoothcompute"),
             SmoothcomputeLogCollectStrategy,
+        )
+
+    def test_lenovo_registered(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("lenovo"), LenovoLogCollectStrategy
         )
 
 
@@ -1056,6 +1064,139 @@ class TestInspurStrategy(VendorRestoreMixin):
         ]
         self.assertIsNone(
             strategy.find_existing_task(client, self._COLLECTION, manager_id="1")
+        )
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Lenovo (联想, AMI-based) CollectAllLog + CollectProgress + DownloadAllLog
+# ---------------------------------------------------------------------------
+
+
+class TestLenovoStrategy(VendorRestoreMixin):
+    """
+    Verify Lenovo uses the CollectAllLog/CollectProgress/DownloadAllLog OEM
+    trio and a synthetic Task that carries progress + download URLs.
+    """
+
+    _LOGSVCS = "/redfish/v1/Managers/1/LogServices"
+    _COLLECT = f"{_LOGSVCS}/Actions/Oem/Public/CollectAllLog"
+    _PROGRESS = f"{_LOGSVCS}/Actions/Oem/Public/CollectProgress"
+    _DOWNLOAD = f"{_LOGSVCS}/Actions/Oem/Public/DownloadAllLog"
+
+    def _stub_collection_actions(self, client) -> None:
+        _install_get_dispatch(client, lambda path: {
+            "@odata.id": self._LOGSVCS,
+            "Actions": {"Oem": {
+                "#LogService.CollectAllLog": {"target": self._COLLECT},
+                "#LogService.GetLogCollectProgress": {"target": self._PROGRESS},
+                "#LogService.DownloadAllLog": {"target": self._DOWNLOAD},
+            }},
+        })
+
+    def test_trigger_posts_collect_and_returns_synthetic_task(self) -> None:
+        client = _make_client()
+        _stub_manager(client)
+        self._stub_collection_actions(client)
+        _force_vendor("lenovo")
+
+        recorder = _CallRecorder()
+
+        def fake_post(path, mc, body=None, raw_body=None):
+            recorder.record(path=path, raw_body=raw_body)
+            # Lenovo returns a plain success message, not a Task.
+            return mc.model_construct()
+
+        client._http_client.post = fake_post  # type: ignore[assignment]
+
+        task = client.collect_diagnostic_data()
+        self.assertEqual(recorder.last["path"], self._COLLECT)
+        self.assertEqual(recorder.last["raw_body"], {})
+        # Synthetic Task should carry both auxiliary URLs.
+        self.assertEqual(getattr(task, "_lenovo_progress_url"), self._PROGRESS)
+        self.assertEqual(getattr(task, "_lenovo_download_url"), self._DOWNLOAD)
+        client.close()
+
+    def test_wait_until_ready_polls_progress_until_100(self) -> None:
+        client = _make_client()
+
+        # Fake progress dispenser: 40 → 100.
+        progresses = iter([40, 100])
+
+        def fetch(path):
+            if path == self._PROGRESS:
+                p = next(progresses)
+                return {"Oem": {"Public": {"Progress": p, "Status": 0}}}
+            raise AssertionError(f"unexpected path: {path}")
+
+        _install_get_dispatch(client, fetch)
+
+        strategy = LenovoLogCollectStrategy()
+        task = Task.model_construct(
+            id="lenovo-collect",
+            _lenovo_progress_url=self._PROGRESS,
+            _lenovo_download_url=self._DOWNLOAD,
+        )
+        finished = strategy.wait_until_ready(
+            client, task, poll_interval=1, timeout=10
+        )
+        self.assertEqual(finished.task_state, "Completed")
+        client.close()
+
+    def test_wait_until_ready_raises_on_nonzero_status(self) -> None:
+        client = _make_client()
+        # Progress hits 100 but Status is non-zero -> failure.
+        _install_get_dispatch(client, lambda path: {
+            "Oem": {"Public": {"Progress": 100, "Status": 3}}
+        })
+        strategy = LenovoLogCollectStrategy()
+        task = Task.model_construct(
+            id="lenovo-collect",
+            _lenovo_progress_url=self._PROGRESS,
+        )
+        with self.assertRaises(LogCollectFailedError) as ctx:
+            strategy.wait_until_ready(client, task, poll_interval=1, timeout=5)
+        self.assertIn("non-OK", str(ctx.exception))
+        self.assertEqual(ctx.exception.task_status, "3")
+        client.close()
+
+    def test_download_uses_download_all_log(self) -> None:
+        client = _make_client()
+
+        recorder = _CallRecorder()
+        client._http_client.download_via_post = (  # type: ignore[assignment]
+            lambda path, output_path=None, raw_body=None: (
+                recorder.record(path=path, output_path=output_path)
+                or "/tmp/out/lenovo_dump.tar.gz"
+            )
+        )
+
+        strategy = LenovoLogCollectStrategy()
+        task = Task.model_construct(
+            id="lenovo-collect",
+            task_state="Completed",
+            _lenovo_download_url=self._DOWNLOAD,
+        )
+        path = strategy.download_artifact(client, task, output_path="/tmp/out/")
+        self.assertEqual(path, "/tmp/out/lenovo_dump.tar.gz")
+        self.assertEqual(recorder.last["path"], self._DOWNLOAD)
+        client.close()
+
+    def test_find_existing_task_always_none(self) -> None:
+        """Lenovo BMC produces a transient bundle; never reuse a prior task."""
+        client = _make_client()
+        strategy = LenovoLogCollectStrategy()
+        # Even a populated TaskService must not fool the strategy.
+        client.get_tasks = lambda: [  # type: ignore[assignment]
+            Task.model_construct(
+                id="1",
+                odata_id="/redfish/v1/TaskService/Tasks/1",
+                task_state="Completed",
+                name="log collect",
+            )
+        ]
+        self.assertIsNone(
+            strategy.find_existing_task(client, self._LOGSVCS, manager_id="1")
         )
         client.close()
 
