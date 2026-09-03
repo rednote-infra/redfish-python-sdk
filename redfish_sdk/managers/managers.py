@@ -16,7 +16,8 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 
 from ..models.logs import Log, LogEntry
-from ..exceptions import RedfishNotFoundError
+from ..models.task import Task
+from ..exceptions import RedfishNotFoundError, RedfishValidationError
 from ..models.managers import (
     DnsService,
     EthernetInterface,
@@ -104,6 +105,259 @@ class ManagersManager:
         odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
         log = resolve_log_service(self._client, odata_id, log_id)
         return fetch_log_entries(self._client, log)
+
+    # ------------------------------------------------------------------
+    # Out-of-band diagnostic log collection + download
+    # ------------------------------------------------------------------
+
+    def collect_diagnostic_data(
+        self,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        oem_params: Optional[dict] = None,
+    ) -> Task:
+        """
+        Trigger ``#LogService.CollectDiagnosticData`` on a manager log service.
+
+        Automatically detects the server vendor and builds the vendor-specific
+        request body. The action target is discovered dynamically from the
+        LogService ``Actions`` block (never string-concatenated).
+
+        Args:
+            diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
+                the vendor default (OEM when available, else ``Manager``).
+            log_id: Log service ID. ``None`` auto-selects the sole service.
+            manager_id: Manager ID (default "1").
+            oem_params: Optional dict shallow-merged into the request body.
+
+        Returns:
+            A :class:`Task` referencing the asynchronous collection.
+
+        Raises:
+            RedfishValidationError: When the log service does not expose the
+                ``#LogService.CollectDiagnosticData`` action.
+        """
+        from ._log_helpers import require_log_services_link
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        manager = self.get(manager_id)
+        odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
+
+        vendor = VendorDetector.detect(self._client)
+        strategy = LogCollectStrategyRegistry.get(vendor)
+
+        logger.info(
+            "CollectDiagnosticData: vendor=%s, strategy=%s, log_services=%s",
+            vendor, type(strategy).__name__, odata_id,
+        )
+        return strategy.trigger(
+            self._client,
+            odata_id,
+            log_id=log_id,
+            diagnostic_data_type=diagnostic_data_type,
+            oem_params=oem_params,
+            manager_id=manager_id,
+        )
+
+    def download_diagnostic_data(
+        self,
+        task_or_entry,
+        output_path: Optional[str] = None,
+    ) -> "bytes | str":
+        """
+        Download the artifact produced by a diagnostic-data collection.
+
+        Args:
+            task_or_entry: A completed :class:`Task` (its associated log entry
+                is resolved to find the artifact URI) or a :class:`LogEntry`
+                that already carries ``AdditionalDataURI``.
+            output_path: When provided, stream the bundle to this path and
+                return the absolute file path; otherwise return ``bytes``.
+
+        Returns:
+            The file bytes, or the absolute written path.
+
+        Raises:
+            RedfishValidationError: When no artifact URI can be resolved.
+            RedfishException: On download HTTP errors.
+        """
+        from ..models.logs import LogEntry
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+
+        # A LogEntry already carries the artifact URI -> plain GET download.
+        if isinstance(task_or_entry, LogEntry):
+            uri = task_or_entry.additional_data_uri
+            if not uri:
+                raise RedfishValidationError(
+                    "LogEntry has no AdditionalDataURI to download"
+                )
+            logger.info("Downloading diagnostic data from %s", uri)
+            return self._http.download(uri, output_path)
+
+        # A Task -> let the vendor strategy decide how to fetch the bundle
+        # (standard AdditionalDataURI GET, or an OEM POST download).
+        if isinstance(task_or_entry, Task):
+            vendor = VendorDetector.detect(self._client)
+            strategy = LogCollectStrategyRegistry.get(vendor)
+            return strategy.download_artifact(self._client, task_or_entry, output_path)
+
+        # Duck-typed fallback: object exposing additional_data_uri.
+        uri = getattr(task_or_entry, "additional_data_uri", None)
+        if not uri:
+            raise RedfishValidationError(
+                "Could not resolve a diagnostic-data download URI"
+            )
+        logger.info("Downloading diagnostic data from %s", uri)
+        return self._http.download(uri, output_path)
+
+    def collect_and_download_diagnostic_data(
+        self,
+        output_path: str,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        poll_interval: int = 5,
+        timeout: int = 1800,
+        *,
+        reuse_existing: bool = True,
+        max_retries: int = 0,
+        retry_backoff: int = 30,
+    ) -> str:
+        """
+        End-to-end helper: trigger collection, wait, then download.
+
+        Chains :meth:`collect_diagnostic_data` -> :meth:`wait_for_task` (or a
+        vendor-specific waiter) -> :meth:`download_diagnostic_data`.
+
+        Resilience:
+        - **Reuse of prior collections** (``reuse_existing=True``, default):
+          before triggering a new collection, the strategy is asked whether
+          the BMC already has a matching task. If found and already
+          ``Completed``, its artifact is downloaded directly (avoids piling
+          up tasks on BMCs that don't allow concurrent collections or that
+          break after repeated triggers). If found and still ``Running``, the
+          waiter runs on it directly instead of triggering a duplicate.
+        - **Retry** (``max_retries`` > 0): a failed collection
+          (:class:`LogCollectFailedError`) is retried up to ``max_retries``
+          extra times with ``retry_backoff`` seconds between attempts. Retry
+          is opt-in because a full collection is slow (minutes).
+
+        Args:
+            output_path: Destination file path for the downloaded bundle.
+            diagnostic_data_type: See :meth:`collect_diagnostic_data`.
+            log_id: See :meth:`collect_diagnostic_data`.
+            manager_id: Manager ID (default "1").
+            poll_interval: Task poll interval in seconds (default 5).
+            timeout: Max wait in seconds (default 1800 — bundles are slow).
+            reuse_existing: When True (default), look for a matching prior
+                task and reuse its artifact/wait on it. Set False to always
+                trigger a fresh collection.
+            max_retries: Extra retries after a failed collection (default 0
+                — no retry). Applies only to trigger-and-wait failures; a
+                reused prior task is never retried.
+            retry_backoff: Seconds to sleep between retries (default 30).
+
+        Returns:
+            The absolute path of the downloaded file.
+
+        Raises:
+            LogCollectFailedError: When collection ultimately fails (all
+                retries exhausted); carries BMC messages / progress history.
+        """
+        import time as _time
+
+        from .log_collect_strategies import (
+            LogCollectStrategyRegistry,
+            VendorDetector,
+        )
+        from ..exceptions import LogCollectFailedError
+
+        vendor = VendorDetector.detect(self._client)
+        strategy = LogCollectStrategyRegistry.get(vendor)
+
+        # --- Step 1: reuse a prior collection when available -------------
+        if reuse_existing:
+            existing = self._find_existing_collect_task(strategy, manager_id)
+            if existing is not None:
+                state = (existing.task_state or "").lower()
+                if state == "completed":
+                    logger.info(
+                        "collect_and_download: reusing completed prior task %r",
+                        existing.id,
+                    )
+                    return strategy.download_artifact(
+                        self._client, existing, output_path
+                    )
+                # Non-terminal -> just wait on it.
+                logger.info(
+                    "collect_and_download: waiting on in-flight prior task %r",
+                    existing.id,
+                )
+                finished = strategy.wait_until_ready(
+                    self._client, existing, poll_interval, timeout
+                )
+                return strategy.download_artifact(
+                    self._client, finished, output_path
+                )
+
+        # --- Step 2: trigger + wait + download, with optional retry ------
+        last_exc: Optional[LogCollectFailedError] = None
+        attempts = max_retries + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                task = self.collect_diagnostic_data(
+                    diagnostic_data_type, log_id, manager_id, oem_params=None
+                )
+                finished = strategy.wait_until_ready(
+                    self._client, task, poll_interval, timeout
+                )
+                return strategy.download_artifact(
+                    self._client, finished, output_path
+                )
+            except LogCollectFailedError as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    break
+                logger.warning(
+                    "collect_and_download: attempt %d/%d failed (%s); "
+                    "retrying in %ds",
+                    attempt, attempts, exc, retry_backoff,
+                )
+                _time.sleep(max(int(retry_backoff), 0))
+
+        assert last_exc is not None
+        raise last_exc
+
+    def _find_existing_collect_task(self, strategy, manager_id: str) -> Optional[Task]:
+        """Resolve LogServices link then ask the strategy for a prior task."""
+        from ._log_helpers import require_log_services_link
+
+        try:
+            manager = self.get(manager_id)
+            odata_id = require_log_services_link(
+                manager, f"Manager {manager.id!r}"
+            )
+        except Exception as exc:  # noqa: BLE001 — reuse discovery is best-effort
+            logger.debug(
+                "collect_and_download: skip reuse discovery (%s)", exc
+            )
+            return None
+        try:
+            return strategy.find_existing_task(
+                self._client, odata_id, manager_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "collect_and_download: find_existing_task failed (%s)", exc
+            )
+            return None
 
     def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """

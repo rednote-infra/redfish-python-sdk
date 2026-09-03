@@ -117,6 +117,9 @@ class RedfishClient:
         connect_timeout: int = 10,
         read_timeout: int = 30,
         scheme: str = "https",
+        retry_5xx: int = 0,
+        retry_on_read_timeout: bool = False,
+        retry_backoff: float = 1.0,
     ):
         """
         Initialize the Redfish Client.
@@ -132,6 +135,15 @@ class RedfishClient:
             connect_timeout: TCP connection timeout in seconds (default 10)
             read_timeout: HTTP response read timeout in seconds (default 30)
             scheme: URL scheme — "https" (default) or "http"
+            retry_5xx: Extra retries when the BMC returns a 5xx (default 0 —
+                no retry). GET/HEAD retry on 500/502/503/504; POST/PATCH/DELETE
+                retry only on 503/504 to minimise double-write risk. Useful
+                against overloaded / flaky BMCs (e.g. AMI MegaRAC firmware
+                that intermittently returns Base.1.x.InternalError).
+            retry_on_read_timeout: When True, also retry on read timeouts
+                (default False). Same idempotency rule as ``retry_5xx``.
+            retry_backoff: Base seconds between retries (linear back-off:
+                attempt ``n`` sleeps ``retry_backoff * n``). Default 1.0s.
         """
         self._http_client = RedfishHttpClient(
             host=host,
@@ -142,6 +154,9 @@ class RedfishClient:
             connect_timeout=connect_timeout,
             read_timeout=read_timeout,
             scheme=scheme,
+            retry_5xx=retry_5xx,
+            retry_on_read_timeout=retry_on_read_timeout,
+            retry_backoff=retry_backoff,
         )
 
         # Root service cache
@@ -391,9 +406,20 @@ class RedfishClient:
         return root.systems.odata_id
 
     def _get_task_service(self) -> TaskService:
-        """Get the TaskService resource."""
+        """
+        Get the TaskService resource.
+
+        Prefers the standard ``TaskService`` root link (present on every
+        DMTF-conformant BMC we've seen). Falls back to the non-standard
+        ``Tasks`` link some SDK-internal models also expose, and finally to
+        the well-known path so a very stripped-down BMC still works.
+        """
         root = self._get_root()
-        return self._http_client.get(root.tasks.odata_id, TaskService)
+        link = getattr(root, "task_service", None) or getattr(root, "tasks", None)
+        odata_id = getattr(link, "odata_id", None) if link is not None else None
+        if not odata_id:
+            odata_id = "/redfish/v1/TaskService"
+        return self._http_client.get(odata_id, TaskService)
 
     def _get_update_service(self) -> UpdateService:
         """Get the UpdateService resource."""
@@ -913,6 +939,110 @@ class RedfishClient:
             inline members in one HTTP round trip when supported).
         """
         return self._managers.log_entries(log_id, manager_id)
+
+    # ------------------------------------------------------------------
+    # Out-of-band diagnostic log collection + download
+    # ------------------------------------------------------------------
+
+    def collect_diagnostic_data(
+        self,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        oem_params: Optional[dict] = None,
+    ) -> Task:
+        """
+        Trigger ``#LogService.CollectDiagnosticData`` to generate an
+        out-of-band diagnostic log bundle.
+
+        Automatically detects the server vendor and builds the vendor-specific
+        request body; the action target is discovered dynamically from the
+        LogService ``Actions`` block.
+
+        Args:
+            diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
+                the vendor default (OEM when available, else ``Manager``).
+            log_id: Log service ID. ``None`` auto-selects the sole service.
+            manager_id: Manager ID (default "1").
+            oem_params: Optional dict shallow-merged into the request body.
+
+        Returns:
+            A :class:`Task` referencing the asynchronous collection.
+        """
+        return self._managers.collect_diagnostic_data(
+            diagnostic_data_type, log_id, manager_id, oem_params
+        )
+
+    def download_diagnostic_data(
+        self,
+        task_or_entry,
+        output_path: Optional[str] = None,
+    ) -> "bytes | str":
+        """
+        Download the artifact produced by a diagnostic-data collection.
+
+        Args:
+            task_or_entry: A completed :class:`Task` or a :class:`LogEntry`
+                carrying ``AdditionalDataURI``.
+            output_path: When provided, stream the bundle to this path and
+                return the absolute file path; otherwise return ``bytes``.
+
+        Returns:
+            The file bytes, or the absolute written path.
+        """
+        return self._managers.download_diagnostic_data(task_or_entry, output_path)
+
+    def collect_and_download_diagnostic_data(
+        self,
+        output_path: str,
+        diagnostic_data_type: Optional[str] = None,
+        log_id: Optional[str] = None,
+        manager_id: str = "1",
+        poll_interval: int = 5,
+        timeout: int = 1800,
+        *,
+        reuse_existing: bool = True,
+        max_retries: int = 0,
+        retry_backoff: int = 30,
+    ) -> str:
+        """
+        One-click helper: trigger collection, wait for the task, then download.
+
+        Reuses a prior matching collection when available (``reuse_existing``,
+        default True) and can retry a failed collection up to ``max_retries``
+        times (default 0 — no retry). See
+        :meth:`ManagersManager.collect_and_download_diagnostic_data` for the
+        full behaviour contract.
+
+        Args:
+            output_path: Destination file path for the downloaded bundle.
+            diagnostic_data_type: See :meth:`collect_diagnostic_data`.
+            log_id: See :meth:`collect_diagnostic_data`.
+            manager_id: Manager ID (default "1").
+            poll_interval: Task poll interval in seconds (default 5).
+            timeout: Max wait in seconds (default 1800 — bundles are slow).
+            reuse_existing: Reuse a matching prior task on the BMC when
+                available (default True).
+            max_retries: Extra retries on failure (default 0).
+            retry_backoff: Seconds between retries (default 30).
+
+        Returns:
+            The absolute path of the downloaded file.
+
+        Raises:
+            LogCollectFailedError: When the collection ultimately fails.
+        """
+        return self._managers.collect_and_download_diagnostic_data(
+            output_path,
+            diagnostic_data_type,
+            log_id,
+            manager_id,
+            poll_interval,
+            timeout,
+            reuse_existing=reuse_existing,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
 
     def get_network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
         """

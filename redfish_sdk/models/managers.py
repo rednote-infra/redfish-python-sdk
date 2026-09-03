@@ -4,7 +4,7 @@ Manager (BMC) resource models.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,6 +59,9 @@ class Manager(Entity):
     status: Optional[Status] = Field(None, alias="Status")
     uuid: Optional[str] = Field(None, alias="UUID")
     oem: Optional[Oem] = Field(None, alias="Oem")
+    # Redfish Actions block (e.g. #Manager.Reset, #Manager.ResetToDefaults,
+    # OEM downloads such as #Manager.GeneralDownload).
+    actions: Optional[Dict[str, Any]] = Field(None, alias="Actions")
 
 
 # ---------------------------------------------------------------------------
