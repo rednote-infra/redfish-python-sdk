@@ -7,9 +7,11 @@ import pytest
 from redfish_sdk.models.account import Account
 from redfish_sdk.models.chassis import Power
 from redfish_sdk.models.common import Collection, Entity, Link
+from redfish_sdk.models.drive import Drive
 from redfish_sdk.models.oem import Oem
 from redfish_sdk.models.session import Session
 from redfish_sdk.models.systems import Memory, Processor, System
+from redfish_sdk.models.thermal import Fan
 
 
 class TestLink:
@@ -150,6 +152,187 @@ class TestOem:
     def test_oem_empty(self):
         oem = Oem.model_validate({})
         assert oem.bmc is None
+
+    def test_oem_with_xfusion_speed_ratio(self):
+        """超聚变风扇 OEM: Oem.xFusion.SpeedRatio."""
+        data = {"xFusion": {"SpeedRatio": 80}}
+        oem = Oem.model_validate(data)
+        assert oem.bmc is not None
+        assert oem.bmc.speed_ratio == 80
+
+    def test_oem_with_public_speed_ratio(self):
+        """H3C / ZTE / 浪潮新版风扇 OEM: Oem.Public.SpeedRatio."""
+        data = {"Public": {"SpeedRatio": 65}}
+        oem = Oem.model_validate(data)
+        assert oem.bmc is not None
+        assert oem.bmc.speed_ratio == 65
+
+    def test_oem_with_goem_customestring_speed_ratio(self):
+        """浪潮旧版风扇 OEM: Oem.gOemCustomeString.SpeedRatio (拼写来自 BMC 固件)."""
+        data = {"gOemCustomeString": {"SpeedRatio": 70}}
+        oem = Oem.model_validate(data)
+        assert oem.bmc is not None
+        assert oem.bmc.speed_ratio == 70
+
+    def test_oem_merge_public_and_xfusion(self):
+        """多 vendor key 合并：Public 优先，其他 vendor 补齐 Public 未提供的字段。"""
+        data = {
+            "Public": {"ProductName": "2288H V5"},
+            "xFusion": {"SpeedRatio": 90},
+        }
+        oem = Oem.model_validate(data)
+        assert oem.bmc is not None
+        # Public 提供的字段保留
+        assert oem.bmc.product_name == "2288H V5"
+        # Public 未提供、由 xFusion 补齐的字段
+        assert oem.bmc.speed_ratio == 90
+
+    def test_oem_merge_public_wins_on_conflict(self):
+        """当 Public 和其他 vendor 都提供同名字段时，Public 优先，不被覆盖。"""
+        data = {
+            "Public": {"SpeedRatio": 55},
+            "xFusion": {"SpeedRatio": 99},
+        }
+        oem = Oem.model_validate(data)
+        assert oem.bmc is not None
+        # Public 已提供的字段不被后续 vendor 覆盖
+        assert oem.bmc.speed_ratio == 55
+
+
+class TestFanOem:
+    """Fan.Oem 端到端解析：验证 Fan 顶层 oem 字段承接多厂商 SpeedRatio。"""
+
+    def test_fan_with_xfusion_oem(self):
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/0",
+            "MemberId": "0",
+            "Name": "Fan1",
+            "Reading": 8000,
+            "Oem": {"xFusion": {"SpeedRatio": 80}},
+        }
+        fan = Fan.model_validate(data)
+        assert fan.name == "Fan1"
+        assert fan.reading == 8000
+        assert fan.oem is not None
+        assert fan.oem.bmc is not None
+        assert fan.oem.bmc.speed_ratio == 80
+
+    def test_fan_with_goem_customestring_oem(self):
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/1",
+            "MemberId": "1",
+            "Name": "Fan2",
+            "Oem": {"gOemCustomeString": {"SpeedRatio": 70}},
+        }
+        fan = Fan.model_validate(data)
+        assert fan.oem is not None
+        assert fan.oem.bmc is not None
+        assert fan.oem.bmc.speed_ratio == 70
+
+    def test_fan_without_oem(self):
+        """Fan 未提供 Oem 字段时应正常解析，oem 为 None。"""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Thermal#/Fans/2",
+            "MemberId": "2",
+            "Name": "Fan3",
+            "Reading": 6500,
+        }
+        fan = Fan.model_validate(data)
+        assert fan.oem is None
+
+
+class TestDriveOem:
+    """
+    Drive.Oem 端到端解析：验证多厂商 drive temperature / DriveID 的合并，
+    以及宁畅特有的顶层 DiskTemperatureCelsius 便捷字段。
+    """
+
+    def test_drive_with_xfusion_oem(self):
+        """超聚变: Oem.xFusion.TemperatureCelsius + Oem.xFusion.DriveID."""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/0",
+            "Id": "0",
+            "Name": "Drive0",
+            "Oem": {"xFusion": {"TemperatureCelsius": "35", "DriveID": 3}},
+        }
+        drive = Drive.model_validate(data)
+        assert drive.oem is not None
+        assert drive.oem.bmc is not None
+        assert drive.oem.bmc.drive_temperature_celsius == 35.0
+        assert drive.oem.bmc.drive_id == 3
+
+    def test_drive_with_public_lowercase_temperature(self):
+        """联想 / 浪潮: Oem.Public.temperature (注意 JSON key 小写)."""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/1",
+            "Id": "1",
+            "Name": "Drive1",
+            "Oem": {"Public": {"temperature": 33}},
+        }
+        drive = Drive.model_validate(data)
+        assert drive.oem is not None
+        assert drive.oem.bmc is not None
+        assert drive.oem.bmc.drive_temperature == 33.0
+        # 大写 alias 的 drive_temperature_celsius 不应被小写 key 污染
+        assert drive.oem.bmc.drive_temperature_celsius is None
+
+    def test_drive_with_public_temperature_celsius(self):
+        """H3C / 中兴: Oem.Public.TemperatureCelsius (PascalCase)."""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/2",
+            "Id": "2",
+            "Name": "Drive2",
+            "Oem": {"Public": {"TemperatureCelsius": "40"}},
+        }
+        drive = Drive.model_validate(data)
+        assert drive.oem is not None
+        assert drive.oem.bmc is not None
+        assert drive.oem.bmc.drive_temperature_celsius == 40.0
+        # 小写 alias 的 drive_temperature 不应被大写 key 污染
+        assert drive.oem.bmc.drive_temperature is None
+
+    def test_drive_with_suma_top_level_disk_temperature(self):
+        """宁畅: 顶层 Drive.DiskTemperatureCelsius (不在 Oem 下)."""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/3",
+            "Id": "3",
+            "Name": "Drive3",
+            "DiskTemperatureCelsius": 29,
+        }
+        drive = Drive.model_validate(data)
+        assert drive.disk_temperature_celsius == 29.0
+        # Suma 场景没有 Oem, oem 字段应为 None
+        assert drive.oem is None
+
+    def test_drive_oem_merge_public_and_xfusion(self):
+        """多 vendor 合并：Public.temperature (联想风格) 与 xFusion.DriveID 共存。"""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/4",
+            "Id": "4",
+            "Name": "Drive4",
+            "Oem": {
+                "Public": {"temperature": 30},
+                "xFusion": {"DriveID": 7},
+            },
+        }
+        drive = Drive.model_validate(data)
+        assert drive.oem is not None
+        assert drive.oem.bmc is not None
+        assert drive.oem.bmc.drive_temperature == 30.0
+        assert drive.oem.bmc.drive_id == 7
+
+    def test_drive_without_oem_and_without_disk_temperature(self):
+        """未提供任何 OEM/温度字段时应正常解析。"""
+        data = {
+            "@odata.id": "/redfish/v1/Chassis/1/Drives/5",
+            "Id": "5",
+            "Name": "Drive5",
+            "CapacityBytes": 1024 * 1024 * 1024,
+        }
+        drive = Drive.model_validate(data)
+        assert drive.oem is None
+        assert drive.disk_temperature_celsius is None
+        assert drive.capacity_bytes == 1024 * 1024 * 1024
 
 
 class TestPower:

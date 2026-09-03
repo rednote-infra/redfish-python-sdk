@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Status
+from .oem import Oem
 
 
 class Location(BaseModel):
@@ -51,3 +52,6 @@ class Drive(Entity):
     # SystemsManager parse the well-known sub-keys.
     power_state: Optional[str] = Field(None, alias="PowerState")
     actions: Optional[Dict[str, Any]] = Field(None, alias="Actions")
+    # Top-level drive temperature (宁畅 only, NOT under Oem)
+    disk_temperature_celsius: Optional[float] = Field(None, alias="DiskTemperatureCelsius")
+    oem: Optional[Oem] = Field(None, alias="Oem")

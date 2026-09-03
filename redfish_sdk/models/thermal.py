@@ -33,6 +33,7 @@ class Fan(Entity):
     upper_threshold_critical: Optional[int] = Field(None, alias="UpperThresholdCritical")
     upper_threshold_fatal: Optional[int] = Field(None, alias="UpperThresholdFatal")
     upper_threshold_non_critical: Optional[int] = Field(None, alias="UpperThresholdNonCritical")
+    oem: Optional[Oem] = Field(None, alias="Oem")
 
 
 class Temperature(Entity):
