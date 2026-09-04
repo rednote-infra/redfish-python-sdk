@@ -84,6 +84,54 @@ class ChassisManager:
         chassis = self.get(chassis_id)
         return self._http.get(chassis.thermal.odata_id, Thermal)
 
+    def get_fan_speed_ratio(self, fan) -> Optional[float]:
+        """
+        Return the normalized fan speed as a percentage (0-100).
+
+        Automatically detects the server vendor and dispatches to the
+        matching :class:`~redfish_sdk.managers.oem_extractors.BaseOemExtractor`
+        so callers do not need to know which OEM sub-key
+        (``xFusion`` / ``Public`` / ``gOemCustomeString`` / ...) the BMC
+        publishes ``SpeedRatio`` under. Vendors that do not publish an OEM
+        ``SpeedRatio`` (Lenovo, Nettrix) fall back to a
+        ``Reading / MaxReadingRange`` derivation inside the extractor.
+
+        Args:
+            fan: A :class:`~redfish_sdk.models.thermal.Fan` obtained from
+                :meth:`thermal`.
+
+        Returns:
+            Fan speed percent, or ``None`` when the BMC provides neither an
+            OEM ``SpeedRatio`` nor a usable ``Reading`` / ``MaxReadingRange``
+            pair.
+        """
+        from .oem_extractors import OemExtractorRegistry, VendorDetector
+        vendor = VendorDetector.detect(self._client)
+        return OemExtractorRegistry.get(vendor).get_fan_speed_ratio(fan)
+
+    def get_drive_temperature_celsius(self, drive) -> Optional[float]:
+        """
+        Return the drive temperature in Celsius, or ``None`` when unknown.
+
+        Automatically detects the server vendor and dispatches to the
+        matching extractor so callers do not need to handle vendor-specific
+        readings such as ``Oem.xFusion.TemperatureCelsius``,
+        ``Oem.Public.temperature`` (lowercase for Lenovo / Inspur),
+        ``Oem.Public.TemperatureCelsius`` (H3C / ZTE), or Nettrix's
+        top-level ``Drive.DiskTemperatureCelsius``.
+
+        Args:
+            drive: A :class:`~redfish_sdk.models.drive.Drive` obtained from
+                :meth:`SystemsManager.drive_info` or a drives listing.
+
+        Returns:
+            Drive temperature in Celsius, or ``None`` when the BMC does not
+            expose a drive temperature via any known OEM location.
+        """
+        from .oem_extractors import OemExtractorRegistry, VendorDetector
+        vendor = VendorDetector.detect(self._client)
+        return OemExtractorRegistry.get(vendor).get_drive_temperature_celsius(drive)
+
     def inlet_history_temperature(self, chassis_id: str = "1") -> Optional[InletHistoryTemperature]:
         """
         Get air inlet historical temperature samples for a chassis.

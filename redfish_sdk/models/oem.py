@@ -94,18 +94,13 @@ class Bmc(BaseModel):
     backplanes: Optional[Link] = Field(None, alias="Backplanes")
     health_summary: Optional[Link] = Field(None, alias="HealthSummary")
 
-    # Drive OEM (Inspur)
-    rebuild_led: Optional[str] = Field(None, alias="RebuildLED")
-    interface_type: Optional[str] = Field(None, alias="Interface")
-    # Drive temperature (联想 / 浪潮 use lowercase 'temperature')
-    drive_temperature: Optional[float] = Field(None, alias="temperature")
-    drive_temperature_celsius: Optional[float] = Field(None, alias="TemperatureCelsius")
-    drive_id: Optional[int] = Field(None, alias="DriveID")
-
-    # Thermal OEM
-    fan_speed_adjustment_mode: Optional[str] = Field(None, alias="FanSpeedAdjustmentMode")
-    fan_speed_level_percents: Optional[int] = Field(None, alias="FanSpeedLevelPercents")
-    speed_ratio: Optional[float] = Field(None, alias="SpeedRatio")
+    # NOTE: Fan/Drive OEM readings (SpeedRatio, drive temperature, DriveID,
+    # ...) are intentionally NOT modelled here. Their location and casing
+    # vary per vendor and would otherwise turn `Bmc` into a multi-vendor
+    # dumping ground. They are read on demand via the
+    # ``redfish_sdk.managers.oem_extractors`` strategy package, which reads
+    # the raw values from `Oem.model_extra` / `Bmc.model_extra`
+    # (pydantic `extra="allow"`) — no vendor-specific typed fields needed.
 
     # Power OEM
     line_output_voltage: Optional[float] = Field(None, alias="LineOutputVoltage")
