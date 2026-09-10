@@ -33,11 +33,11 @@ pip install redfish-python-sdk
 pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
 # 安装指定版本
-pip install redfish-python-sdk==1.2.0
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.0
+pip install redfish-python-sdk==1.2.3
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
 
 # 在 requirements.txt 中引用
-# redfish-python-sdk>=1.2.0
+# redfish-python-sdk>=1.2.3
 ```
 
 ## 快速开始

@@ -35,11 +35,11 @@ pip install redfish-python-sdk
 pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
 # Install a specific version
-pip install redfish-python-sdk==1.2.0
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.0
+pip install redfish-python-sdk==1.2.3
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
 
 # In requirements.txt
-# redfish-python-sdk>=1.2.0
+# redfish-python-sdk>=1.2.3
 ```
 
 ## Quick Start
