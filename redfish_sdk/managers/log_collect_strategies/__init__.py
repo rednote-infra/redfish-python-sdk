@@ -36,6 +36,7 @@ All strategies are auto-registered when this package is imported.
 
 from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
+from .enginetech import EnginetechLogCollectStrategy
 from .inspur import InspurLogCollectStrategy
 from .lenovo import LenovoLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
@@ -45,6 +46,7 @@ from .zte import ZteLogCollectStrategy
 
 # --- Auto-register vendor strategies that differ from the DMTF default ---
 LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
+LogCollectStrategyRegistry.register("enginetech", EnginetechLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
 LogCollectStrategyRegistry.register("lenovo", LenovoLogCollectStrategy())
@@ -56,6 +58,7 @@ LogCollectStrategyRegistry.register(
 __all__ = [
     "BaseLogCollectStrategy",
     "GenericLogCollectStrategy",
+    "EnginetechLogCollectStrategy",
     "XFusionLogCollectStrategy",
     "InspurLogCollectStrategy",
     "LenovoLogCollectStrategy",

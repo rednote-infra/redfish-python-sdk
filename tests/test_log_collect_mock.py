@@ -35,8 +35,10 @@ from redfish_sdk.exceptions import RedfishException
 from redfish_sdk.models.common import Link
 from redfish_sdk.models.logs import Log
 from redfish_sdk.models.managers import Manager
+from redfish_sdk.models.systems import System
 from redfish_sdk.models.task import Message, Task
 from redfish_sdk.managers.log_collect_strategies import (
+    EnginetechLogCollectStrategy,
     GenericLogCollectStrategy,
     InspurLogCollectStrategy,
     LenovoLogCollectStrategy,
@@ -974,6 +976,126 @@ class TestStrategies(unittest.TestCase):
         self.assertIsInstance(
             LogCollectStrategyRegistry.get("lenovo"), LenovoLogCollectStrategy
         )
+
+    def test_enginetech_registered(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("enginetech"),
+            EnginetechLogCollectStrategy,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Enginetech (安擎) Systems/Self/LogServices/BlackBox flow
+# ---------------------------------------------------------------------------
+
+
+class TestEnginetechStrategy(VendorRestoreMixin):
+    """Verify Enginetech uses System BlackBox and Entries/Latest."""
+
+    _LOGSVCS = "/redfish/v1/Systems/Self/LogServices"
+    _BLACKBOX = f"{_LOGSVCS}/BlackBox"
+    _COLLECT = f"{_BLACKBOX}/Actions/LogService.CollectDiagnosticData"
+    _LATEST = f"{_BLACKBOX}/Entries/Latest"
+    _DOWNLOAD = f"{_LATEST}/AdditionalData"
+
+    def _stub_system_and_blackbox(self, client) -> None:
+        system = System.model_construct(
+            id="Self",
+            odata_id="/redfish/v1/Systems/Self",
+            manufacturer="Enginetech",
+            log_services=Link(**{"@odata.id": self._LOGSVCS}),
+        )
+        client.get_system = lambda system_id=None: system  # type: ignore[assignment]
+
+        log = Log.model_construct(
+            id="BlackBox",
+            odata_id=self._BLACKBOX,
+            entries=Link(**{"@odata.id": f"{self._BLACKBOX}/Entries"}),
+            actions={
+                "#LogService.CollectDiagnosticData": {
+                    "target": self._COLLECT
+                }
+            },
+        )
+        client._get_collection = (  # type: ignore[assignment]
+            lambda odata_id, mc: [log] if mc is Log else []
+        )
+
+    def test_collect_and_download_end_to_end(self) -> None:
+        client = _make_client()
+        self._stub_system_and_blackbox(client)
+        _force_vendor("enginetech")
+
+        # The Enginetech strategy must not try the legacy Manager path.
+        client._managers.get = (  # type: ignore[assignment]
+            lambda manager_id="1": self.fail("Manager must not be queried")
+        )
+
+        recorder = _CallRecorder()
+
+        def fake_post(path, model_class, body=None, raw_body=None):
+            recorder.record(kind="post", path=path, raw_body=raw_body)
+            return Task.model_construct(
+                id="7", odata_id="/redfish/v1/TaskService/Tasks/7"
+            )
+
+        def fake_get(path, model_class):
+            self.assertEqual(path, self._LATEST)
+            self.assertIs(model_class, LogEntry)
+            return LogEntry.model_construct(
+                id="Latest",
+                odata_id=self._LATEST,
+                additional_data_uri=self._DOWNLOAD,
+            )
+
+        client._http_client.post = fake_post  # type: ignore[assignment]
+        client._http_client.get = fake_get  # type: ignore[assignment]
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval=5, timeout=1800: Task.model_construct(
+                id=task_id,
+                odata_id=f"/redfish/v1/TaskService/Tasks/{task_id}",
+                task_state="Completed",
+                task_status="OK",
+            )
+        )
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None: (
+                recorder.record(
+                    kind="download", uri=uri, output_path=output_path
+                )
+                or output_path
+            )
+        )
+
+        output = client.collect_and_download_diagnostic_data(
+            "/tmp/enginetech-blackbox.tar", reuse_existing=True
+        )
+
+        self.assertEqual(output, "/tmp/enginetech-blackbox.tar")
+        post = next(c for c in recorder.calls if c["kind"] == "post")
+        self.assertEqual(post["path"], self._COLLECT)
+        self.assertEqual(
+            post["raw_body"],
+            {
+                "DiagnosticDataType": "OEM",
+                "OEMDiagnosticDataType": "BlackBox",
+            },
+        )
+        download = next(
+            c for c in recorder.calls if c["kind"] == "download"
+        )
+        self.assertEqual(download["uri"], self._DOWNLOAD)
+        client.close()
+
+    def test_vendor_detector_recognises_manufacturer(self) -> None:
+        client = _make_client()
+        self._stub_system_and_blackbox(client)
+        VendorDetector.clear_cache()
+        try:
+            self.assertEqual(VendorDetector.detect(client), "enginetech")
+        finally:
+            VendorDetector.clear_cache()
+            client.close()
 
 
 # ---------------------------------------------------------------------------
