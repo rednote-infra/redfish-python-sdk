@@ -138,17 +138,16 @@ class ManagersManager:
             RedfishValidationError: When the log service does not expose the
                 ``#LogService.CollectDiagnosticData`` action.
         """
-        from ._log_helpers import require_log_services_link
         from .log_collect_strategies import (
             LogCollectStrategyRegistry,
             VendorDetector,
         )
 
-        manager = self.get(manager_id)
-        odata_id = require_log_services_link(manager, f"Manager {manager.id!r}")
-
         vendor = VendorDetector.detect(self._client)
         strategy = LogCollectStrategyRegistry.get(vendor)
+        odata_id = strategy.resolve_log_services_odata_id(
+            self._client, manager_id
+        )
 
         logger.info(
             "CollectDiagnosticData: vendor=%s, strategy=%s, log_services=%s",
@@ -337,12 +336,9 @@ class ManagersManager:
 
     def _find_existing_collect_task(self, strategy, manager_id: str) -> Optional[Task]:
         """Resolve LogServices link then ask the strategy for a prior task."""
-        from ._log_helpers import require_log_services_link
-
         try:
-            manager = self.get(manager_id)
-            odata_id = require_log_services_link(
-                manager, f"Manager {manager.id!r}"
+            odata_id = strategy.resolve_log_services_odata_id(
+                self._client, manager_id
             )
         except Exception as exc:  # noqa: BLE001 — reuse discovery is best-effort
             logger.debug(

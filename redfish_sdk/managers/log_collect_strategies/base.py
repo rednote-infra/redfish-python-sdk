@@ -60,6 +60,24 @@ class BaseLogCollectStrategy(ABC):
     #: ``None`` here means "fall back to the DMTF standard default".
     default_diagnostic_data_type: Optional[str] = None
 
+    def resolve_log_services_odata_id(
+        self,
+        client: RedfishClient,
+        manager_id: str = "1",
+    ) -> str:
+        """
+        Return the LogServices collection used by this strategy.
+
+        Diagnostic logs normally live below a Manager, so that remains the
+        default.  A vendor can override this hook when its collection action
+        is exposed below another Redfish resource (for example, Enginetech
+        publishes BlackBox below ComputerSystem).
+        """
+        from .._log_helpers import require_log_services_link
+
+        manager = client.get_manager(manager_id)
+        return require_log_services_link(manager, f"Manager {manager.id!r}")
+
     # ------------------------------------------------------------------
     # Trigger
     # ------------------------------------------------------------------
