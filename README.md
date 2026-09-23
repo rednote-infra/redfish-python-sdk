@@ -80,6 +80,25 @@ for drive in client.get_drives():
 client.close()
 ```
 
+## Manager protocol and OEM fallbacks
+
+Use DMTF-standard fields first. OEM helpers are optional compatibility
+fallbacks: a missing OEM endpoint is not a Redfish compliance failure. The SDK
+discovers OEM links from `Oem` rather than constructing vendor URIs.
+
+| Use case | Standard path / SDK API | Optional OEM fallback |
+| --- | --- | --- |
+| DNS | `EthernetInterface.NameServers`, `ManagerNetworkProtocol.HostName` | `get_dns_service()` |
+| NTP | `ManagerNetworkProtocol.NTP` | `get_ntp_service()` |
+| SNMP | `ManagerNetworkProtocol.SNMP` | `get_snmp_service()` |
+| VNC/RFB | `ManagerNetworkProtocol.RFB` | `get_vnc_service()` |
+| HTTPS certificates | `get_https_certificates()` follows `ManagerNetworkProtocol.HTTPS.Certificates` | `get_https_cert()` via `SecurityService.Links.HttpsCert` |
+| Console availability | `Manager.GraphicalConsole` | `get_kvm_service()` |
+| Syslog, LLDP, firewall rules | No generic Manager configuration resource | `get_syslog_service()`, `get_lldp_service()`, `get_firewall_rules()` |
+
+For a standards-compliant BMC, use the standard path when available, then
+attempt the documented OEM helper only if the vendor contract requires it.
+
 ## Testing
 
 ```bash
