@@ -12,6 +12,7 @@ from redfish_sdk.models.oem import Oem
 from redfish_sdk.models.session import Session
 from redfish_sdk.models.systems import Memory, Processor, System
 from redfish_sdk.models.thermal import Fan
+from redfish_sdk.models.update import UpdateService
 
 # NOTE: Vendor-specific Fan/Drive OEM readings (SpeedRatio, drive temperature,
 # DriveID, ...) are exercised in ``tests/test_oem_extractors.py``. The tests
@@ -171,6 +172,22 @@ class TestPCIeDeviceOem:
         assert device.pcie_functions.odata_id.endswith("/PCIeFunctions")
         assert device.oem.gpu_oem_public.device_bdf == "0000:41:00.0"
         assert not hasattr(device, "device_bdf")
+
+
+class TestUpdateService:
+    def test_standard_multipart_http_push_uri_alias(self):
+        service = UpdateService.model_validate(
+            {"MultipartHttpPushUri": "/redfish/v1/UpdateService/upload"}
+        )
+
+        assert service.multi_part_http_push_uri == "/redfish/v1/UpdateService/upload"
+
+    def test_legacy_multipart_http_push_uri_alias(self):
+        service = UpdateService.model_validate(
+            {"MultiPartHttpPushUri": "/redfish/v1/UpdateService/legacy-upload"}
+        )
+
+        assert service.multi_part_http_push_uri == "/redfish/v1/UpdateService/legacy-upload"
 
 
 class TestFanModel:
