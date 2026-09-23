@@ -15,9 +15,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List, Optional
 
-from ..models.logs import Log, LogEntry
-from ..models.task import Task
 from ..exceptions import RedfishNotFoundError, RedfishValidationError
+from ..models.common import Collection, Link
+from ..models.logs import Log, LogEntry
 from ..models.managers import (
     DnsService,
     EthernetInterface,
@@ -36,6 +36,7 @@ from ..models.managers import (
     VirtualMedia,
     VncService,
 )
+from ..models.task import Task
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -166,7 +167,7 @@ class ManagersManager:
         self,
         task_or_entry,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """
         Download the artifact produced by a diagnostic-data collection.
 
@@ -272,11 +273,11 @@ class ManagersManager:
         """
         import time as _time
 
+        from ..exceptions import LogCollectFailedError
         from .log_collect_strategies import (
             LogCollectStrategyRegistry,
             VendorDetector,
         )
-        from ..exceptions import LogCollectFailedError
 
         vendor = VendorDetector.detect(self._client)
         strategy = LogCollectStrategyRegistry.get(vendor)
@@ -366,6 +367,21 @@ class ManagersManager:
             f"{manager.odata_id}/NetworkProtocol", NetworkProtocol
         )
 
+    def https_certificates(self, manager_id: str = "1") -> Collection[Link]:
+        """Get the DMTF-standard HTTPS certificate collection.
+
+        Discovers ``ManagerNetworkProtocol.HTTPS.Certificates`` rather than
+        constructing a vendor-specific URI. For legacy OEM certificate
+        resources, use :meth:`https_cert` as a separate fallback.
+        """
+        protocol = self.network_protocol(manager_id)
+        certificates = protocol.https and protocol.https.certificates
+        if not certificates or not certificates.odata_id:
+            raise RedfishNotFoundError(
+                f"{protocol.odata_id}/HTTPS/Certificates"
+            )
+        return self._http.get(certificates.odata_id, Collection[Link])
+
     def ethernet_interfaces(self, manager_id: str = "1") -> List[EthernetInterface]:
         """
         Get the list of Ethernet interfaces for a manager (BMC).
@@ -394,6 +410,7 @@ class ManagersManager:
 
         The KVM service URI is dynamically discovered from the Manager's
         ``Oem.{vendor}.KVM`` link rather than being hardcoded.
+        For standard console availability, prefer ``Manager.GraphicalConsole``.
 
         Args:
             manager_id: Manager ID (default "1")
@@ -471,6 +488,9 @@ class ManagersManager:
         """
         Get NTP service configuration from OEM links.
 
+        Prefer the DMTF-standard ``ManagerNetworkProtocol.NTP`` section. This
+        helper is only an optional, dynamically discovered OEM fallback.
+
         Args:
             manager_id: Manager ID (default "1")
 
@@ -487,6 +507,9 @@ class ManagersManager:
     def syslog_service(self, manager_id: str = "1") -> SyslogService:
         """
         Get Syslog service configuration from OEM links.
+
+        DMTF Redfish has no generic Manager syslog-configuration resource;
+        do not treat this optional OEM helper as a compliance requirement.
 
         Args:
             manager_id: Manager ID (default "1")
@@ -505,6 +528,9 @@ class ManagersManager:
         """
         Get SNMP service configuration from OEM links.
 
+        Prefer the DMTF-standard ``ManagerNetworkProtocol.SNMP`` section.
+        This helper is only an optional, dynamically discovered OEM fallback.
+
         Args:
             manager_id: Manager ID (default "1")
 
@@ -521,6 +547,9 @@ class ManagersManager:
     def lldp_service(self, manager_id: str = "1") -> LldpService:
         """
         Get LLDP service configuration from OEM links.
+
+        DMTF Redfish has no generic Manager LLDP service resource; this
+        optional helper must not be required from standards-compliant BMCs.
 
         Args:
             manager_id: Manager ID (default "1")
@@ -539,7 +568,9 @@ class ManagersManager:
         """
         Get DNS service configuration from OEM links.
 
-        Note: Not all BMC vendors support this endpoint.
+        Prefer ``EthernetInterface.NameServers`` and
+        ``ManagerNetworkProtocol.HostName``. This optional helper is a
+        dynamically discovered OEM fallback and is not required by DMTF.
 
         Args:
             manager_id: Manager ID (default "1")
@@ -557,6 +588,9 @@ class ManagersManager:
     def vnc_service(self, manager_id: str = "1") -> VncService:
         """
         Get VNC/RFB service configuration from OEM links.
+
+        Prefer the DMTF-standard ``ManagerNetworkProtocol.RFB`` section.
+        This helper is only an optional, dynamically discovered OEM fallback.
 
         Note: The OEM key is ``RfbService`` but the resource URI is
         ``VncService``.
@@ -578,6 +612,10 @@ class ManagersManager:
         """
         Get Security service from OEM links.
 
+        For HTTPS certificates, prefer
+        ``ManagerNetworkProtocol.HTTPS.Certificates`` via
+        :meth:`https_certificates`. This helper is an OEM fallback.
+
         Args:
             manager_id: Manager ID (default "1")
 
@@ -594,6 +632,10 @@ class ManagersManager:
     def https_cert(self, manager_id: str = "1") -> HttpsCert:
         """
         Get HTTPS certificate information via SecurityService links.
+
+        Prefer :meth:`https_certificates`, which follows the DMTF-standard
+        ``ManagerNetworkProtocol.HTTPS.Certificates`` link. This method keeps
+        the legacy OEM ``SecurityService.Links.HttpsCert`` fallback available.
 
         Discovers SecurityService first, then follows its
         ``Links.HttpsCert`` link.
@@ -622,6 +664,9 @@ class ManagersManager:
     def firewall_rules(self, manager_id: str = "1") -> FirewallRules:
         """
         Get Firewall rules collection from OEM links.
+
+        DMTF Redfish has no generic Manager firewall-rules resource; this
+        optional helper must not be required from standards-compliant BMCs.
 
         Args:
             manager_id: Manager ID (default "1")

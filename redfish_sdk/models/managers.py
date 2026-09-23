@@ -75,6 +75,30 @@ class ProtocolConfig(BaseModel):
     protocol_enabled: Optional[bool] = Field(None, alias="ProtocolEnabled")
 
 
+class HTTPSProtocol(ProtocolConfig):
+    """DMTF-standard HTTPS protocol configuration."""
+    certificates: Optional[Link] = Field(None, alias="Certificates")
+
+
+class NTPProtocol(ProtocolConfig):
+    """DMTF-standard NTP protocol configuration."""
+    ntp_servers: Optional[List[str]] = Field(None, alias="NTPServers")
+    network_supplied_servers: Optional[List[str]] = Field(
+        None, alias="NetworkSuppliedServers"
+    )
+
+
+class SNMPProtocol(ProtocolConfig):
+    """DMTF-standard SNMP protocol configuration."""
+    authentication_protocol: Optional[str] = Field(None, alias="AuthenticationProtocol")
+    community_strings: Optional[List[str]] = Field(None, alias="CommunityStrings")
+    enable_snmp_v1: Optional[bool] = Field(None, alias="EnableSNMPv1")
+    enable_snmp_v2c: Optional[bool] = Field(None, alias="EnableSNMPv2c")
+    enable_snmp_v3: Optional[bool] = Field(None, alias="EnableSNMPv3")
+    encryption_protocol: Optional[str] = Field(None, alias="EncryptionProtocol")
+    trap_port: Optional[int] = Field(None, alias="TrapPort")
+
+
 class NetworkProtocol(Entity):
     """
     Network protocol configuration for a manager (BMC).
@@ -84,12 +108,14 @@ class NetworkProtocol(Entity):
     fqdn: Optional[str] = Field(None, alias="FQDN")
     host_name: Optional[str] = Field(None, alias="HostName")
     http: Optional[ProtocolConfig] = Field(None, alias="HTTP")
-    https: Optional[ProtocolConfig] = Field(None, alias="HTTPS")
+    https: Optional[HTTPSProtocol] = Field(None, alias="HTTPS")
     ipmi: Optional[ProtocolConfig] = Field(None, alias="IPMI")
+    ntp: Optional[NTPProtocol] = Field(None, alias="NTP")
     ssh: Optional[ProtocolConfig] = Field(None, alias="SSH")
-    snmp: Optional[ProtocolConfig] = Field(None, alias="SNMP")
+    snmp: Optional[SNMPProtocol] = Field(None, alias="SNMP")
     virtual_media: Optional[ProtocolConfig] = Field(None, alias="VirtualMedia")
     kvmip: Optional[ProtocolConfig] = Field(None, alias="KVMIP")
+    rfb: Optional[ProtocolConfig] = Field(None, alias="RFB")
     status: Optional[Status] = Field(None, alias="Status")
 
 
@@ -170,6 +196,8 @@ class KvmService(Entity):
     from the Manager's ``Oem.{vendor}.KVM`` link.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/KvmService``
 
+    For standard console availability, use ``Manager.GraphicalConsole``.
+
     """
     kvm_url: Optional[str] = Field(None, alias="KvmUrl")
     maximum_number_of_sessions: Optional[int] = Field(
@@ -198,6 +226,8 @@ class NtpService(Entity):
     OEM extension resource dynamically discovered from
     ``Oem.{vendor}.NtpService``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/NtpService``
+
+    Prefer the DMTF-standard ``ManagerNetworkProtocol.NTP`` section.
 
     """
     service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
@@ -233,6 +263,8 @@ class SyslogService(Entity):
     OEM extension resource dynamically discovered from
     ``Oem.{vendor}.SyslogService``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/SyslogService``
+
+    DMTF Redfish has no generic Manager syslog-configuration resource.
 
     """
     service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
@@ -281,6 +313,8 @@ class SnmpService(Entity):
     ``Oem.{vendor}.SnmpService``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/SnmpService``
 
+    Prefer the DMTF-standard ``ManagerNetworkProtocol.SNMP`` section.
+
     """
     snmp_v1_enable: Optional[bool] = Field(None, alias="SnmpV1Enable")
     snmp_v2c_enable: Optional[bool] = Field(None, alias="SnmpV2CEnable")
@@ -309,6 +343,8 @@ class LldpService(Entity):
     ``Oem.{vendor}.LldpService``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/LldpService``
 
+    DMTF Redfish has no generic Manager LLDP service resource.
+
     """
     lldp_enabled: Optional[bool] = Field(None, alias="LldpEnabled")
     work_mode: Optional[str] = Field(None, alias="WorkMode")
@@ -324,6 +360,9 @@ class DnsService(Entity):
 
     OEM extension resource. Not all BMC vendors support this endpoint.
     Typical endpoint: ``/redfish/v1/Managers/{managerId}/DnsService``
+
+    Prefer ``EthernetInterface.NameServers`` and
+    ``ManagerNetworkProtocol.HostName`` for standard network data.
 
     """
     service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
@@ -345,6 +384,8 @@ class VncService(Entity):
     ``/redfish/v1/Managers/{managerId}/VncService``
 
     Note: The OEM key is ``RfbService`` but the resource URI is ``VncService``.
+
+    Prefer the DMTF-standard ``ManagerNetworkProtocol.RFB`` section.
 
     """
     rfb_non_secure: Optional[bool] = Field(None, alias="RfbNonSecure")
@@ -376,6 +417,9 @@ class SecurityService(Entity):
     ``Oem.{vendor}.SecurityService``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/SecurityService``
 
+    Prefer ``ManagerNetworkProtocol.HTTPS.Certificates`` for standard HTTPS
+    certificate discovery.
+
     """
     links: Optional[SecurityServiceLinks] = Field(None, alias="Links")
 
@@ -406,6 +450,9 @@ class HttpsCert(Entity):
     Discovered via ``SecurityService.Links.HttpsCert``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/SecurityService/HttpsCert``
 
+    This is an OEM fallback; use ``ManagerNetworkProtocol.HTTPS.Certificates``
+    when it is exposed.
+
     """
     x509_certificate_information: Optional[X509CertificateInformation] = Field(
         None, alias="X509CertificateInformation",
@@ -426,6 +473,8 @@ class FirewallRules(Entity):
 
     This is a Collection resource; members can be accessed individually
     via their ``@odata.id``.
+
+    DMTF Redfish has no generic Manager firewall-rules resource.
 
     """
     members_count: Optional[int] = Field(None, alias="Members@odata.count")
