@@ -395,6 +395,38 @@ class TestEventService:
         assert body["MessageArgs"] == ["a", "b"]
         client.close()
 
+    def test_submit_test_event_message_id_first(self, monkeypatch):
+        client = _make_client()
+        target = "/redfish/v1/EventService/Actions/EventService.SubmitTestEvent"
+        self._stub_event_service(
+            monkeypatch,
+            client,
+            {"#EventService.SubmitTestEvent": {"target": target}},
+        )
+
+        recorder = _CallRecorder()
+
+        def fake_post(path, model_class, body=None, raw_body=None):
+            recorder.record(path=path, raw_body=raw_body)
+            return model_class.model_construct()
+
+        monkeypatch.setattr(client._http_client, "post", fake_post)
+
+        client.submit_test_event(
+            message_id="ResourceEvent.1.0.ResourceUpdated",
+            message_args=["Manager"],
+            severity="OK",
+            message_severity="Warning",
+        )
+        body = recorder.last["raw_body"]
+        assert recorder.last["path"] == target
+        assert "EventType" not in body
+        assert body["MessageId"] == "ResourceEvent.1.0.ResourceUpdated"
+        assert body["MessageArgs"] == ["Manager"]
+        assert body["Severity"] == "OK"
+        assert body["MessageSeverity"] == "Warning"
+        client.close()
+
     def test_submit_test_event_rejects_unknown_type(self, monkeypatch):
         client = _make_client()
         self._stub_event_service(

@@ -1517,11 +1517,13 @@ class RedfishClient:
 
     def submit_test_event(
         self,
-        event_type: str,
+        event_type: Optional[str] = None,
         message: Optional[str] = None,
         message_id: Optional[str] = None,
         severity: Optional[str] = None,
         message_args: Optional[List[str]] = None,
+        *,
+        message_severity: Optional[str] = None,
     ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
@@ -1529,7 +1531,12 @@ class RedfishClient:
         See :meth:`EventServiceManager.submit_test_event` for details.
         """
         return self._events.submit_test_event(
-            event_type, message, message_id, severity, message_args
+            event_type=event_type,
+            message=message,
+            message_id=message_id,
+            severity=severity,
+            message_args=message_args,
+            message_severity=message_severity,
         )
 
     # ==================================================================

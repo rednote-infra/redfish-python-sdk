@@ -216,26 +216,34 @@ class EventServiceManager:
 
     def submit_test_event(
         self,
-        event_type: str,
+        event_type: Optional[str] = None,
         message: Optional[str] = None,
         message_id: Optional[str] = None,
         severity: Optional[str] = None,
         message_args: Optional[List[str]] = None,
+        *,
+        message_severity: Optional[str] = None,
     ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
 
         Args:
-            event_type: Event type, e.g. ``"Alert"`` / ``"StatusChange"``.
-                Subject to ``EventType@Redfish.AllowableValues`` on the BMC.
+            event_type: Deprecated compatibility event type for older BMCs,
+                e.g. ``"Alert"`` / ``"StatusChange"``. When supplied, it is
+                validated against ``EventType@Redfish.AllowableValues`` if the
+                BMC advertises that list.
             message: Optional event message string.
-            message_id: Optional Redfish MessageId.
+            message_id: Redfish MessageId. Use this standard, preferred
+                parameter for newer BMCs.
             severity: Optional severity (e.g. ``"OK"`` / ``"Warning"`` / ``"Critical"``).
             message_args: Optional message argument list.
+            message_severity: Optional message severity for newer Redfish
+                EventService implementations.
 
         Raises:
             RedfishValidationError: If EventService does not expose
-                SubmitTestEvent or ``event_type`` is not in the allowable list.
+            SubmitTestEvent is unavailable, neither ``message_id`` nor
+            ``event_type`` is supplied, or ``event_type`` is not allowable.
         """
         from ..models.common import RedfishResponse
 
@@ -248,12 +256,18 @@ class EventServiceManager:
             )
         target = action["target"]
         allowable = action.get("EventType@Redfish.AllowableValues")
-        if allowable and event_type not in allowable:
+        if event_type is None and message_id is None:
+            raise RedfishValidationError(
+                "SubmitTestEvent requires message_id or legacy event_type"
+            )
+        if event_type is not None and allowable and event_type not in allowable:
             raise RedfishValidationError(
                 f"Event type '{event_type}' not in allowable values {allowable}"
             )
 
-        body: dict = {"EventType": event_type}
+        body: Dict[str, Any] = {}
+        if event_type is not None:
+            body["EventType"] = event_type
         if message is not None:
             body["Message"] = message
         if message_id is not None:
@@ -262,6 +276,8 @@ class EventServiceManager:
             body["Severity"] = severity
         if message_args is not None:
             body["MessageArgs"] = message_args
+        if message_severity is not None:
+            body["MessageSeverity"] = message_severity
 
-        logger.info("POST SubmitTestEvent (%s) -> %s", event_type, target)
+        logger.info("POST SubmitTestEvent -> %s", target)
         self._http.post(target, RedfishResponse, raw_body=body)
