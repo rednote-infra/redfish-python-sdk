@@ -5,7 +5,7 @@ Tests data model creation, field mapping, and OEM vendor alias resolution.
 import pytest
 
 from redfish_sdk.models.account import Account
-from redfish_sdk.models.chassis import Power
+from redfish_sdk.models.chassis import PCIeDevice, Power
 from redfish_sdk.models.common import Collection, Entity, Link
 from redfish_sdk.models.drive import Drive
 from redfish_sdk.models.oem import Oem
@@ -157,6 +157,20 @@ class TestOem:
     def test_oem_empty(self):
         oem = Oem.model_validate({})
         assert oem.bmc is None
+
+
+class TestPCIeDeviceOem:
+    def test_device_bdf_remains_an_oem_only_field(self):
+        device = PCIeDevice.model_validate(
+            {
+                "PCIeFunctions": {"@odata.id": "/redfish/v1/Chassis/1/PCIeDevices/1/PCIeFunctions"},
+                "Oem": {"Public": {"DeviceBDF": "0000:41:00.0"}},
+            }
+        )
+
+        assert device.pcie_functions.odata_id.endswith("/PCIeFunctions")
+        assert device.oem.gpu_oem_public.device_bdf == "0000:41:00.0"
+        assert not hasattr(device, "device_bdf")
 
 
 class TestFanModel:
