@@ -46,14 +46,12 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 from .exceptions import RedfishException
 from .http_client import RedfishHttpClient
 from .models.account import Account, AccountService, Role
-from .models.resource_key import RedfishResource
 from .models.chassis import Chassis
-from .models.drive import Drive
 from .models.common import Collection, Entity, Link, RedfishResponse
+from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.fru import Fru
 from .models.logs import Log, LogEntry
-from .models.oem import MainBoard
 from .models.managers import (
     DnsService,
     EthernetInterface,
@@ -73,9 +71,11 @@ from .models.managers import (
     VncService,
 )
 from .models.memory import Memory
+from .models.oem import MainBoard
 from .models.power import Power, PowerSupply
 from .models.processor import Processor
 from .models.registry import Registry
+from .models.resource_key import RedfishResource
 from .models.root import RootService
 from .models.session import Session, SessionService
 from .models.systems import Bios, BootOption, System, SystemPatchSetting
@@ -977,7 +977,7 @@ class RedfishClient:
         self,
         task_or_entry,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """
         Download the artifact produced by a diagnostic-data collection.
 
@@ -1221,6 +1221,15 @@ class RedfishClient:
             RedfishNotFoundError: If HttpsCert is not available
         """
         return self._managers.https_cert(manager_id)
+
+    def get_https_certificates(self, manager_id: str = "1") -> Collection[Link]:
+        """Get the standard HTTPS certificate collection for a BMC manager.
+
+        This follows ``ManagerNetworkProtocol.HTTPS.Certificates``. Use
+        :meth:`get_https_cert` only for a legacy OEM ``SecurityService``
+        fallback.
+        """
+        return self._managers.https_certificates(manager_id)
 
     def get_firewall_rules(self, manager_id: str = "1") -> FirewallRules:
         """

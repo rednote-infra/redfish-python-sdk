@@ -8,6 +8,7 @@ from redfish_sdk.models.account import Account
 from redfish_sdk.models.chassis import PCIeDevice, Power
 from redfish_sdk.models.common import Collection, Entity, Link
 from redfish_sdk.models.drive import Drive
+from redfish_sdk.models.managers import HTTPSProtocol, NetworkProtocol, NTPProtocol, SNMPProtocol
 from redfish_sdk.models.oem import Oem
 from redfish_sdk.models.session import Session
 from redfish_sdk.models.systems import Memory, Processor, System
@@ -188,6 +189,45 @@ class TestUpdateService:
         )
 
         assert service.multi_part_http_push_uri == "/redfish/v1/UpdateService/legacy-upload"
+
+
+class TestNetworkProtocol:
+    def test_standard_protocol_sections(self):
+        protocol = NetworkProtocol.model_validate(
+            {
+                "HTTPS": {
+                    "ProtocolEnabled": True,
+                    "Port": 443,
+                    "Certificates": {"@odata.id": "/redfish/v1/CertificateService/Certificates"},
+                },
+                "NTP": {
+                    "ProtocolEnabled": True,
+                    "NTPServers": ["ntp.example.com"],
+                    "NetworkSuppliedServers": ["192.0.2.1"],
+                },
+                "SNMP": {
+                    "ProtocolEnabled": True,
+                    "CommunityStrings": ["public"],
+                    "EnableSNMPv1": False,
+                    "EnableSNMPv2c": True,
+                    "EnableSNMPv3": True,
+                    "TrapPort": 162,
+                },
+                "RFB": {"ProtocolEnabled": True, "Port": 5900},
+            }
+        )
+
+        assert isinstance(protocol.https, HTTPSProtocol)
+        assert protocol.https.certificates.odata_id == "/redfish/v1/CertificateService/Certificates"
+        assert isinstance(protocol.ntp, NTPProtocol)
+        assert protocol.ntp.ntp_servers == ["ntp.example.com"]
+        assert protocol.ntp.network_supplied_servers == ["192.0.2.1"]
+        assert isinstance(protocol.snmp, SNMPProtocol)
+        assert protocol.snmp.community_strings == ["public"]
+        assert protocol.snmp.enable_snmp_v2c is True
+        assert protocol.snmp.trap_port == 162
+        assert protocol.rfb.protocol_enabled is True
+        assert protocol.rfb.port == 5900
 
 
 class TestFanModel:
