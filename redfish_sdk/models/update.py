@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from .common import Entity, Link, Status
 
@@ -20,7 +20,11 @@ class UpdateService(Entity):
     software_inventory: Optional[Link] = Field(None, alias="SoftwareInventory")
     client_certificates: Optional[Link] = Field(None, alias="ClientCertificates")
     http_push_uri: Optional[str] = Field(None, alias="HttpPushUri")
-    multi_part_http_push_uri: Optional[str] = Field(None, alias="MultiPartHttpPushUri")
+    multi_part_http_push_uri: Optional[str] = Field(
+        None,
+        alias="MultipartHttpPushUri",
+        validation_alias=AliasChoices("MultipartHttpPushUri", "MultiPartHttpPushUri"),
+    )
     service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
     status: Optional[Status] = Field(None, alias="Status")
 
