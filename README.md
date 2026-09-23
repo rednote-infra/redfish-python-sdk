@@ -20,6 +20,10 @@ multi-vendor BMCs and bare-metal servers through the DMTF Redfish API.
 - **Context manager** — `with` statement support for automatic connection cleanup
 - **Minimal dependencies** — only `requests`, `pydantic`, and `urllib3`
 
+Use DMTF standard fields first. In particular, xFusion's PCIe `DeviceBDF`
+field is OEM-only; portable code should use `PCIeFunctions` and only consume
+the OEM field when the xFusion contract applies.
+
 ## Requirements
 
 - Python >= 3.9

@@ -39,7 +39,13 @@ class GpuPerformanceParameters(BaseModel):
 
 
 class PCIeDeviceOEMPublic(BaseModel):
-    """OEM public extension for PCIe GPU devices (华为 xFusion specific)."""
+    """xFusion-specific OEM extension for PCIe GPU devices.
+
+    ``DeviceBDF`` is an xFusion OEM property, not a generic DMTF Redfish
+    ``PCIeDevice`` field. Generic code should discover standard
+    ``PCIeFunctions`` first and only read this field when the xFusion OEM
+    contract is known to apply.
+    """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
     device_bdf: Optional[str] = Field(None, alias="DeviceBDF")
     device_locator: Optional[str] = Field(None, alias="DeviceLocator")
@@ -73,7 +79,9 @@ class PCIeDevice(Entity):
     Endpoint: /redfish/v1/Chassis/{chassisId}/PCIeDevices/{pcieDeviceId}
 
     The 'name' field is used to identify GPU devices (contains "GPU" substring).
-    OEM field contains extended GPU metrics for 华为 xFusion servers.
+    OEM fields contain extended GPU metrics for xFusion servers.
+    ``Oem.Public.DeviceBDF`` is intentionally kept within that OEM model and
+    must not be used as a generic PCIe BDF source.
 
     """
     card_model: Optional[str] = Field(None, alias="CardModel")
