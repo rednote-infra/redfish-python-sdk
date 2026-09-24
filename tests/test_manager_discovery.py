@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from redfish_sdk import RedfishClient
+from redfish_sdk.exceptions import RedfishNotFoundError
 from redfish_sdk.models.common import Link
 from redfish_sdk.models.managers import Manager, NetworkProtocol
 from redfish_sdk.models.root import RootService
@@ -26,7 +27,8 @@ def _client_with_self_manager(monkeypatch):
 
     def fake_get(path, model_class):
         requests.append(path)
-        assert path != "/redfish/v1/Managers/1"
+        if path == "/redfish/v1/Managers/1":
+            raise RedfishNotFoundError(path)
         if path == "/redfish/v1/Managers/Self":
             return manager
         if path == "/redfish/v1/Managers/Self/NetworkProtocol":
@@ -38,13 +40,17 @@ def _client_with_self_manager(monkeypatch):
     return client, requests
 
 
-def test_get_manager_discovers_self_member_when_id_is_omitted(monkeypatch):
+def test_get_manager_falls_back_to_self_when_default_member_is_missing(monkeypatch):
     client, requests = _client_with_self_manager(monkeypatch)
 
     manager = client.get_manager()
 
     assert manager.odata_id == "/redfish/v1/Managers/Self"
-    assert requests == ["/redfish/v1/Managers", "/redfish/v1/Managers/Self"]
+    assert requests == [
+        "/redfish/v1/Managers/1",
+        "/redfish/v1/Managers",
+        "/redfish/v1/Managers/Self",
+    ]
     client.close()
 
 
@@ -55,6 +61,7 @@ def test_get_network_protocol_uses_the_discovered_manager_link(monkeypatch):
 
     assert protocol.odata_id == "/redfish/v1/Managers/Self/NetworkProtocol"
     assert requests == [
+        "/redfish/v1/Managers/1",
         "/redfish/v1/Managers",
         "/redfish/v1/Managers/Self",
         "/redfish/v1/Managers/Self/NetworkProtocol",
@@ -81,7 +88,26 @@ def test_get_manager_preserves_an_explicit_identifier(monkeypatch):
     client.close()
 
 
-def test_get_gpus_does_not_replace_an_omitted_system_id_with_one(monkeypatch):
+def test_get_manager_uses_one_when_none_is_passed(monkeypatch):
+    client = RedfishClient(host="mock-bmc", username="user", password="password")
+    root = RootService.model_construct(
+        managers=Link.model_construct(odata_id="/redfish/v1/Managers")
+    )
+    monkeypatch.setattr(client, "_get_root", lambda: root)
+
+    def fake_get(path, model_class):
+        assert path == "/redfish/v1/Managers/1"
+        return Manager.model_construct(odata_id=path)
+
+    monkeypatch.setattr(client._http_client, "get", fake_get)
+
+    manager = client.get_manager(None)
+
+    assert manager.odata_id == "/redfish/v1/Managers/1"
+    client.close()
+
+
+def test_get_gpus_uses_default_system_id_when_omitted(monkeypatch):
     client = RedfishClient(host="mock-bmc", username="user", password="password")
     requested_system_ids = []
     system = System.model_construct(odata_id="/redfish/v1/Systems/Self")
@@ -94,5 +120,5 @@ def test_get_gpus_does_not_replace_an_omitted_system_id_with_one(monkeypatch):
     monkeypatch.setattr(client, "_get_chassis_collection", lambda: [])
 
     assert client.get_gpus() == []
-    assert requested_system_ids == [None]
+    assert requested_system_ids == ["1"]
     client.close()
