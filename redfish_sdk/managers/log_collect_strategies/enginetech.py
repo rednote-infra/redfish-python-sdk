@@ -31,7 +31,7 @@ class EnginetechLogCollectStrategy(BaseLogCollectStrategy):
     def resolve_log_services_odata_id(
         self,
         client: RedfishClient,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> str:
         """Discover the sole ComputerSystem's LogServices collection."""
         from .._log_helpers import require_log_services_link
@@ -89,7 +89,7 @@ class EnginetechLogCollectStrategy(BaseLogCollectStrategy):
         self,
         client: RedfishClient,
         log_services_odata_id: str,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Optional[Task]:
         """Always generate a fresh bundle because ``Latest`` is overwritten."""
         return None

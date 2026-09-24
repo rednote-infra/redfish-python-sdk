@@ -86,7 +86,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         log_id: Optional[str] = None,
         diagnostic_data_type: Optional[str] = None,
         oem_params: Optional[Dict[str, Any]] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Task:
         """POST Dump and return a synthetic Task carrying progress context."""
         from ...exceptions import RedfishValidationError
@@ -122,7 +122,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         self,
         client: "RedfishClient",
         log_services_odata_id: str,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Optional[Task]:
         """
         Probe ``Dump/Progress`` for a reusable collection.
@@ -267,7 +267,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
                 "ZTE download failed: no TarPath resolved from Dump/Progress"
             )
 
-        manager_id = getattr(task, "_zte_manager_id", "1") or "1"
+        manager_id = getattr(task, "_zte_manager_id", None)
         download_target = self._general_download_target(client, manager_id)
         logger.info(
             "ZTE GeneralDownload POST %s Path=%s", download_target, tar_path
@@ -277,29 +277,19 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         )
 
     @staticmethod
-    def _general_download_target(client: "RedfishClient", manager_id: str) -> str:
+    def _general_download_target(
+        client: "RedfishClient", manager_id: Optional[str]
+    ) -> str:
         """
         Discover ``#Manager.GeneralDownload`` target from the Manager.
 
-        ZTE uses ``/redfish/v1/Managers/Self``; rather than trusting the
-        caller-supplied ``manager_id`` (which defaults to "1"), resolve the
-        actual Manager from the collection's first member.
+        ZTE uses ``/redfish/v1/Managers/Self`` on some BMCs, so resolve an
+        omitted manager ID from the advertised Managers collection.
         """
-        from ...models.common import Collection
-        from ...models.managers import Manager
-
-        managers_col_url = client._get_managers_collection_odata_id().rstrip("/")
-        col = client._http_client.get(managers_col_url, Collection[Manager])
-        members = col.members or []
-        manager_url = (
-            members[0].odata_id
-            if members and members[0].odata_id
-            else f"{managers_col_url}/{manager_id}"
-        )
-        manager = client._http_client.get(manager_url, Manager)
+        manager = client.get_manager(manager_id)
         actions = manager.actions or {}
         action = actions.get("#Manager.GeneralDownload") or {}
         target = action.get("target") if isinstance(action, dict) else None
         if isinstance(target, str) and target:
             return target
-        return f"{manager_url}/Actions/Manager.GeneralDownload"
+        return f"{manager.odata_id}/Actions/Manager.GeneralDownload"
