@@ -8,6 +8,7 @@ a single entry point in UpdateServiceManager.simple_update().
 Architecture:
     BaseUpdateStrategy (ABC)
       ├── GenericUpdateStrategy   — standard Redfish fallback
+      ├── EnginetechUpdateStrategy — Enginetech (安擎)
       ├── InspurUpdateStrategy    — Inspur (浪潮)
       ├── ZteUpdateStrategy       — ZTE (中兴)
       ├── H3cUpdateStrategy       — H3C (新华三)
@@ -19,6 +20,7 @@ All strategies are auto-registered when this package is imported.
 """
 
 from .base import BaseUpdateStrategy, GenericUpdateStrategy
+from .enginetech import EnginetechUpdateStrategy
 from .h3c import H3cUpdateStrategy
 from .inspur import InspurUpdateStrategy
 from .lenovo import LenovoUpdateStrategy
@@ -30,6 +32,7 @@ from .zte import ZteUpdateStrategy
 
 # --- Auto-register all vendor strategies ---
 UpdateStrategyRegistry.register("generic", GenericUpdateStrategy())
+UpdateStrategyRegistry.register("enginetech", EnginetechUpdateStrategy())
 UpdateStrategyRegistry.register("inspur", InspurUpdateStrategy())
 UpdateStrategyRegistry.register("zte", ZteUpdateStrategy())
 UpdateStrategyRegistry.register("h3c", H3cUpdateStrategy())
@@ -40,6 +43,7 @@ UpdateStrategyRegistry.register("lenovo", LenovoUpdateStrategy())
 __all__ = [
     "BaseUpdateStrategy",
     "GenericUpdateStrategy",
+    "EnginetechUpdateStrategy",
     "InspurUpdateStrategy",
     "ZteUpdateStrategy",
     "H3cUpdateStrategy",
