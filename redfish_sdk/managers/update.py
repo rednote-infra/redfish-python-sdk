@@ -73,7 +73,7 @@ class UpdateServiceManager:
             image_uri: URI of the firmware image (e.g., "http://nas/fw/bmc.bin")
             transfer_protocol: Transfer protocol (e.g., "HTTP", "NFS", "TFTP")
             targets: Optional list of firmware target paths
-                     (e.g., ["/redfish/v1/Managers/1"] or ["ActiveBMC"])
+                     (e.g., ["/redfish/v1/Managers/Self"] or ["ActiveBMC"])
             vendor: Optional vendor override (e.g., "inspur", "lenovo").
                     If not set, the vendor is auto-detected.
             **kwargs: Vendor-specific parameters. Common ones include:

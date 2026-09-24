@@ -143,21 +143,7 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
         """
         Best-effort Manager URL the DiagnosticService lives under.
 
-        Uses the Managers collection's first member (matches this BMC's
-        single-Manager layout — id="1"). Falls back to
-        ``/redfish/v1/Managers/1``.
+        Resolves the default Manager through its advertised collection.
         """
-        from ...models.common import Collection
-        from ...models.managers import Manager
-
-        try:
-            col = client._http_client.get(
-                client._get_managers_collection_odata_id(),
-                Collection[Manager],
-            )
-            members = col.members or []
-            if members and members[0].odata_id:
-                return members[0].odata_id
-        except Exception:  # noqa: BLE001 — best-effort
-            pass
-        return "/redfish/v1/Managers/1"
+        manager = client.get_manager()
+        return manager.odata_id

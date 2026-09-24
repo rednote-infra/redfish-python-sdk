@@ -409,7 +409,7 @@ class SystemsManager:
 
 
         """
-        system = self.get(system_id or "1")
+        system = self.get(system_id)
         gpu_members: List[Gpu] = []
 
         # Step 1: Try GraphicsControllers (standard Redfish path)

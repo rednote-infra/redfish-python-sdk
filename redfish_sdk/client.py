@@ -884,24 +884,24 @@ class RedfishClient:
     # Component query methods — Managers (BMC) side
     # ==================================================================
 
-    def get_manager(self, manager_id: str = "1") -> Manager:
+    def get_manager(self, manager_id: Optional[str] = None) -> Manager:
         """
         Get BMC manager information.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             Manager resource with firmware_version, model, etc.
         """
         return self._managers.get(manager_id)
 
-    def get_manager_log_services(self, manager_id: str = "1") -> List[Log]:
+    def get_manager_log_services(self, manager_id: Optional[str] = None) -> List[Log]:
         """
         Get the list of log services for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             List of Log objects
@@ -911,7 +911,7 @@ class RedfishClient:
     def get_manager_log_entries(
         self,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> List[LogEntry]:
         """
         Get log entries for a BMC manager log service.
@@ -920,7 +920,7 @@ class RedfishClient:
             log_id: Log service ID (e.g., "Sel", "OperateLog"). Optional
                 — when omitted and there is exactly one log
                 service, it is auto-selected.
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             List of LogEntry objects (uses ``?$expand=.($levels=1)`` to
@@ -936,7 +936,7 @@ class RedfishClient:
         self,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         oem_params: Optional[dict] = None,
     ) -> Task:
         """
@@ -951,7 +951,7 @@ class RedfishClient:
             diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
                 the vendor default (OEM when available, else ``Manager``).
             log_id: Log service ID. ``None`` auto-selects the sole service.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Auto-discovered when omitted.
             oem_params: Optional dict shallow-merged into the request body.
 
         Returns:
@@ -985,7 +985,7 @@ class RedfishClient:
         output_path: str,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         poll_interval: int = 5,
         timeout: int = 1800,
         *,
@@ -1006,7 +1006,7 @@ class RedfishClient:
             output_path: Destination file path for the downloaded bundle.
             diagnostic_data_type: See :meth:`collect_diagnostic_data`.
             log_id: See :meth:`collect_diagnostic_data`.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Auto-discovered when omitted.
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
             reuse_existing: Reuse a matching prior task on the BMC when
@@ -1032,43 +1032,43 @@ class RedfishClient:
             retry_backoff=retry_backoff,
         )
 
-    def get_network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
+    def get_network_protocol(self, manager_id: Optional[str] = None) -> NetworkProtocol:
         """
         Get network protocol configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             NetworkProtocol resource
         """
         return self._managers.network_protocol(manager_id)
 
-    def get_manager_ethernet_interfaces(self, manager_id: str = "1") -> List[EthernetInterface]:
+    def get_manager_ethernet_interfaces(self, manager_id: Optional[str] = None) -> List[EthernetInterface]:
         """
         Get the list of Ethernet interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             List of EthernetInterface objects
         """
         return self._managers.ethernet_interfaces(manager_id)
 
-    def get_host_interfaces(self, manager_id: str = "1") -> List[HostInterface]:
+    def get_host_interfaces(self, manager_id: Optional[str] = None) -> List[HostInterface]:
         """
         Get the list of host interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             List of HostInterface objects
         """
         return self._managers.host_interfaces(manager_id)
 
-    def get_kvm_service(self, manager_id: str = "1") -> KvmService:
+    def get_kvm_service(self, manager_id: Optional[str] = None) -> KvmService:
         """
         Get KVM service configuration for a BMC manager.
 
@@ -1076,7 +1076,7 @@ class RedfishClient:
         OEM links (``Oem.{vendor}.KVM``).
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             KvmService resource
@@ -1086,12 +1086,12 @@ class RedfishClient:
         """
         return self._managers.kvm_service(manager_id)
 
-    def get_ntp_service(self, manager_id: str = "1") -> NtpService:
+    def get_ntp_service(self, manager_id: Optional[str] = None) -> NtpService:
         """
         Get NTP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             NtpService resource
@@ -1101,12 +1101,12 @@ class RedfishClient:
         """
         return self._managers.ntp_service(manager_id)
 
-    def get_syslog_service(self, manager_id: str = "1") -> SyslogService:
+    def get_syslog_service(self, manager_id: Optional[str] = None) -> SyslogService:
         """
         Get Syslog service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             SyslogService resource
@@ -1116,12 +1116,12 @@ class RedfishClient:
         """
         return self._managers.syslog_service(manager_id)
 
-    def get_snmp_service(self, manager_id: str = "1") -> SnmpService:
+    def get_snmp_service(self, manager_id: Optional[str] = None) -> SnmpService:
         """
         Get SNMP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             SnmpService resource
@@ -1131,12 +1131,12 @@ class RedfishClient:
         """
         return self._managers.snmp_service(manager_id)
 
-    def get_lldp_service(self, manager_id: str = "1") -> LldpService:
+    def get_lldp_service(self, manager_id: Optional[str] = None) -> LldpService:
         """
         Get LLDP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             LldpService resource
@@ -1146,14 +1146,14 @@ class RedfishClient:
         """
         return self._managers.lldp_service(manager_id)
 
-    def get_dns_service(self, manager_id: str = "1") -> DnsService:
+    def get_dns_service(self, manager_id: Optional[str] = None) -> DnsService:
         """
         Get DNS service configuration for a BMC manager.
 
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             DnsService resource
@@ -1163,12 +1163,12 @@ class RedfishClient:
         """
         return self._managers.dns_service(manager_id)
 
-    def get_vnc_service(self, manager_id: str = "1") -> VncService:
+    def get_vnc_service(self, manager_id: Optional[str] = None) -> VncService:
         """
         Get VNC/RFB service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             VncService resource
@@ -1178,12 +1178,12 @@ class RedfishClient:
         """
         return self._managers.vnc_service(manager_id)
 
-    def get_security_service(self, manager_id: str = "1") -> SecurityService:
+    def get_security_service(self, manager_id: Optional[str] = None) -> SecurityService:
         """
         Get Security service for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             SecurityService resource
@@ -1193,14 +1193,14 @@ class RedfishClient:
         """
         return self._managers.security_service(manager_id)
 
-    def get_https_cert(self, manager_id: str = "1") -> HttpsCert:
+    def get_https_cert(self, manager_id: Optional[str] = None) -> HttpsCert:
         """
         Get HTTPS certificate information for a BMC manager.
 
         Discovered via SecurityService links.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             HttpsCert resource
@@ -1210,7 +1210,7 @@ class RedfishClient:
         """
         return self._managers.https_cert(manager_id)
 
-    def get_https_certificates(self, manager_id: str = "1") -> Collection[Link]:
+    def get_https_certificates(self, manager_id: Optional[str] = None) -> Collection[Link]:
         """Get the standard HTTPS certificate collection for a BMC manager.
 
         This follows ``ManagerNetworkProtocol.HTTPS.Certificates``. Use
@@ -1219,12 +1219,12 @@ class RedfishClient:
         """
         return self._managers.https_certificates(manager_id)
 
-    def get_firewall_rules(self, manager_id: str = "1") -> FirewallRules:
+    def get_firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
         Get Firewall rules collection for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             FirewallRules collection resource
@@ -1234,26 +1234,26 @@ class RedfishClient:
         """
         return self._managers.firewall_rules(manager_id)
 
-    def get_virtual_media(self, manager_id: str = "1") -> List[VirtualMedia]:
+    def get_virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
         """
         Get the list of virtual media resources for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             List of VirtualMedia resources
         """
         return self._managers.virtual_media(manager_id)
 
-    def get_sol_source(self, manager_id: str = "1") -> SolSourceControlInfo:
+    def get_sol_source(self, manager_id: Optional[str] = None) -> SolSourceControlInfo:
         """
         Get SOL source control information for a BMC manager.
 
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Auto-discovered when omitted.
 
         Returns:
             SolSourceControlInfo resource

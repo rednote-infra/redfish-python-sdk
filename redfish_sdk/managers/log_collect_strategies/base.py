@@ -63,7 +63,7 @@ class BaseLogCollectStrategy(ABC):
     def resolve_log_services_odata_id(
         self,
         client: RedfishClient,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> str:
         """
         Return the LogServices collection used by this strategy.
@@ -148,7 +148,7 @@ class BaseLogCollectStrategy(ABC):
         log_id: Optional[str] = None,
         diagnostic_data_type: Optional[str] = None,
         oem_params: Optional[Dict[str, Any]] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Task:
         """
         Trigger collection and return a Task. Standard: discover the action
@@ -286,7 +286,7 @@ class BaseLogCollectStrategy(ABC):
         self,
         client: "RedfishClient",
         log_services_odata_id: str,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Optional[Task]:
         """
         Return the most recent collection task on the BMC, or ``None``.

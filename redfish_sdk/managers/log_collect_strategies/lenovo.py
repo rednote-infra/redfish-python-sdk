@@ -83,7 +83,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
         log_id: Optional[str] = None,
         diagnostic_data_type: Optional[str] = None,
         oem_params: Optional[Dict[str, Any]] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Task:
         """
         POST CollectAllLog and return a synthetic Task carrying the URLs
@@ -211,7 +211,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
         self,
         client: "RedfishClient",
         log_services_odata_id: str,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Optional[Task]:
         """
         Lenovo does not surface prior collections through TaskService, and
