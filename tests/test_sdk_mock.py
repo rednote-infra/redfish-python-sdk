@@ -1178,9 +1178,15 @@ class TestNewDelegateMethods:
 
     def test_get_fan_prefers_thermal_subsystem_path(self, monkeypatch):
         """get_fan() should use ThermalSubsystem/Fans path first, returning Fan models."""
+        from redfish_sdk.models.chassis import Chassis
         from redfish_sdk.models.thermal import Fan
 
         client = self._make_client()
+        monkeypatch.setattr(
+            client,
+            "get_chassis",
+            lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
+        )
 
         fan0_raw = {
             "@odata.id": "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/0",
@@ -1224,15 +1230,21 @@ class TestNewDelegateMethods:
     def test_get_fan_fallback_to_thermal_path(self, monkeypatch):
         """get_fan() should fallback to Thermal resource, returning Fan models."""
         from redfish_sdk.exceptions import RedfishNotFoundError
+        from redfish_sdk.models.chassis import Chassis
         from redfish_sdk.models.thermal import Fan, Thermal
 
         client = self._make_client()
         fan = Fan.model_construct(name="Fan1", reading=9200, member_id="0")
         thermal = Thermal.model_construct(fans=[fan])
 
+        monkeypatch.setattr(
+            client,
+            "get_chassis",
+            lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
+        )
         monkeypatch.setattr(client, "get_raw",
                             lambda path: (_ for _ in ()).throw(RedfishNotFoundError(path)))
-        monkeypatch.setattr(client, "get_thermal", lambda cid="1": thermal)
+        monkeypatch.setattr(client, "get_thermal", lambda cid=None: thermal)
 
         result = client.get_fan()
         assert len(result) == 1
@@ -1244,12 +1256,18 @@ class TestNewDelegateMethods:
     def test_get_fan_returns_empty_list_when_all_paths_fail(self, monkeypatch):
         """get_fan() should return empty list when all fallback paths fail."""
         from redfish_sdk.exceptions import RedfishNotFoundError
+        from redfish_sdk.models.chassis import Chassis
 
         client = self._make_client()
+        monkeypatch.setattr(
+            client,
+            "get_chassis",
+            lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
+        )
         monkeypatch.setattr(client, "get_raw",
                             lambda path: (_ for _ in ()).throw(RedfishNotFoundError(path)))
         monkeypatch.setattr(client, "get_thermal",
-                            lambda cid="1": (_ for _ in ()).throw(RedfishNotFoundError("/thermal")))
+                            lambda cid=None: (_ for _ in ()).throw(RedfishNotFoundError("/thermal")))
 
         assert client.get_fan() == []
         client.close()

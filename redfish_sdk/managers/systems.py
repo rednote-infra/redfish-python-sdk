@@ -403,7 +403,8 @@ class SystemsManager:
         implementations:
 
         1. Try /redfish/v1/Systems/{id}/GraphicsControllers (standard path)
-        2. If empty, try /redfish/v1/Chassis/1/PCIeDevices and filter by name containing "GPU"
+        2. If empty, use the PCIeDevices link of the default advertised Chassis
+           and filter by name containing "GPU"
         3. If Chassis PCIeDevices is empty, try System.Links.PCIeDevices
 
 
@@ -429,7 +430,7 @@ class SystemsManager:
 
         pcie_devices: List[PCIeDevice] = []
         try:
-            chassis = chassis_mgr.get("1")
+            chassis = chassis_mgr.get()
             if chassis.pcie_devices is not None:
                 pcie_devices = self._client._get_collection(
                     chassis.pcie_devices.odata_id, PCIeDevice

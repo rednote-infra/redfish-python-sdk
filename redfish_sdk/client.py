@@ -349,21 +349,9 @@ class RedfishClient:
     def _get_chassis_collection(self) -> List[Chassis]:
         """
         Get the Chassis collection.
-
-        Special handling for Lenovo servers: if the collection endpoint returns
-        an error, falls back to fetching /redfish/v1/Chassis/1 directly.
         """
         root = self._get_root()
-        try:
-            return self._get_collection(root.chassis.odata_id, Chassis)
-        except RedfishException as exc:
-            logger.warning(
-                "Chassis collection endpoint failed (%s), falling back to /redfish/v1/Chassis/1",
-                exc
-            )
-            # Lenovo workaround: /redfish/v1/Chassis returns 500
-            chassis = self._http_client.get("/redfish/v1/Chassis/1", Chassis)
-            return [chassis]
+        return self._get_collection(root.chassis.odata_id, Chassis)
 
     def _get_chassis_collection_odata_id(self) -> str:
         """Get the Chassis collection @odata.id from the root service."""
@@ -746,24 +734,24 @@ class RedfishClient:
     # Component query methods — Chassis side
     # ==================================================================
 
-    def get_chassis(self, chassis_id: str = "1") -> Chassis:
+    def get_chassis(self, chassis_id: Optional[str] = None) -> Chassis:
         """
         Get chassis (physical enclosure) information.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             Chassis resource with manufacturer, model, serial number, etc.
         """
         return self._chassis.get(chassis_id)
 
-    def get_drives(self, chassis_id: str = "1") -> List:
+    def get_drives(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of physical drives (HDD/SSD/NVMe) in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of Drive objects
@@ -795,7 +783,7 @@ class RedfishClient:
     # IndicatorLED writes
     # ------------------------------------------------------------------
 
-    def set_indicator_led(self, state: str, chassis_id: str = "1") -> str:
+    def set_indicator_led(self, state: str, chassis_id: Optional[str] = None) -> str:
         """
         Set ``Chassis.IndicatorLED``. ``state`` must be one of
         ``Lit`` / ``Blinking`` / ``Off``.
@@ -809,48 +797,48 @@ class RedfishClient:
         """
         return self._chassis.set_drive_indicator_led(drive_odata_id, state)
 
-    def get_network_adapters(self, chassis_id: str = "1") -> List:
+    def get_network_adapters(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of network adapters (NICs) in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of NetworkAdapter objects
         """
         return self._chassis.network_adapters(chassis_id)
 
-    def get_pcie_devices(self, chassis_id: str = "1") -> List:
+    def get_pcie_devices(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of PCIe devices in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of PCIeDevice objects
         """
         return self._chassis.pcie_devices(chassis_id)
 
-    def get_power(self, chassis_id: str = "1") -> Power:
+    def get_power(self, chassis_id: Optional[str] = None) -> Power:
         """
         Get power information (PSUs, power controls, voltages) for a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             Power resource
         """
         return self._chassis.power(chassis_id)
 
-    def get_thermal(self, chassis_id: str = "1") -> Thermal:
+    def get_thermal(self, chassis_id: Optional[str] = None) -> Thermal:
         """
         Get thermal information (fans, temperatures) for a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             Thermal resource
@@ -858,7 +846,7 @@ class RedfishClient:
         return self._chassis.thermal(chassis_id)
 
     def get_inlet_history_temperature(
-        self, chassis_id: str = "1"
+        self, chassis_id: Optional[str] = None
     ) -> Optional[InletHistoryTemperature]:
         """
         Get air inlet historical temperature samples for a chassis.
@@ -871,21 +859,21 @@ class RedfishClient:
         returns 404; other errors (auth/network/parse) propagate.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             InletHistoryTemperature model, or None when not supported.
         """
         return self._chassis.inlet_history_temperature(chassis_id)
 
-    def get_fru_service(self, chassis_id: str = "1") -> List[dict]:
+    def get_fru_service(self, chassis_id: Optional[str] = None) -> List[dict]:
         """
         Get FRU service data from the chassis OEM extension.
 
         This is a vendor-specific feature (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of raw FRU service data dicts
@@ -1681,7 +1669,7 @@ class RedfishClient:
     # Component query methods — Firmware / FRU
     # ==================================================================
 
-    def get_baseboard_fru(self, chassis_id: str = "1") -> Optional[dict]:
+    def get_baseboard_fru(self, chassis_id: Optional[str] = None) -> Optional[dict]:
         """
         Get baseboard (motherboard) FRU data.
 
@@ -1689,7 +1677,7 @@ class RedfishClient:
         This is a vendor-specific extension (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             Raw FRU board data dict, or None if not available
@@ -1699,7 +1687,7 @@ class RedfishClient:
     def get_mainboard(
         self,
         system_id: Optional[str] = None,
-        chassis_id: str = "1",
+        chassis_id: Optional[str] = None,
     ) -> Optional[MainBoard]:
         """
         Get mainboard (motherboard) information with multi-path fallback.
@@ -1711,7 +1699,7 @@ class RedfishClient:
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             MainBoard model, or None if not available from any supported source
@@ -1755,25 +1743,27 @@ class RedfishClient:
     # Component query methods — Extracted sub-resources
     # ------------------------------------------------------------------
 
-    def get_fan(self, chassis_id: str = "1") -> List[Fan]:
+    def get_fan(self, chassis_id: Optional[str] = None) -> List[Fan]:
         """
         Get fan information with multi-path fallback.
 
         Fallback order:
-        1. ``/redfish/v1/Chassis/{id}/ThermalSubsystem/Fans`` — newer Redfish schema,
+        1. ``Chassis/ThermalSubsystem/Fans`` — newer Redfish schema, derived from
+           the selected Chassis resource's ``@odata.id``,
            fetches the collection then GETs each member individually.
         2. ``/redfish/v1/Chassis/{id}/Thermal`` — legacy schema,
            extracts the ``Fans`` array from the Thermal resource.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of Fan objects (empty list if not available from any supported path)
         """
         # Path 1: ThermalSubsystem/Fans (newer Redfish schema)
         try:
-            subsystem_path = f"/redfish/v1/Chassis/{chassis_id}/ThermalSubsystem/Fans"
+            chassis = self.get_chassis(chassis_id)
+            subsystem_path = f"{chassis.odata_id}/ThermalSubsystem/Fans"
             collection = self.get_raw(subsystem_path)
             if collection is not None:
                 members = collection.get("Members", [])
@@ -1804,14 +1794,14 @@ class RedfishClient:
         logger.debug("Fan info not available from any supported source")
         return []
 
-    def get_power_supplies(self, chassis_id: str = "1") -> List[PowerSupply]:
+    def get_power_supplies(self, chassis_id: Optional[str] = None) -> List[PowerSupply]:
         """
         Get the list of power supply units (PSUs) for a chassis.
 
         Extracts the PowerSupplies array from the Power resource.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             List of PowerSupply objects (empty list if no PSUs found)
@@ -2200,14 +2190,14 @@ class RedfishClient:
     # ------------------------------------------------------------------
 
     def get_all_components_summary(
-        self, system_id: Optional[str] = None, chassis_id: str = "1"
+        self, system_id: Optional[str] = None, chassis_id: Optional[str] = None
     ) -> dict:
         """
         Get a summary of all hardware components in a single call.
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             Dictionary with all component lists/resources::

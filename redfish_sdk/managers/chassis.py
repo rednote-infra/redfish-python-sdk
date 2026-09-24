@@ -51,21 +51,23 @@ class ChassisManager:
         self._client = client
         self._http = client._http_client
 
-    def get(self, chassis_id: str = "1") -> Chassis:
+    def get(self, chassis_id: Optional[str] = None) -> Chassis:
         """
         Get a chassis resource by ID.
 
-        Special handling: if the chassis collection URL already ends with "/{id}",
-        use it directly to avoid double-appending (some vendors return the direct path).
-
-
-
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. When omitted, the first member advertised
+                by the Chassis collection is used.
 
         Returns:
             Chassis resource
         """
+        if chassis_id is None:
+            chassis_members = self._client._get_chassis_collection()
+            if not chassis_members:
+                raise RedfishNotFoundError("No chassis found in the Chassis collection")
+            return chassis_members[0]
+
         odata_id = self._client._get_chassis_collection_odata_id()
 
         # If the collection odata_id already points to a specific chassis (ends with /1)
@@ -75,7 +77,7 @@ class ChassisManager:
 
         return self._http.get(f"{odata_id}/{chassis_id}", Chassis)
 
-    def thermal(self, chassis_id: str = "1") -> Thermal:
+    def thermal(self, chassis_id: Optional[str] = None) -> Thermal:
         """
         Get thermal information (fans and temperatures) for a chassis.
 
@@ -132,7 +134,7 @@ class ChassisManager:
         vendor = VendorDetector.detect(self._client)
         return OemExtractorRegistry.get(vendor).get_drive_temperature_celsius(drive)
 
-    def inlet_history_temperature(self, chassis_id: str = "1") -> Optional[InletHistoryTemperature]:
+    def inlet_history_temperature(self, chassis_id: Optional[str] = None) -> Optional[InletHistoryTemperature]:
         """
         Get air inlet historical temperature samples for a chassis.
 
@@ -146,7 +148,7 @@ class ChassisManager:
         (auth failure, network issues, etc.) propagate to the caller.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             InletHistoryTemperature model, or None when not supported.
@@ -163,7 +165,7 @@ class ChassisManager:
             logger.debug("InletHistoryTemperature not found at %s: %s", odata_id, exc)
             return None
 
-    def power(self, chassis_id: str = "1") -> Power:
+    def power(self, chassis_id: Optional[str] = None) -> Power:
         """
         Get power information (PSUs and power controls) for a chassis.
 
@@ -172,7 +174,7 @@ class ChassisManager:
         chassis = self.get(chassis_id)
         return self._http.get(chassis.power.odata_id, Power)
 
-    def drives(self, chassis_id: str = "1") -> List[Drive]:
+    def drives(self, chassis_id: Optional[str] = None) -> List[Drive]:
         """
         Get the list of physical drives in a chassis.
 
@@ -224,7 +226,7 @@ class ChassisManager:
 
         return []
 
-    def network_adapters(self, chassis_id: str = "1") -> List[NetworkAdapter]:
+    def network_adapters(self, chassis_id: Optional[str] = None) -> List[NetworkAdapter]:
         """
         Get the list of network adapters (NICs) in a chassis.
 
@@ -233,7 +235,7 @@ class ChassisManager:
         chassis = self.get(chassis_id)
         return self._client._get_collection(chassis.network_adapters.odata_id, NetworkAdapter)
 
-    def pcie_devices(self, chassis_id: str = "1") -> List[PCIeDevice]:
+    def pcie_devices(self, chassis_id: Optional[str] = None) -> List[PCIeDevice]:
         """
         Get the list of PCIe devices in a chassis.
 
@@ -261,7 +263,7 @@ class ChassisManager:
 
         return []
 
-    def fru_service(self, chassis_id: str = "1") -> List[dict]:
+    def fru_service(self, chassis_id: Optional[str] = None) -> List[dict]:
         """
         Get FRU service data from the chassis OEM extension.
 
@@ -295,7 +297,7 @@ class ChassisManager:
             logger.warning("FRU service collection failed: %s", exc)
             return []
 
-    def fru_service_board(self, chassis_id: str = "1") -> Optional[dict]:
+    def fru_service_board(self, chassis_id: Optional[str] = None) -> Optional[dict]:
         """
         Get the primary FRU board info (the '/0' member of the FRU service collection).
 
@@ -322,7 +324,7 @@ class ChassisManager:
     # IndicatorLED write helpers
     # ------------------------------------------------------------------
 
-    def set_indicator_led(self, state: str, chassis_id: str = "1") -> str:
+    def set_indicator_led(self, state: str, chassis_id: Optional[str] = None) -> str:
         """
         Set the chassis IndicatorLED state via PATCH.
 
@@ -330,7 +332,7 @@ class ChassisManager:
 
         Args:
             state: One of "Lit", "Blinking", "Off".
-            chassis_id: Chassis ID (default "1").
+            chassis_id: Chassis ID. Auto-discovered when omitted.
 
         Returns:
             The IndicatorLED value after the patch (re-read from BMC).
