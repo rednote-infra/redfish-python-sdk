@@ -739,7 +739,7 @@ class RedfishClient:
         Get chassis (physical enclosure) information.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Chassis resource with manufacturer, model, serial number, etc.
@@ -751,7 +751,7 @@ class RedfishClient:
         Get the list of physical drives (HDD/SSD/NVMe) in a chassis.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Drive objects
@@ -802,7 +802,7 @@ class RedfishClient:
         Get the list of network adapters (NICs) in a chassis.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of NetworkAdapter objects
@@ -814,7 +814,7 @@ class RedfishClient:
         Get the list of PCIe devices in a chassis.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of PCIeDevice objects
@@ -826,7 +826,7 @@ class RedfishClient:
         Get power information (PSUs, power controls, voltages) for a chassis.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Power resource
@@ -838,7 +838,7 @@ class RedfishClient:
         Get thermal information (fans, temperatures) for a chassis.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Thermal resource
@@ -859,7 +859,7 @@ class RedfishClient:
         returns 404; other errors (auth/network/parse) propagate.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             InletHistoryTemperature model, or None when not supported.
@@ -873,7 +873,7 @@ class RedfishClient:
         This is a vendor-specific feature (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of raw FRU service data dicts
@@ -889,7 +889,7 @@ class RedfishClient:
         Get BMC manager information.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Manager resource with firmware_version, model, etc.
@@ -901,7 +901,7 @@ class RedfishClient:
         Get the list of log services for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Log objects
@@ -920,7 +920,7 @@ class RedfishClient:
             log_id: Log service ID (e.g., "Sel", "OperateLog"). Optional
                 — when omitted and there is exactly one log
                 service, it is auto-selected.
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of LogEntry objects (uses ``?$expand=.($levels=1)`` to
@@ -951,7 +951,7 @@ class RedfishClient:
             diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
                 the vendor default (OEM when available, else ``Manager``).
             log_id: Log service ID. ``None`` auto-selects the sole service.
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             oem_params: Optional dict shallow-merged into the request body.
 
         Returns:
@@ -1006,7 +1006,7 @@ class RedfishClient:
             output_path: Destination file path for the downloaded bundle.
             diagnostic_data_type: See :meth:`collect_diagnostic_data`.
             log_id: See :meth:`collect_diagnostic_data`.
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
             reuse_existing: Reuse a matching prior task on the BMC when
@@ -1037,7 +1037,7 @@ class RedfishClient:
         Get network protocol configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NetworkProtocol resource
@@ -1049,7 +1049,7 @@ class RedfishClient:
         Get the list of Ethernet interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of EthernetInterface objects
@@ -1061,7 +1061,7 @@ class RedfishClient:
         Get the list of host interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of HostInterface objects
@@ -1076,7 +1076,7 @@ class RedfishClient:
         OEM links (``Oem.{vendor}.KVM``).
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             KvmService resource
@@ -1091,7 +1091,7 @@ class RedfishClient:
         Get NTP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NtpService resource
@@ -1106,7 +1106,7 @@ class RedfishClient:
         Get Syslog service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SyslogService resource
@@ -1121,7 +1121,7 @@ class RedfishClient:
         Get SNMP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SnmpService resource
@@ -1136,7 +1136,7 @@ class RedfishClient:
         Get LLDP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             LldpService resource
@@ -1153,7 +1153,7 @@ class RedfishClient:
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             DnsService resource
@@ -1168,7 +1168,7 @@ class RedfishClient:
         Get VNC/RFB service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             VncService resource
@@ -1183,7 +1183,7 @@ class RedfishClient:
         Get Security service for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SecurityService resource
@@ -1200,7 +1200,7 @@ class RedfishClient:
         Discovered via SecurityService links.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             HttpsCert resource
@@ -1224,7 +1224,7 @@ class RedfishClient:
         Get Firewall rules collection for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             FirewallRules collection resource
@@ -1239,7 +1239,7 @@ class RedfishClient:
         Get the list of virtual media resources for a BMC manager.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of VirtualMedia resources
@@ -1253,7 +1253,7 @@ class RedfishClient:
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SolSourceControlInfo resource
@@ -1677,7 +1677,7 @@ class RedfishClient:
         This is a vendor-specific extension (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Raw FRU board data dict, or None if not available
@@ -1699,7 +1699,7 @@ class RedfishClient:
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             MainBoard model, or None if not available from any supported source
@@ -1755,7 +1755,7 @@ class RedfishClient:
            extracts the ``Fans`` array from the Thermal resource.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Fan objects (empty list if not available from any supported path)
@@ -1801,7 +1801,7 @@ class RedfishClient:
         Extracts the PowerSupplies array from the Power resource.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of PowerSupply objects (empty list if no PSUs found)
@@ -2197,7 +2197,7 @@ class RedfishClient:
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Dictionary with all component lists/resources::

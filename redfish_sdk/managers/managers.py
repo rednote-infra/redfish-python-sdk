@@ -55,29 +55,33 @@ class ManagersManager:
         self._client = client
         self._http = client._http_client
 
-    def get(self, manager_id: Optional[str] = None) -> Manager:
+    def get(self, manager_id: Optional[str] = "1") -> Manager:
         """
         Get a manager (BMC) resource by ID.
 
 
 
         Args:
-            manager_id: Manager ID. When omitted, the first member advertised
-                by the Managers collection is used.
+            manager_id: Manager ID. ``None`` uses the compatibility default
+                ``"1"``. If that member is not found, the advertised
+                Managers collection is used as a fallback.
 
         Returns:
             Manager resource
         """
-        if manager_id is None:
-            manager_members = self._client._get_managers_collection()
-            if not manager_members:
-                raise RedfishNotFoundError("No manager found in the Managers collection")
-            return manager_members[0]
+        manager_id = manager_id or "1"
 
         managers_odata_id = self._client._get_managers_collection_odata_id()
-        return self._http.get(
-            f"{managers_odata_id}/{manager_id}", Manager
-        )
+        resource_url = f"{managers_odata_id}/{manager_id}"
+        try:
+            return self._http.get(resource_url, Manager)
+        except RedfishNotFoundError:
+            if manager_id != "1":
+                raise
+            manager_members = self._client._get_managers_collection()
+            if not manager_members:
+                raise
+            return manager_members[0]
 
     def log_services(self, manager_id: Optional[str] = None) -> List[Log]:
         """
@@ -136,7 +140,7 @@ class ManagersManager:
             diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
                 the vendor default (OEM when available, else ``Manager``).
             log_id: Log service ID. ``None`` auto-selects the sole service.
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             oem_params: Optional dict shallow-merged into the request body.
 
         Returns:
@@ -260,7 +264,7 @@ class ManagersManager:
             output_path: Destination file path for the downloaded bundle.
             diagnostic_data_type: See :meth:`collect_diagnostic_data`.
             log_id: See :meth:`collect_diagnostic_data`.
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
             reuse_existing: When True (default), look for a matching prior
@@ -422,7 +426,7 @@ class ManagersManager:
         For standard console availability, prefer ``Manager.GraphicalConsole``.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             KvmService resource
@@ -501,7 +505,7 @@ class ManagersManager:
         helper is only an optional, dynamically discovered OEM fallback.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NtpService resource
@@ -521,7 +525,7 @@ class ManagersManager:
         do not treat this optional OEM helper as a compliance requirement.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SyslogService resource
@@ -541,7 +545,7 @@ class ManagersManager:
         This helper is only an optional, dynamically discovered OEM fallback.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SnmpService resource
@@ -561,7 +565,7 @@ class ManagersManager:
         optional helper must not be required from standards-compliant BMCs.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             LldpService resource
@@ -582,7 +586,7 @@ class ManagersManager:
         dynamically discovered OEM fallback and is not required by DMTF.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             DnsService resource
@@ -605,7 +609,7 @@ class ManagersManager:
         ``VncService``.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             VncService resource
@@ -626,7 +630,7 @@ class ManagersManager:
         :meth:`https_certificates`. This helper is an OEM fallback.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SecurityService resource
@@ -650,7 +654,7 @@ class ManagersManager:
         ``Links.HttpsCert`` link.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             HttpsCert resource
@@ -678,7 +682,7 @@ class ManagersManager:
         optional helper must not be required from standards-compliant BMCs.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             FirewallRules collection resource
@@ -699,7 +703,7 @@ class ManagersManager:
         link is not present.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of VirtualMedia resources
@@ -732,7 +736,7 @@ class ManagersManager:
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID. Auto-discovered when omitted.
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SolSourceControlInfo resource

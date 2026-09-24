@@ -51,31 +51,37 @@ class ChassisManager:
         self._client = client
         self._http = client._http_client
 
-    def get(self, chassis_id: Optional[str] = None) -> Chassis:
+    def get(self, chassis_id: Optional[str] = "1") -> Chassis:
         """
         Get a chassis resource by ID.
 
         Args:
-            chassis_id: Chassis ID. When omitted, the first member advertised
-                by the Chassis collection is used.
+            chassis_id: Chassis ID. ``None`` uses the compatibility default
+                ``"1"``. If that member is not found, the advertised
+                Chassis collection is used as a fallback.
 
         Returns:
             Chassis resource
         """
-        if chassis_id is None:
-            chassis_members = self._client._get_chassis_collection()
-            if not chassis_members:
-                raise RedfishNotFoundError("No chassis found in the Chassis collection")
-            return chassis_members[0]
+        chassis_id = chassis_id or "1"
 
         odata_id = self._client._get_chassis_collection_odata_id()
 
         # If the collection odata_id already points to a specific chassis (ends with /1)
         # use it directly; otherwise append the chassis_id
-        if odata_id.endswith(f"/{chassis_id}"):
-            return self._http.get(odata_id, Chassis)
-
-        return self._http.get(f"{odata_id}/{chassis_id}", Chassis)
+        resource_url = (
+            odata_id if odata_id.endswith(f"/{chassis_id}")
+            else f"{odata_id}/{chassis_id}"
+        )
+        try:
+            return self._http.get(resource_url, Chassis)
+        except RedfishNotFoundError:
+            if chassis_id != "1":
+                raise
+            chassis_members = self._client._get_chassis_collection()
+            if not chassis_members:
+                raise
+            return chassis_members[0]
 
     def thermal(self, chassis_id: Optional[str] = None) -> Thermal:
         """
@@ -148,7 +154,7 @@ class ChassisManager:
         (auth failure, network issues, etc.) propagate to the caller.
 
         Args:
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             InletHistoryTemperature model, or None when not supported.
@@ -332,7 +338,7 @@ class ChassisManager:
 
         Args:
             state: One of "Lit", "Blinking", "Off".
-            chassis_id: Chassis ID. Auto-discovered when omitted.
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             The IndicatorLED value after the patch (re-read from BMC).
