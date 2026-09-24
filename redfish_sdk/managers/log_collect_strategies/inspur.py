@@ -47,7 +47,7 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
         self,
         client: "RedfishClient",
         log_services_odata_id: str,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> Optional[Task]:
         """
         Inspur never reuses a prior task — the collection artifact is written
@@ -139,12 +139,10 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
     @staticmethod
     def _task_log_services_hint(client: "RedfishClient", task: Task) -> str:
         """
-        Best-effort LogServices collection path for the download action.
-
-        Inspur triggers/downloads via the Manager LogServices collection, so
-        default to Manager "1". Falls back to the standard Managers path.
+        Return the advertised Manager LogServices collection path for the
+        download action.
         """
-        try:
-            return client._get_managers_collection_odata_id().rstrip("/") + "/1/LogServices"
-        except Exception:  # noqa: BLE001
-            return "/redfish/v1/Managers/1/LogServices"
+        from .._log_helpers import require_log_services_link
+
+        manager = client.get_manager()
+        return require_log_services_link(manager, f"Manager {manager.id!r}")

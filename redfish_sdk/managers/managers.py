@@ -55,24 +55,35 @@ class ManagersManager:
         self._client = client
         self._http = client._http_client
 
-    def get(self, manager_id: str = "1") -> Manager:
+    def get(self, manager_id: Optional[str] = "1") -> Manager:
         """
         Get a manager (BMC) resource by ID.
 
 
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. ``None`` uses the compatibility default
+                ``"1"``. If that member is not found, the advertised
+                Managers collection is used as a fallback.
 
         Returns:
             Manager resource
         """
-        managers_odata_id = self._client._get_managers_collection_odata_id()
-        return self._http.get(
-            f"{managers_odata_id}/{manager_id}", Manager
-        )
+        manager_id = manager_id or "1"
 
-    def log_services(self, manager_id: str = "1") -> List[Log]:
+        managers_odata_id = self._client._get_managers_collection_odata_id()
+        resource_url = f"{managers_odata_id}/{manager_id}"
+        try:
+            return self._http.get(resource_url, Manager)
+        except RedfishNotFoundError:
+            if manager_id != "1":
+                raise
+            manager_members = self._client._get_managers_collection()
+            if not manager_members:
+                raise
+            return manager_members[0]
+
+    def log_services(self, manager_id: Optional[str] = None) -> List[Log]:
         """
         Get the list of log services for a manager (BMC).
 
@@ -87,7 +98,7 @@ class ManagersManager:
     def log_entries(
         self,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> List[LogEntry]:
         """
         Get log entries for a manager (BMC) log service.
@@ -115,7 +126,7 @@ class ManagersManager:
         self,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         oem_params: Optional[dict] = None,
     ) -> Task:
         """
@@ -129,7 +140,7 @@ class ManagersManager:
             diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
                 the vendor default (OEM when available, else ``Manager``).
             log_id: Log service ID. ``None`` auto-selects the sole service.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             oem_params: Optional dict shallow-merged into the request body.
 
         Returns:
@@ -222,7 +233,7 @@ class ManagersManager:
         output_path: str,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         poll_interval: int = 5,
         timeout: int = 1800,
         *,
@@ -253,7 +264,7 @@ class ManagersManager:
             output_path: Destination file path for the downloaded bundle.
             diagnostic_data_type: See :meth:`collect_diagnostic_data`.
             log_id: See :meth:`collect_diagnostic_data`.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
             reuse_existing: When True (default), look for a matching prior
@@ -335,7 +346,9 @@ class ManagersManager:
         assert last_exc is not None
         raise last_exc
 
-    def _find_existing_collect_task(self, strategy, manager_id: str) -> Optional[Task]:
+    def _find_existing_collect_task(
+        self, strategy, manager_id: Optional[str]
+    ) -> Optional[Task]:
         """Resolve LogServices link then ask the strategy for a prior task."""
         try:
             odata_id = strategy.resolve_log_services_odata_id(
@@ -356,7 +369,7 @@ class ManagersManager:
             )
             return None
 
-    def network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
+    def network_protocol(self, manager_id: Optional[str] = None) -> NetworkProtocol:
         """
         Get network protocol configuration for a manager.
 
@@ -367,7 +380,7 @@ class ManagersManager:
             f"{manager.odata_id}/NetworkProtocol", NetworkProtocol
         )
 
-    def https_certificates(self, manager_id: str = "1") -> Collection[Link]:
+    def https_certificates(self, manager_id: Optional[str] = None) -> Collection[Link]:
         """Get the DMTF-standard HTTPS certificate collection.
 
         Discovers ``ManagerNetworkProtocol.HTTPS.Certificates`` rather than
@@ -382,7 +395,7 @@ class ManagersManager:
             )
         return self._http.get(certificates.odata_id, Collection[Link])
 
-    def ethernet_interfaces(self, manager_id: str = "1") -> List[EthernetInterface]:
+    def ethernet_interfaces(self, manager_id: Optional[str] = None) -> List[EthernetInterface]:
         """
         Get the list of Ethernet interfaces for a manager (BMC).
 
@@ -393,7 +406,7 @@ class ManagersManager:
             manager.ethernet_interfaces.odata_id, EthernetInterface
         )
 
-    def host_interfaces(self, manager_id: str = "1") -> List[HostInterface]:
+    def host_interfaces(self, manager_id: Optional[str] = None) -> List[HostInterface]:
         """
         Get the list of host interfaces for a manager.
 
@@ -404,7 +417,7 @@ class ManagersManager:
             manager.host_interfaces.odata_id, HostInterface
         )
 
-    def kvm_service(self, manager_id: str = "1") -> KvmService:
+    def kvm_service(self, manager_id: Optional[str] = None) -> KvmService:
         """
         Get KVM service configuration from OEM links.
 
@@ -413,7 +426,7 @@ class ManagersManager:
         For standard console availability, prefer ``Manager.GraphicalConsole``.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             KvmService resource
@@ -444,7 +457,7 @@ class ManagersManager:
     # OEM service helpers (batch SDK-GAP elimination)
     # ------------------------------------------------------------------
 
-    def _get_oem_service(self, manager_id: str, attr: str, fallback_attr: str | None,
+    def _get_oem_service(self, manager_id: Optional[str], attr: str, fallback_attr: str | None,
                          model_class, resource_label: str):
         """
         Generic helper to discover and fetch an OEM service resource.
@@ -484,7 +497,7 @@ class ManagersManager:
 
         return self._http.get(link, model_class)
 
-    def ntp_service(self, manager_id: str = "1") -> NtpService:
+    def ntp_service(self, manager_id: Optional[str] = None) -> NtpService:
         """
         Get NTP service configuration from OEM links.
 
@@ -492,7 +505,7 @@ class ManagersManager:
         helper is only an optional, dynamically discovered OEM fallback.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NtpService resource
@@ -504,7 +517,7 @@ class ManagersManager:
             manager_id, "ntp_service", None, NtpService, "NtpService"
         )
 
-    def syslog_service(self, manager_id: str = "1") -> SyslogService:
+    def syslog_service(self, manager_id: Optional[str] = None) -> SyslogService:
         """
         Get Syslog service configuration from OEM links.
 
@@ -512,7 +525,7 @@ class ManagersManager:
         do not treat this optional OEM helper as a compliance requirement.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SyslogService resource
@@ -524,7 +537,7 @@ class ManagersManager:
             manager_id, "syslog_service", None, SyslogService, "SyslogService"
         )
 
-    def snmp_service(self, manager_id: str = "1") -> SnmpService:
+    def snmp_service(self, manager_id: Optional[str] = None) -> SnmpService:
         """
         Get SNMP service configuration from OEM links.
 
@@ -532,7 +545,7 @@ class ManagersManager:
         This helper is only an optional, dynamically discovered OEM fallback.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SnmpService resource
@@ -544,7 +557,7 @@ class ManagersManager:
             manager_id, "snmp_service", None, SnmpService, "SnmpService"
         )
 
-    def lldp_service(self, manager_id: str = "1") -> LldpService:
+    def lldp_service(self, manager_id: Optional[str] = None) -> LldpService:
         """
         Get LLDP service configuration from OEM links.
 
@@ -552,7 +565,7 @@ class ManagersManager:
         optional helper must not be required from standards-compliant BMCs.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             LldpService resource
@@ -564,7 +577,7 @@ class ManagersManager:
             manager_id, "lldp_service", None, LldpService, "LldpService"
         )
 
-    def dns_service(self, manager_id: str = "1") -> DnsService:
+    def dns_service(self, manager_id: Optional[str] = None) -> DnsService:
         """
         Get DNS service configuration from OEM links.
 
@@ -573,7 +586,7 @@ class ManagersManager:
         dynamically discovered OEM fallback and is not required by DMTF.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             DnsService resource
@@ -585,7 +598,7 @@ class ManagersManager:
             manager_id, "dns_service", None, DnsService, "DnsService"
         )
 
-    def vnc_service(self, manager_id: str = "1") -> VncService:
+    def vnc_service(self, manager_id: Optional[str] = None) -> VncService:
         """
         Get VNC/RFB service configuration from OEM links.
 
@@ -596,7 +609,7 @@ class ManagersManager:
         ``VncService``.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             VncService resource
@@ -608,7 +621,7 @@ class ManagersManager:
             manager_id, "rfb_service", None, VncService, "VncService"
         )
 
-    def security_service(self, manager_id: str = "1") -> SecurityService:
+    def security_service(self, manager_id: Optional[str] = None) -> SecurityService:
         """
         Get Security service from OEM links.
 
@@ -617,7 +630,7 @@ class ManagersManager:
         :meth:`https_certificates`. This helper is an OEM fallback.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SecurityService resource
@@ -629,7 +642,7 @@ class ManagersManager:
             manager_id, "security_service", None, SecurityService, "SecurityService"
         )
 
-    def https_cert(self, manager_id: str = "1") -> HttpsCert:
+    def https_cert(self, manager_id: Optional[str] = None) -> HttpsCert:
         """
         Get HTTPS certificate information via SecurityService links.
 
@@ -641,7 +654,7 @@ class ManagersManager:
         ``Links.HttpsCert`` link.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             HttpsCert resource
@@ -661,7 +674,7 @@ class ManagersManager:
 
         return self._http.get(link, HttpsCert)
 
-    def firewall_rules(self, manager_id: str = "1") -> FirewallRules:
+    def firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
         Get Firewall rules collection from OEM links.
 
@@ -669,7 +682,7 @@ class ManagersManager:
         optional helper must not be required from standards-compliant BMCs.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             FirewallRules collection resource
@@ -681,7 +694,7 @@ class ManagersManager:
             manager_id, "firewall_rules", None, FirewallRules, "FirewallRules"
         )
 
-    def virtual_media(self, manager_id: str = "1") -> List[VirtualMedia]:
+    def virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
         """
         Get the list of virtual media resources for a manager.
 
@@ -690,7 +703,7 @@ class ManagersManager:
         link is not present.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of VirtualMedia resources
@@ -716,14 +729,14 @@ class ManagersManager:
 
         return self._client._get_collection(vm_odata_id, VirtualMedia)
 
-    def sol_source(self, manager_id: str = "1") -> SolSourceControlInfo:
+    def sol_source(self, manager_id: Optional[str] = None) -> SolSourceControlInfo:
         """
         Get SOL source control information from OEM links.
 
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SolSourceControlInfo resource

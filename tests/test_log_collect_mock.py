@@ -1145,8 +1145,28 @@ class TestInspurStrategy(VendorRestoreMixin):
 
     def test_download_uses_post_action(self) -> None:
         client = _make_client()
-        self._stub_collection_actions(client)
         _force_vendor("inspur")
+
+        collection = "/redfish/v1/Managers/Self/LogServices"
+        download = f"{collection}/Actions/Oem/Public/DownloadAllLog"
+        _install_get_dispatch(client, lambda path: {
+            "@odata.id": collection,
+            "Actions": {
+                "Oem": {
+                    "Public": {
+                        "#LogService.DownloadAllLog": {"target": download},
+                    }
+                }
+            },
+        })
+
+        client.get_manager = lambda manager_id=None: Manager.model_construct(  # type: ignore[assignment]
+            id="Self",
+            odata_id="/redfish/v1/Managers/Self",
+            log_services=Link(
+                **{"@odata.id": "/redfish/v1/Managers/Self/LogServices"}
+            ),
+        )
 
         recorder = _CallRecorder()
         client._http_client.download_via_post = (  # type: ignore[assignment]
@@ -1155,15 +1175,10 @@ class TestInspurStrategy(VendorRestoreMixin):
                 or "/tmp/out/dump_x.tar.gz"
             )
         )
-        # Manager collection path hint used by the strategy.
-        client._get_managers_collection_odata_id = (  # type: ignore[assignment]
-            lambda: "/redfish/v1/Managers"
-        )
-
         task = Task.model_construct(id="0", odata_id="/redfish/v1/TaskService/Tasks/0")
         path = client.download_diagnostic_data(task, output_path="/tmp/out/")
         self.assertEqual(path, "/tmp/out/dump_x.tar.gz")
-        self.assertEqual(recorder.last["path"], self._DOWNLOAD)
+        self.assertEqual(recorder.last["path"], download)
         client.close()
 
     def test_find_existing_task_always_none(self) -> None:
@@ -1390,6 +1405,10 @@ class TestSmoothcomputeStrategy(VendorRestoreMixin):
         client = _make_client()
         self._stub_diag_service(client)
         _force_vendor("smoothcompute")
+
+        client.get_manager = lambda manager_id=None: Manager.model_construct(  # type: ignore[assignment]
+            id="Self", odata_id=self._MANAGER
+        )
 
         recorder = _CallRecorder()
         client._http_client.download_via_post = (  # type: ignore[assignment]

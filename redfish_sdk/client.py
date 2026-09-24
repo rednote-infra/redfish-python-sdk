@@ -349,21 +349,9 @@ class RedfishClient:
     def _get_chassis_collection(self) -> List[Chassis]:
         """
         Get the Chassis collection.
-
-        Special handling for Lenovo servers: if the collection endpoint returns
-        an error, falls back to fetching /redfish/v1/Chassis/1 directly.
         """
         root = self._get_root()
-        try:
-            return self._get_collection(root.chassis.odata_id, Chassis)
-        except RedfishException as exc:
-            logger.warning(
-                "Chassis collection endpoint failed (%s), falling back to /redfish/v1/Chassis/1",
-                exc
-            )
-            # Lenovo workaround: /redfish/v1/Chassis returns 500
-            chassis = self._http_client.get("/redfish/v1/Chassis/1", Chassis)
-            return [chassis]
+        return self._get_collection(root.chassis.odata_id, Chassis)
 
     def _get_chassis_collection_odata_id(self) -> str:
         """Get the Chassis collection @odata.id from the root service."""
@@ -746,24 +734,24 @@ class RedfishClient:
     # Component query methods — Chassis side
     # ==================================================================
 
-    def get_chassis(self, chassis_id: str = "1") -> Chassis:
+    def get_chassis(self, chassis_id: Optional[str] = None) -> Chassis:
         """
         Get chassis (physical enclosure) information.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Chassis resource with manufacturer, model, serial number, etc.
         """
         return self._chassis.get(chassis_id)
 
-    def get_drives(self, chassis_id: str = "1") -> List:
+    def get_drives(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of physical drives (HDD/SSD/NVMe) in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Drive objects
@@ -795,7 +783,7 @@ class RedfishClient:
     # IndicatorLED writes
     # ------------------------------------------------------------------
 
-    def set_indicator_led(self, state: str, chassis_id: str = "1") -> str:
+    def set_indicator_led(self, state: str, chassis_id: Optional[str] = None) -> str:
         """
         Set ``Chassis.IndicatorLED``. ``state`` must be one of
         ``Lit`` / ``Blinking`` / ``Off``.
@@ -809,48 +797,48 @@ class RedfishClient:
         """
         return self._chassis.set_drive_indicator_led(drive_odata_id, state)
 
-    def get_network_adapters(self, chassis_id: str = "1") -> List:
+    def get_network_adapters(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of network adapters (NICs) in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of NetworkAdapter objects
         """
         return self._chassis.network_adapters(chassis_id)
 
-    def get_pcie_devices(self, chassis_id: str = "1") -> List:
+    def get_pcie_devices(self, chassis_id: Optional[str] = None) -> List:
         """
         Get the list of PCIe devices in a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of PCIeDevice objects
         """
         return self._chassis.pcie_devices(chassis_id)
 
-    def get_power(self, chassis_id: str = "1") -> Power:
+    def get_power(self, chassis_id: Optional[str] = None) -> Power:
         """
         Get power information (PSUs, power controls, voltages) for a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Power resource
         """
         return self._chassis.power(chassis_id)
 
-    def get_thermal(self, chassis_id: str = "1") -> Thermal:
+    def get_thermal(self, chassis_id: Optional[str] = None) -> Thermal:
         """
         Get thermal information (fans, temperatures) for a chassis.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Thermal resource
@@ -858,7 +846,7 @@ class RedfishClient:
         return self._chassis.thermal(chassis_id)
 
     def get_inlet_history_temperature(
-        self, chassis_id: str = "1"
+        self, chassis_id: Optional[str] = None
     ) -> Optional[InletHistoryTemperature]:
         """
         Get air inlet historical temperature samples for a chassis.
@@ -871,21 +859,21 @@ class RedfishClient:
         returns 404; other errors (auth/network/parse) propagate.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             InletHistoryTemperature model, or None when not supported.
         """
         return self._chassis.inlet_history_temperature(chassis_id)
 
-    def get_fru_service(self, chassis_id: str = "1") -> List[dict]:
+    def get_fru_service(self, chassis_id: Optional[str] = None) -> List[dict]:
         """
         Get FRU service data from the chassis OEM extension.
 
         This is a vendor-specific feature (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of raw FRU service data dicts
@@ -896,24 +884,24 @@ class RedfishClient:
     # Component query methods — Managers (BMC) side
     # ==================================================================
 
-    def get_manager(self, manager_id: str = "1") -> Manager:
+    def get_manager(self, manager_id: Optional[str] = None) -> Manager:
         """
         Get BMC manager information.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Manager resource with firmware_version, model, etc.
         """
         return self._managers.get(manager_id)
 
-    def get_manager_log_services(self, manager_id: str = "1") -> List[Log]:
+    def get_manager_log_services(self, manager_id: Optional[str] = None) -> List[Log]:
         """
         Get the list of log services for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Log objects
@@ -923,7 +911,7 @@ class RedfishClient:
     def get_manager_log_entries(
         self,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
     ) -> List[LogEntry]:
         """
         Get log entries for a BMC manager log service.
@@ -932,7 +920,7 @@ class RedfishClient:
             log_id: Log service ID (e.g., "Sel", "OperateLog"). Optional
                 — when omitted and there is exactly one log
                 service, it is auto-selected.
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of LogEntry objects (uses ``?$expand=.($levels=1)`` to
@@ -948,7 +936,7 @@ class RedfishClient:
         self,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         oem_params: Optional[dict] = None,
     ) -> Task:
         """
@@ -963,7 +951,7 @@ class RedfishClient:
             diagnostic_data_type: ``DiagnosticDataType`` value; ``None`` uses
                 the vendor default (OEM when available, else ``Manager``).
             log_id: Log service ID. ``None`` auto-selects the sole service.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             oem_params: Optional dict shallow-merged into the request body.
 
         Returns:
@@ -997,7 +985,7 @@ class RedfishClient:
         output_path: str,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
-        manager_id: str = "1",
+        manager_id: Optional[str] = None,
         poll_interval: int = 5,
         timeout: int = 1800,
         *,
@@ -1018,7 +1006,7 @@ class RedfishClient:
             output_path: Destination file path for the downloaded bundle.
             diagnostic_data_type: See :meth:`collect_diagnostic_data`.
             log_id: See :meth:`collect_diagnostic_data`.
-            manager_id: Manager ID (default "1").
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
             poll_interval: Task poll interval in seconds (default 5).
             timeout: Max wait in seconds (default 1800 — bundles are slow).
             reuse_existing: Reuse a matching prior task on the BMC when
@@ -1044,43 +1032,43 @@ class RedfishClient:
             retry_backoff=retry_backoff,
         )
 
-    def get_network_protocol(self, manager_id: str = "1") -> NetworkProtocol:
+    def get_network_protocol(self, manager_id: Optional[str] = None) -> NetworkProtocol:
         """
         Get network protocol configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NetworkProtocol resource
         """
         return self._managers.network_protocol(manager_id)
 
-    def get_manager_ethernet_interfaces(self, manager_id: str = "1") -> List[EthernetInterface]:
+    def get_manager_ethernet_interfaces(self, manager_id: Optional[str] = None) -> List[EthernetInterface]:
         """
         Get the list of Ethernet interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of EthernetInterface objects
         """
         return self._managers.ethernet_interfaces(manager_id)
 
-    def get_host_interfaces(self, manager_id: str = "1") -> List[HostInterface]:
+    def get_host_interfaces(self, manager_id: Optional[str] = None) -> List[HostInterface]:
         """
         Get the list of host interfaces for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of HostInterface objects
         """
         return self._managers.host_interfaces(manager_id)
 
-    def get_kvm_service(self, manager_id: str = "1") -> KvmService:
+    def get_kvm_service(self, manager_id: Optional[str] = None) -> KvmService:
         """
         Get KVM service configuration for a BMC manager.
 
@@ -1088,7 +1076,7 @@ class RedfishClient:
         OEM links (``Oem.{vendor}.KVM``).
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             KvmService resource
@@ -1098,12 +1086,12 @@ class RedfishClient:
         """
         return self._managers.kvm_service(manager_id)
 
-    def get_ntp_service(self, manager_id: str = "1") -> NtpService:
+    def get_ntp_service(self, manager_id: Optional[str] = None) -> NtpService:
         """
         Get NTP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             NtpService resource
@@ -1113,12 +1101,12 @@ class RedfishClient:
         """
         return self._managers.ntp_service(manager_id)
 
-    def get_syslog_service(self, manager_id: str = "1") -> SyslogService:
+    def get_syslog_service(self, manager_id: Optional[str] = None) -> SyslogService:
         """
         Get Syslog service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SyslogService resource
@@ -1128,12 +1116,12 @@ class RedfishClient:
         """
         return self._managers.syslog_service(manager_id)
 
-    def get_snmp_service(self, manager_id: str = "1") -> SnmpService:
+    def get_snmp_service(self, manager_id: Optional[str] = None) -> SnmpService:
         """
         Get SNMP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SnmpService resource
@@ -1143,12 +1131,12 @@ class RedfishClient:
         """
         return self._managers.snmp_service(manager_id)
 
-    def get_lldp_service(self, manager_id: str = "1") -> LldpService:
+    def get_lldp_service(self, manager_id: Optional[str] = None) -> LldpService:
         """
         Get LLDP service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             LldpService resource
@@ -1158,14 +1146,14 @@ class RedfishClient:
         """
         return self._managers.lldp_service(manager_id)
 
-    def get_dns_service(self, manager_id: str = "1") -> DnsService:
+    def get_dns_service(self, manager_id: Optional[str] = None) -> DnsService:
         """
         Get DNS service configuration for a BMC manager.
 
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             DnsService resource
@@ -1175,12 +1163,12 @@ class RedfishClient:
         """
         return self._managers.dns_service(manager_id)
 
-    def get_vnc_service(self, manager_id: str = "1") -> VncService:
+    def get_vnc_service(self, manager_id: Optional[str] = None) -> VncService:
         """
         Get VNC/RFB service configuration for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             VncService resource
@@ -1190,12 +1178,12 @@ class RedfishClient:
         """
         return self._managers.vnc_service(manager_id)
 
-    def get_security_service(self, manager_id: str = "1") -> SecurityService:
+    def get_security_service(self, manager_id: Optional[str] = None) -> SecurityService:
         """
         Get Security service for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SecurityService resource
@@ -1205,14 +1193,14 @@ class RedfishClient:
         """
         return self._managers.security_service(manager_id)
 
-    def get_https_cert(self, manager_id: str = "1") -> HttpsCert:
+    def get_https_cert(self, manager_id: Optional[str] = None) -> HttpsCert:
         """
         Get HTTPS certificate information for a BMC manager.
 
         Discovered via SecurityService links.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             HttpsCert resource
@@ -1222,7 +1210,7 @@ class RedfishClient:
         """
         return self._managers.https_cert(manager_id)
 
-    def get_https_certificates(self, manager_id: str = "1") -> Collection[Link]:
+    def get_https_certificates(self, manager_id: Optional[str] = None) -> Collection[Link]:
         """Get the standard HTTPS certificate collection for a BMC manager.
 
         This follows ``ManagerNetworkProtocol.HTTPS.Certificates``. Use
@@ -1231,12 +1219,12 @@ class RedfishClient:
         """
         return self._managers.https_certificates(manager_id)
 
-    def get_firewall_rules(self, manager_id: str = "1") -> FirewallRules:
+    def get_firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
         Get Firewall rules collection for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             FirewallRules collection resource
@@ -1246,26 +1234,26 @@ class RedfishClient:
         """
         return self._managers.firewall_rules(manager_id)
 
-    def get_virtual_media(self, manager_id: str = "1") -> List[VirtualMedia]:
+    def get_virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
         """
         Get the list of virtual media resources for a BMC manager.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of VirtualMedia resources
         """
         return self._managers.virtual_media(manager_id)
 
-    def get_sol_source(self, manager_id: str = "1") -> SolSourceControlInfo:
+    def get_sol_source(self, manager_id: Optional[str] = None) -> SolSourceControlInfo:
         """
         Get SOL source control information for a BMC manager.
 
         Note: Not all BMC vendors support this endpoint.
 
         Args:
-            manager_id: Manager ID (default "1")
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             SolSourceControlInfo resource
@@ -1681,7 +1669,7 @@ class RedfishClient:
     # Component query methods — Firmware / FRU
     # ==================================================================
 
-    def get_baseboard_fru(self, chassis_id: str = "1") -> Optional[dict]:
+    def get_baseboard_fru(self, chassis_id: Optional[str] = None) -> Optional[dict]:
         """
         Get baseboard (motherboard) FRU data.
 
@@ -1689,7 +1677,7 @@ class RedfishClient:
         This is a vendor-specific extension (e.g., Huawei/xFusion iBMC).
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Raw FRU board data dict, or None if not available
@@ -1699,7 +1687,7 @@ class RedfishClient:
     def get_mainboard(
         self,
         system_id: Optional[str] = None,
-        chassis_id: str = "1",
+        chassis_id: Optional[str] = None,
     ) -> Optional[MainBoard]:
         """
         Get mainboard (motherboard) information with multi-path fallback.
@@ -1711,7 +1699,7 @@ class RedfishClient:
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             MainBoard model, or None if not available from any supported source
@@ -1755,25 +1743,27 @@ class RedfishClient:
     # Component query methods — Extracted sub-resources
     # ------------------------------------------------------------------
 
-    def get_fan(self, chassis_id: str = "1") -> List[Fan]:
+    def get_fan(self, chassis_id: Optional[str] = None) -> List[Fan]:
         """
         Get fan information with multi-path fallback.
 
         Fallback order:
-        1. ``/redfish/v1/Chassis/{id}/ThermalSubsystem/Fans`` — newer Redfish schema,
+        1. ``Chassis/ThermalSubsystem/Fans`` — newer Redfish schema, derived from
+           the selected Chassis resource's ``@odata.id``,
            fetches the collection then GETs each member individually.
         2. ``/redfish/v1/Chassis/{id}/Thermal`` — legacy schema,
            extracts the ``Fans`` array from the Thermal resource.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of Fan objects (empty list if not available from any supported path)
         """
         # Path 1: ThermalSubsystem/Fans (newer Redfish schema)
         try:
-            subsystem_path = f"/redfish/v1/Chassis/{chassis_id}/ThermalSubsystem/Fans"
+            chassis = self.get_chassis(chassis_id)
+            subsystem_path = f"{chassis.odata_id}/ThermalSubsystem/Fans"
             collection = self.get_raw(subsystem_path)
             if collection is not None:
                 members = collection.get("Members", [])
@@ -1804,14 +1794,14 @@ class RedfishClient:
         logger.debug("Fan info not available from any supported source")
         return []
 
-    def get_power_supplies(self, chassis_id: str = "1") -> List[PowerSupply]:
+    def get_power_supplies(self, chassis_id: Optional[str] = None) -> List[PowerSupply]:
         """
         Get the list of power supply units (PSUs) for a chassis.
 
         Extracts the PowerSupplies array from the Power resource.
 
         Args:
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             List of PowerSupply objects (empty list if no PSUs found)
@@ -2200,14 +2190,14 @@ class RedfishClient:
     # ------------------------------------------------------------------
 
     def get_all_components_summary(
-        self, system_id: Optional[str] = None, chassis_id: str = "1"
+        self, system_id: Optional[str] = None, chassis_id: Optional[str] = None
     ) -> dict:
         """
         Get a summary of all hardware components in a single call.
 
         Args:
             system_id: System ID. Auto-selected if only one system exists.
-            chassis_id: Chassis ID (default "1")
+            chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
 
         Returns:
             Dictionary with all component lists/resources::
