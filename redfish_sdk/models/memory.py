@@ -48,3 +48,4 @@ class Memory(Entity):
     status: Optional[Status] = Field(None, alias="Status", validate="status")
     oem: Optional[Oem] = Field(None, alias="Oem")
     environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")
+    metrics: Optional[Link] = Field(None, alias="Metrics")

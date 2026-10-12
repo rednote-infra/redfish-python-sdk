@@ -25,6 +25,7 @@ from .registry import Registry
 from .root import RootService
 from .session import Session, SessionService
 from .storage import CacheSummary, Identifier, StorageController  # noqa: F401
+from .system_resources import MemoryChunks, MemoryDomain, MemoryMetrics, NetworkInterface, NetworkPort, SecureBoot
 from .systems import Bios, Boot, Gpu, GpuOEM, Memory, Processor, Storage, System, Volume
 from .task import Task, TaskService
 from .telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
@@ -47,6 +48,7 @@ __all__ = [
     "FirmwareUpdateResponse",
     "Registry",
     "TaskService", "Task",
+    "SecureBoot", "NetworkInterface", "NetworkPort", "MemoryDomain", "MemoryChunks", "MemoryMetrics",
     "Oem", "Bmc", "MainBoard",
     "Log", "LogEntry",
     "Fru", "FruChassis", "FruProduct",

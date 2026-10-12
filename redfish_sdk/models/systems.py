@@ -163,6 +163,7 @@ class System(Entity):
     graphics_controllers: Optional[Link] = Field(None, alias="GraphicsControllers")
     log_services: Optional[Link] = Field(None, alias="LogServices")
     memory: Optional[Link] = Field(None, alias="Memory")
+    memory_domains: Optional[Link] = Field(None, alias="MemoryDomains")
     storage: Optional[Link] = Field(None, alias="Storage")
     processors: Optional[Link] = Field(None, alias="Processors")
     secure_boot: Optional[Link] = Field(None, alias="SecureBoot")

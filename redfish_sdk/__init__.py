@@ -56,6 +56,14 @@ from .models.managers import (
     VncService,
 )
 from .models.resource_key import RedfishResource
+from .models.system_resources import (
+    MemoryChunks,
+    MemoryDomain,
+    MemoryMetrics,
+    NetworkInterface,
+    NetworkPort,
+    SecureBoot,
+)
 from .models.systems import BootOption
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.update import FirmwareUpdateResponse
@@ -99,6 +107,12 @@ __all__ = [
     "SolSourceControlInfo",
     "SerialInterface",
     "Subscription",
+    "SecureBoot",
+    "NetworkInterface",
+    "NetworkPort",
+    "MemoryDomain",
+    "MemoryChunks",
+    "MemoryMetrics",
     "SyslogService",
     "VirtualMedia",
     "VncService",

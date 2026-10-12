@@ -68,6 +68,7 @@ class NetworkAdapter(Entity):
     manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="type=str")
     model: Optional[str] = Field(None, alias="Model", validate="type=str")
     network_device_functions: Optional[Link] = Field(None, alias="NetworkDeviceFunctions")
+    network_ports: Optional[Link] = Field(None, alias="NetworkPorts")
     part_number: Optional[str] = Field(None, alias="PartNumber")
     ports: Optional[Link] = Field(None, alias="Ports")
     sku: Optional[str] = Field(None, alias="SKU")

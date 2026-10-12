@@ -81,6 +81,14 @@ from .models.registry import Registry
 from .models.resource_key import RedfishResource
 from .models.root import RootService
 from .models.session import Session, SessionService
+from .models.system_resources import (
+    MemoryChunks,
+    MemoryDomain,
+    MemoryMetrics,
+    NetworkInterface,
+    NetworkPort,
+    SecureBoot,
+)
 from .models.systems import Bios, BootOption, System, SystemPatchSetting
 from .models.task import Task, TaskService
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
@@ -169,6 +177,66 @@ class RedfishClient:
     def _systems(self):
         from .managers.systems import SystemsManager
         return SystemsManager(self)
+
+    @cached_property
+    def _system_resources(self):
+        from .managers.system_resources import SystemResourcesManager
+        return SystemResourcesManager(self)
+
+    def get_secure_boot(self, system_id: Optional[str] = None) -> SecureBoot:
+        """Get optional SecureBoot information through the advertised system link."""
+        return self._system_resources.secure_boot(system_id)
+
+    def update_secure_boot(self, enabled: bool, system_id: Optional[str] = None) -> RedfishResponse:
+        """Update SecureBootEnable using the resource ETag."""
+        return self._system_resources.update_secure_boot(enabled, system_id)
+
+    def reset_secure_boot_keys(self, reset_keys_type: str, system_id: Optional[str] = None) -> RedfishResponse:
+        """Invoke the advertised ResetKeys target with supported ResetKeysType values."""
+        return self._system_resources.reset_secure_boot_keys(reset_keys_type, system_id)
+
+    def get_network_interfaces(self, system_id: Optional[str] = None) -> List[NetworkInterface]:
+        """Enumerate advertised system NetworkInterfaces."""
+        return self._system_resources.network_interfaces(system_id)
+
+    def get_network_ports(
+        self, network_interface_id: Optional[str] = None, system_id: Optional[str] = None
+    ) -> List[NetworkPort]:
+        """Read NetworkPorts from one interface or all interfaces that advertise them."""
+        return self._system_resources.network_ports(network_interface_id, system_id)
+
+    def get_network_port(
+        self, identifier: str, network_interface_id: Optional[str] = None, system_id: Optional[str] = None
+    ) -> NetworkPort:
+        """Select a NetworkPort by Id or full advertised URI."""
+        from .managers.system_resources import select_member
+        return select_member(self.get_network_ports(network_interface_id, system_id), identifier)
+
+    def get_memory_domains(self, system_id: Optional[str] = None) -> List[MemoryDomain]:
+        """Enumerate advertised system MemoryDomains."""
+        return self._system_resources.memory_domains(system_id)
+
+    def get_memory_domain(self, identifier: str, system_id: Optional[str] = None) -> MemoryDomain:
+        """Select a MemoryDomain by Id or full advertised URI."""
+        from .managers.system_resources import select_member
+        return select_member(self.get_memory_domains(system_id), identifier)
+
+    def get_memory_chunks(
+        self, memory_domain_id: Optional[str] = None, system_id: Optional[str] = None
+    ) -> List[MemoryChunks]:
+        """Read MemoryChunks from one domain or all domains that advertise them."""
+        return self._system_resources.memory_chunks(memory_domain_id, system_id)
+
+    def get_memory_chunk(
+        self, identifier: str, memory_domain_id: Optional[str] = None, system_id: Optional[str] = None
+    ) -> MemoryChunks:
+        """Select a MemoryChunks resource by Id or full advertised URI."""
+        from .managers.system_resources import select_member
+        return select_member(self.get_memory_chunks(memory_domain_id, system_id), identifier)
+
+    def get_memory_metrics(self, memory_id: Optional[str] = None, system_id: Optional[str] = None) -> MemoryMetrics:
+        """Get a selected DIMM's advertised Metrics; auto-select only a sole DIMM."""
+        return self._system_resources.memory_metrics(memory_id, system_id)
 
     @cached_property
     def _chassis(self):
