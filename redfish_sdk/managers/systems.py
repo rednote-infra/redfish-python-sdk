@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List, Optional, Union
 
+from pydantic import ValidationError
+
 from ..exceptions import RedfishException, RedfishValidationError
 from ..models.actions import ActionMap
 from ..models.chassis import PCIeDevice
@@ -390,9 +392,34 @@ class SystemsManager:
         Get FRU (Field Replaceable Unit) information for a system.
         Returns None if not available.
 
-
+        Supported layouts:
+        1. Enginetech — ``System.Oem.FruInfo`` →
+           ``{"FruInfo": {"MB_FRU": {"Board": ..., "Chassis": ..., "Product": ...}, ...}}``
+        2. xFusion, Lenovo, etc. — ``System.Oem.Bmc.Fru`` link pointing at a
+           standard ``Fru`` resource
         """
         system = self.get(system_id)
+
+        # 1) Enginetech: Oem.FruInfo (a dict of FRU devices keyed by name; the
+        #    mainboard usually sits under "MB_FRU")
+        if system.oem is not None and system.oem.fru_info is not None:
+            fru_url = system.oem.fru_info.odata_id
+            if fru_url:
+                try:
+                    fru = _fru_from_enginetech(self._http.get_raw(fru_url))
+                except RedfishException as exc:
+                    logger.debug("Enginetech FruInfo fetch failed: %s", exc)
+                    fru = None
+                except ValidationError as exc:
+                    # The BMC published a FruInfo payload our models reject (e.g. a
+                    # non-string value in a string field). Degrade to the standard
+                    # Oem.Bmc.Fru path below instead of surfacing it to the caller.
+                    logger.debug("Enginetech FruInfo payload rejected by model: %s", exc)
+                    fru = None
+                if fru is not None:
+                    return fru
+
+        # 2) Standard OEM Fru link
         if system.oem is None or system.oem.bmc is None or system.oem.bmc.fru is None:
             return None
         fru_link = system.oem.bmc.fru
@@ -614,6 +641,83 @@ class SystemsManager:
 # ---------------------------------------------------------------------------
 # Internal helpers — Actions block parsing
 # ---------------------------------------------------------------------------
+
+# Enginetech — System.Oem.FruInfo parser
+# ---------------------------------------------------------------------------
+
+# Mainboard FRU key priority. Enginetech typically uses "MB_FRU"; some SKUs
+# may use "MainBoard" or "MB".
+_ENGINETECH_MAINBOARD_KEYS = ("MB_FRU", "MAINBOARD", "MB")
+
+
+def _fru_from_enginetech(raw: Optional[dict]) -> Optional[Fru]:
+    """Convert an Enginetech ``Oem/FruInfo`` raw response into a :class:`Fru`.
+
+    Raw structure (key names and fields vary slightly across SKUs)::
+
+        {"FruInfo": {"MB_FRU":   {"Board": {...}, "Chassis": {...}, "Product": {...}},
+                     "PSU1_FRU": {"Product": {...}},
+                     ...}}
+
+    Args:
+        raw: Raw JSON dict returned by ``get_raw()``.
+
+    Returns:
+        ``Fru`` object (with ``board`` taken from the mainboard FRU), or
+        ``None`` if the layout cannot be recognised.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    devices = raw.get("FruInfo")
+    if not isinstance(devices, dict):
+        devices = raw
+
+    # Locate the mainboard FRU entry
+    entry: Optional[dict] = None
+    for key in _ENGINETECH_MAINBOARD_KEYS:
+        for name, val in devices.items():
+            if key.lower() in str(name).lower() and isinstance(val, dict):
+                entry = val
+                break
+        if entry is not None:
+            break
+    if entry is None:
+        for val in devices.values():
+            if isinstance(val, dict) and isinstance(val.get("Board"), dict):
+                entry = val
+                break
+    if entry is None:
+        logger.debug("Enginetech FruInfo: no mainboard entry found in %s", list(devices))
+        return None
+
+    board = dict(entry.get("Board") or {})
+    chassis = entry.get("Chassis") if isinstance(entry.get("Chassis"), dict) else None
+    product = entry.get("Product") if isinstance(entry.get("Product"), dict) else None
+
+    if board:
+        # Enginetech often leaves Board.ProductName blank (or as whitespace);
+        # the real product name lives in the Product node, so back-fill it.
+        if not str(board.get("ProductName") or "").strip() and product:
+            fallback = str(product.get("ProductName") or "").strip()
+            if fallback:
+                board["ProductName"] = fallback
+        # The chassis part number sits in the Chassis node; back-fill it into
+        # MainBoard.ChassisPartNumber so the rest of the SDK sees it there.
+        if not str(board.get("ChassisPartNumber") or "").strip() and chassis:
+            chassis_pn = str(chassis.get("PartNumber") or "").strip()
+            if chassis_pn:
+                board["ChassisPartNumber"] = chassis_pn
+
+    return Fru.model_validate(
+        {
+            "@odata.id": raw.get("@odata.id"),
+            "MainBoard": board or None,
+            "Chassis": chassis,
+            "Product": product,
+        }
+    )
+
 
 def _extract_action(actions: Optional[Union[dict, ActionMap]], action_name: str) -> Optional[dict]:
     """Return the Action sub-dict for ``action_name`` or None."""

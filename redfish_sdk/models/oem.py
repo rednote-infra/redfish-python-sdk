@@ -10,9 +10,29 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .common import Entity, Link
+
+
+class OemLink(BaseModel):
+    """Link to an OEM resource whose published shape is not guaranteed.
+
+    Vendors are inconsistent here: the same OEM key may be published as a Redfish
+    link object, as an inlined resource object, or (on some firmware revisions)
+    as a scalar. Modelling that key as a strict :class:`Link` would make a single
+    odd response fail validation for the *whole* enclosing resource, taking down
+    unrelated endpoints. Instead any non-dict shape collapses to an empty link:
+    callers simply observe ``odata_id is None`` and take their normal fallback.
+    """
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    odata_id: Optional[str] = Field(None, alias="@odata.id")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_any_shape(cls, data: Any) -> dict:
+        return data if isinstance(data, dict) else {}
 
 
 class MainBoard(Entity):
@@ -30,7 +50,13 @@ class MainBoard(Entity):
     product_name: Optional[str] = Field(None, alias="ProductName")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     manufacturer: Optional[str] = Field(None, alias="Manufacturer")
-    build_date: Optional[str] = Field(None, alias="BuildDate,ManufactureDate")
+    # Enginetech mainboard FRUs report the build date as "MfgDate", which is
+    # neither the Redfish-standard "BuildDate" nor the "ManufactureDate" used by
+    # some other vendors. Alias choices are tried in priority order.
+    build_date: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("BuildDate", "ManufactureDate", "MfgDate"),
+    )
     pretty_name: Optional[str] = Field(None, alias="PrettyName")
 
 
@@ -164,8 +190,15 @@ class Oem(BaseModel):
     bmc: Optional[Bmc] = Field(None, alias="Public")
     host_post_code: Optional[List[Link]] = Field(None, alias="HostPostCode")
     fru_service: Optional[str] = Field(None, alias="FruService")
+    # Enginetech: /redfish/v1/Systems/Self/Oem/FruInfo
+    fru_info: Optional[OemLink] = Field(None, alias="FruInfo")
 
-    _VENDOR_KEYS = ("BMC", "xFusion", "Lenovo", "Hpe", "Dell", "gOemCustomeString")
+    # NOTE: "Ami" and "Enginetech" are literal OEM root keys that may appear in a
+    # BMC response, not vendor labels, so neither may be renamed. Enginetech BMCs
+    # are AMI MegaRAC based: some SKUs publish their root OEM block as "Ami",
+    # others publish it directly as "Enginetech". Keep both entries so OEM
+    # merging never silently stops working.
+    _VENDOR_KEYS = ("BMC", "xFusion", "Lenovo", "Hpe", "Dell", "gOemCustomeString", "Ami", "Enginetech")
 
     def model_post_init(self, __context: Any) -> None:
         extra = self.model_extra or {}

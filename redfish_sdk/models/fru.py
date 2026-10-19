@@ -26,7 +26,10 @@ class FruProduct(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     manufacturer: Optional[str] = Field(None, alias="Manufacturer")
-    name: Optional[str] = Field(None, validation_alias=AliasChoices("Name", "PrettyName"))
+    # Enginetech BMCs expose no standard Redfish "Name" / "PrettyName" in the
+    # Product node; the real product name lives in the OEM "ProductName" key.
+    # This alias is required to match the Enginetech layout.
+    name: Optional[str] = Field(None, validation_alias=AliasChoices("Name", "PrettyName", "ProductName"))
     part_number: Optional[str] = Field(None, alias="PartNumber")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     version: Optional[str] = Field(None, alias="Version")
