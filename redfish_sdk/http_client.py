@@ -307,8 +307,17 @@ class RedfishHttpClient:
         except Exception:
             pass
 
-        logger.error("Request failed: %s %s -> HTTP %d, body: %s",
-                     response.request.method, path, code, body[:500])
+        # 404 ("not found") is routinely an expected outcome handled by callers
+        # via fallback (e.g. Chassis/1 -> Chassis/Self) or treated as "absent"
+        # (e.g. optional sub-resources). Logging it at ERROR produces alarming
+        # noise for what is normal control flow, so it is recorded at DEBUG only.
+        # All other non-2xx responses remain at ERROR.
+        if code == 404:
+            logger.debug("Request returned 404 (not found): %s %s",
+                         response.request.method, path)
+        else:
+            logger.error("Request failed: %s %s -> HTTP %d, body: %s",
+                         response.request.method, path, code, body[:500])
 
         if code in (401, 403):
             raise RedfishAuthError(code)
