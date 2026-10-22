@@ -11,7 +11,6 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..exceptions import RedfishValidationError
-from ..models.common import RedfishResponse
 from ..models.event import EventService, Subscription
 
 if TYPE_CHECKING:
@@ -227,7 +226,7 @@ class EventServiceManager:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
-    ) -> RedfishResponse:
+    ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
 
@@ -244,17 +243,13 @@ class EventServiceManager:
             message_severity: Optional message severity for newer Redfish
                 EventService implementations.
 
-        Returns:
-            The operation response, including a Task resource when the BMC
-            accepts the action asynchronously. Acceptance is not completion;
-            callers must check the task's terminal state and messages.
-
         Raises:
-            RedfishValidationError: If SubmitTestEvent is unavailable, neither
-                ``message_id`` nor ``event_type`` is supplied, or ``event_type``
-                is not allowable. Legacy event-type-only calls remain supported;
-                modern EventService schemas require ``MessageId``.
+            RedfishValidationError: If EventService does not expose
+            SubmitTestEvent is unavailable, neither ``message_id`` nor
+            ``event_type`` is supplied, or ``event_type`` is not allowable.
         """
+        from ..models.common import RedfishResponse
+
         es = self.service()
         actions = es.actions or {}
         action = actions.get("#EventService.SubmitTestEvent")
@@ -288,4 +283,4 @@ class EventServiceManager:
             body["MessageSeverity"] = message_severity
 
         logger.info("POST SubmitTestEvent -> %s", target)
-        return self._http.post(target, RedfishResponse, raw_body=body)
+        self._http.post(target, RedfishResponse, raw_body=body)

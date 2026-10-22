@@ -8,8 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Return the SubmitTestEvent response so callers can inspect asynchronous tasks
-  instead of mistaking HTTP acceptance for successful completion.
 - Serialize subscription header dictionaries as the standard HttpHeaders array;
   raw_body remains available for vendor-specific request shapes.
 

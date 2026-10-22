@@ -1725,12 +1725,9 @@ class RedfishClient:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
-    ) -> RedfishResponse:
+    ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
-
-        Returns the operation response. For asynchronous actions, inspect the
-        returned Task resource rather than treating acceptance as completion.
 
         See :meth:`EventServiceManager.submit_test_event` for details.
         """
