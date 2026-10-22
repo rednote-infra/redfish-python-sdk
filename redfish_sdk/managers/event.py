@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..exceptions import RedfishValidationError
+from ..models.common import RedfishResponse
 from ..models.event import EventService, Subscription
 
 if TYPE_CHECKING:
@@ -135,7 +136,8 @@ class EventServiceManager:
             protocol: Wire protocol; defaults to ``"Redfish"``.
             http_headers: Optional headers to be sent on the callback POST.
                 Pass a ``dict`` (``{"X-Auth-Token": "..."}``) or a
-                ``list[dict]`` — both forms are common across BMC vendors.
+                ``list[dict]``. Dictionaries are serialized as the standard
+                array of header objects. Use ``raw_body`` for vendor shapes.
             origin_resources: Optional list of ``{"@odata.id": "..."}``
                 filtering the resources of interest.
             subscription_type: Optional ``SubscriptionType`` value
@@ -167,7 +169,9 @@ class EventServiceManager:
             if context is not None:
                 body["Context"] = context
             if http_headers is not None:
-                body["HttpHeaders"] = http_headers
+                body["HttpHeaders"] = (
+                    [http_headers] if isinstance(http_headers, dict) else http_headers
+                )
             if origin_resources is not None:
                 body["OriginResources"] = origin_resources
             if subscription_type is not None:
@@ -223,7 +227,7 @@ class EventServiceManager:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
-    ) -> None:
+    ) -> RedfishResponse:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
 
@@ -240,13 +244,17 @@ class EventServiceManager:
             message_severity: Optional message severity for newer Redfish
                 EventService implementations.
 
-        Raises:
-            RedfishValidationError: If EventService does not expose
-            SubmitTestEvent is unavailable, neither ``message_id`` nor
-            ``event_type`` is supplied, or ``event_type`` is not allowable.
-        """
-        from ..models.common import RedfishResponse
+        Returns:
+            The operation response, including a Task resource when the BMC
+            accepts the action asynchronously. Acceptance is not completion;
+            callers must check the task's terminal state and messages.
 
+        Raises:
+            RedfishValidationError: If SubmitTestEvent is unavailable, neither
+                ``message_id`` nor ``event_type`` is supplied, or ``event_type``
+                is not allowable. Legacy event-type-only calls remain supported;
+                modern EventService schemas require ``MessageId``.
+        """
         es = self.service()
         actions = es.actions or {}
         action = actions.get("#EventService.SubmitTestEvent")
@@ -280,4 +288,4 @@ class EventServiceManager:
             body["MessageSeverity"] = message_severity
 
         logger.info("POST SubmitTestEvent -> %s", target)
-        self._http.post(target, RedfishResponse, raw_body=body)
+        return self._http.post(target, RedfishResponse, raw_body=body)

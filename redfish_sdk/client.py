@@ -1653,8 +1653,8 @@ class RedfishClient:
             context: Optional context string identifying the subscription.
             protocol: Wire protocol; defaults to ``"Redfish"``.
             http_headers: Optional headers to send on the callback POST.
-                Pass either a ``dict`` or a ``list[dict]`` — both forms are
-                commonly seen across BMC vendors.
+                Pass a ``dict`` or a ``list[dict]``. Dictionaries are converted
+                to the standard array form; ``raw_body`` preserves vendor forms.
             origin_resources: Optional list of ``{"@odata.id": "..."}``.
             subscription_type: Optional ``SubscriptionType`` value.
             registry_prefixes: Optional message-registry filter list.
@@ -1725,9 +1725,12 @@ class RedfishClient:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
-    ) -> None:
+    ) -> RedfishResponse:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
+
+        Returns the operation response. For asynchronous actions, inspect the
+        returned Task resource rather than treating acceptance as completion.
 
         See :meth:`EventServiceManager.submit_test_event` for details.
         """

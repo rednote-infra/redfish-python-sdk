@@ -852,11 +852,11 @@ class TestEventSubscriptionCrud:
             origin_resources=[{"@odata.id": "/redfish/v1"}],
         )
         body = recorder.last["raw_body"]
-        assert body["HttpHeaders"] == {
+        assert body["HttpHeaders"] == [{
             "Content-Type": "Application/JSON",
             "OData-Version": "4.0",
             "X-Auth-Token": "token",
-        }
+        }]
         assert body["OriginResources"] == [{"@odata.id": "/redfish/v1"}]
         assert body["Protocol"] == "Redfish"
         client.close()
