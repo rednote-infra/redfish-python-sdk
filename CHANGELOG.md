@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Serialize subscription header dictionaries as the standard HttpHeaders array;
-  raw_body remains available for vendor-specific request shapes.
-
 ## [1.3.0] - 2026-10-12
 
 ### Added
