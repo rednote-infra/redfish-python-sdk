@@ -197,7 +197,20 @@ class ChassisManager:
         """
         chassis = self.get(chassis_id)
 
-        # Strategy 1: Use Chassis.Links.Drives
+        # Strategy 1: Chassis.Drives (canonical chassis-owned drive collection).
+        # Preferred because some BMCs expose the authoritative Drive resources
+        # (with fields such as IndicatorLED) only here, while Chassis.Links.Drives
+        # may resolve to Storage-side Drive references that lack those fields.
+        if chassis.drives:
+            try:
+                drives = self._client._get_collection(chassis.drives.odata_id, Drive)
+                if drives:
+                    return drives
+            except RedfishException as exc:
+                logger.warning("Chassis.Drives collection failed: %s", exc)
+
+        # Strategy 2: Chassis.Links.Drives (links may resolve to Storage-side
+        # Drive resources). Kept as fallback for BMCs that only populate links.
         if chassis.links and chassis.links.drives:
             drive_links = chassis.links.drives
             if drive_links:
@@ -222,13 +235,6 @@ class ChassisManager:
 
                 if result:
                     return result
-
-        # Strategy 2: Use Chassis.Drives collection endpoint
-        if chassis.drives:
-            try:
-                return self._client._get_collection(chassis.drives.odata_id, Drive)
-            except RedfishException as exc:
-                logger.warning("Chassis.Drives collection failed: %s", exc)
 
         return []
 
