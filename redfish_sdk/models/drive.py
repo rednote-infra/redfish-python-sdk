@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .check import Field
 from .common import Entity, Status
@@ -55,3 +55,13 @@ class Drive(Entity):
     # Top-level drive temperature (宁畅 only, NOT under Oem)
     disk_temperature_celsius: Optional[float] = Field(None, alias="DiskTemperatureCelsius")
     oem: Optional[Oem] = Field(None, alias="Oem")
+
+    @field_validator("location", mode="before")
+    @classmethod
+    def _normalize_location(cls, v):
+        # Redfish allows Location to be either a single object or a list of
+        # objects. Normalize a single dict into a one-element list so the
+        # List[Location] typing stays consistent across vendors.
+        if isinstance(v, dict):
+            return [v]
+        return v
