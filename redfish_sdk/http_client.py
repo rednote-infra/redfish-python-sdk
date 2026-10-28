@@ -29,6 +29,7 @@ from .exceptions import (
     RedfishNotFoundError,
     RedfishTimeoutError,
 )
+from .models.common import RedfishResponse
 
 # Suppress InsecureRequestWarning for self-signed certs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -431,9 +432,16 @@ class RedfishHttpClient:
 
         # 204 No Content — return empty model
         if response.status_code == 204 or not response.text.strip():
-            return model_class.model_construct()
+            result = model_class.model_construct()
+        else:
+            result = self._parse(response, model_class)
 
-        return self._parse(response, model_class)
+        if isinstance(result, RedfishResponse):
+            result.task_monitor = response.headers.get("Location") or result.task_monitor
+            result.http_status = response.status_code
+            result.task_uri = result.odata_id or result.task_uri
+            result.retry_after = response.headers.get("Retry-After") or result.retry_after
+        return result
 
     def post_raw(self, path: str, body: Optional[Dict] = None) -> requests.Response:
         """

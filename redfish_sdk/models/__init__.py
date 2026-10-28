@@ -54,7 +54,7 @@ from .session import Session, SessionService
 from .storage import CacheSummary, Identifier, StorageController  # noqa: F401
 from .system_resources import MemoryChunks, MemoryDomain, MemoryMetrics, NetworkInterface, NetworkPort, SecureBoot
 from .systems import Bios, Boot, Gpu, GpuOEM, Memory, Processor, Storage, System, Volume
-from .task import Task, TaskService
+from .task import AsyncOperationResult, Task, TaskRecoveryPolicy, TaskService
 from .telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .thermal import HistoricalInletTempEntry, InletHistoryTemperature, Redundancy  # noqa: F401
 from .update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
@@ -80,7 +80,7 @@ __all__ = [
     "UpdateService", "FirmwareInventory", "ClientCertificate",
     "FirmwareUpdateResponse",
     "Registry",
-    "TaskService", "Task",
+    "TaskService", "Task", "TaskRecoveryPolicy", "AsyncOperationResult",
     "SecureBoot", "NetworkInterface", "NetworkPort", "MemoryDomain", "MemoryChunks", "MemoryMetrics",
     "Oem", "Bmc", "MainBoard",
     "Log", "LogEntry",

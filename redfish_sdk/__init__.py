@@ -29,6 +29,7 @@ Quick start:
 from .client import CollectionFailure, CollectionResult, RedfishClient
 from .exceptions import (
     LogCollectFailedError,
+    RedfishAsyncOperationError,
     RedfishAuthError,
     RedfishConnectionError,
     RedfishException,
@@ -71,6 +72,7 @@ from .models.system_resources import (
     SecureBoot,
 )
 from .models.systems import BootOption
+from .models.task import AsyncOperationResult, TaskRecoveryPolicy
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.update import FirmwareUpdateResponse
 
@@ -94,6 +96,9 @@ __all__ = [
     "RedfishTimeoutError",
     "RedfishValidationError",
     "LogCollectFailedError",
+    "RedfishAsyncOperationError",
+    "TaskRecoveryPolicy",
+    "AsyncOperationResult",
     # Models commonly used at API boundary.
     "BootOption",
     "CompositionService",

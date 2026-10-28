@@ -94,7 +94,7 @@ from .models.system_resources import (
     SecureBoot,
 )
 from .models.systems import Bios, BootOption, System, SystemPatchSetting
-from .models.task import Task, TaskService
+from .models.task import AsyncOperationResult, Task, TaskRecoveryPolicy, TaskService
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.thermal import Fan, InletHistoryTemperature, Thermal
 from .models.update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
@@ -2072,6 +2072,8 @@ class RedfishClient:
         task_id: str,
         poll_interval: int = 5,
         timeout: int = 600,
+        *,
+        recovery_policy: Optional[TaskRecoveryPolicy] = None,
     ) -> Task:
         """
         Poll a task until it completes or times out.
@@ -2089,7 +2091,27 @@ class RedfishClient:
         Raises:
             TimeoutError: If task does not complete within timeout
         """
-        return self._tasks.wait_for_task(task_id, poll_interval, timeout)
+        if recovery_policy is None:
+            return self._tasks.wait_for_task(task_id, poll_interval, timeout)
+        return self._tasks.wait_for_task(
+            task_id, poll_interval, timeout, recovery_policy=recovery_policy
+        )
+
+    def wait_for_operation(
+        self,
+        operation: RedfishResponse,
+        poll_interval: int = 5,
+        timeout: int = 600,
+        *,
+        recovery_policy: Optional[TaskRecoveryPolicy] = None,
+    ) -> AsyncOperationResult:
+        """Wait for an HTTP 202 task monitor to return its final response."""
+        return self._tasks.wait_for_operation(
+            operation,
+            poll_interval,
+            timeout,
+            recovery_policy=recovery_policy,
+        )
 
     # ==================================================================
     # Component query methods — Firmware / FRU

@@ -92,6 +92,8 @@ class UpdateServiceManager:
         result = self._http._parse(response, FirmwareUpdateResponse) if response.text.strip() else FirmwareUpdateResponse()
         result.task_monitor = response.headers.get("Location") or result.task_monitor
         result.http_status = response.status_code
+        result.task_uri = result.odata_id or result.task_uri
+        result.retry_after = response.headers.get("Retry-After") or result.retry_after
         return result
 
     def _upload(

@@ -91,6 +91,27 @@ class RedfishValidationError(RedfishException):
         super().__init__(400, message)
 
 
+class RedfishAsyncOperationError(RedfishException):
+    """Raised when an asynchronous operation cannot be completed safely."""
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        body: str = "",
+        *,
+        task_monitor_uri: str = "",
+        task_uri: str = "",
+        final_response=None,
+        recovery_attempts: int = 0,
+    ):
+        super().__init__(status_code, message, body)
+        self.task_monitor_uri = task_monitor_uri
+        self.task_uri = task_uri
+        self.final_response = final_response
+        self.recovery_attempts = recovery_attempts
+
+
 class LogCollectFailedError(RedfishException):
     """
     Raised when out-of-band diagnostic-data collection fails on the BMC.

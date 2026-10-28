@@ -4,8 +4,10 @@ Task service models.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+import requests
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .common import Entity, Link, Status
@@ -99,3 +101,37 @@ class Task(Entity):
         if isinstance(value, dict):
             return [value]
         return value
+
+
+@dataclass(frozen=True)
+class TaskRecoveryPolicy:
+    """Bounded recovery settings for asynchronous operation polling.
+
+    Recovery only retries status ``GET`` requests. The SDK never replays the
+    original mutation that created the asynchronous operation.
+    """
+
+    max_connection_attempts: int = 3
+    max_auth_attempts: int = 1
+    recovery_interval: float = 5.0
+
+    def __post_init__(self) -> None:
+        if self.max_connection_attempts < 0:
+            raise ValueError("max_connection_attempts must be non-negative")
+        if self.max_auth_attempts < 0:
+            raise ValueError("max_auth_attempts must be non-negative")
+        if self.recovery_interval < 0:
+            raise ValueError("recovery_interval must be non-negative")
+
+
+@dataclass(frozen=True)
+class AsyncOperationResult:
+    """Completed asynchronous operation and its original HTTP response."""
+
+    initial_http_status: int
+    task_monitor_uri: str
+    task_uri: Optional[str]
+    initial_retry_after: Optional[str]
+    final_response: requests.Response
+    task: Optional[Task] = None
+    monitor_missing: bool = False

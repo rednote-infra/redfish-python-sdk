@@ -34,8 +34,6 @@ class FirmwareUpdateResponse(RedfishResponse):
     """Firmware operation result, including HTTP task-monitor references."""
 
     task_id: Optional[str] = Field(None, alias="TaskId", validation_alias=AliasChoices("TaskId", "Id"))
-    task_monitor: Optional[str] = Field(None, alias="TaskMonitor")
-    http_status: Optional[int] = Field(None, alias="HttpStatus")
 
 
 class FirmwareInventory(Entity):

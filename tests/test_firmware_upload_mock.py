@@ -12,13 +12,15 @@ from redfish_sdk.exceptions import RedfishException, RedfishValidationError
 from redfish_sdk.models.update import UpdateService
 
 
-def response(status=204, body=None, location=None):
+def response(status=204, body=None, location=None, retry_after=None):
     result = requests.Response()
     result.request = requests.Request("POST", "https://mock-bmc/custom/action").prepare()
     result.status_code = status
     result._content = json.dumps(body).encode() if body is not None else b""
     if location:
         result.headers["Location"] = location
+    if retry_after:
+        result.headers["Retry-After"] = retry_after
     return result
 
 
@@ -64,7 +66,12 @@ def test_upload_multipart_and_no_sensitive_logging(firmware_client, monkeypatch,
 
     def request(verb, path, **arguments):
         captured.append((verb, path, arguments))
-        return response(202, {"@odata.id": "/custom/task/7", "Id": "7", "TaskState": "Running"}, "/custom/monitor/7")
+        return response(
+            202,
+            {"@odata.id": "/custom/task/7", "Id": "7", "TaskState": "Running"},
+            "/custom/monitor/7",
+            "15",
+        )
 
     monkeypatch.setattr(client._http_client, "_request", request)
     with caplog.at_level(logging.INFO, logger="redfish_sdk"):
@@ -80,6 +87,8 @@ def test_upload_multipart_and_no_sensitive_logging(firmware_client, monkeypatch,
     assert result.task_id == "7"
     assert result.task_monitor == "/custom/monitor/7"
     assert result.http_status == 202
+    assert result.task_uri == "/custom/task/7"
+    assert result.retry_after == "15"
 
 
 def test_standard_multipart_push_parameters(

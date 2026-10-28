@@ -101,3 +101,7 @@ class RedfishResponse(BaseModel):
     message: Optional[str] = Field(None, alias="Message")
     task_id: Optional[str] = Field(None, alias="TaskId")
     task_state: Optional[str] = Field(None, alias="TaskState")
+    task_monitor: Optional[str] = Field(None, alias="TaskMonitor")
+    http_status: Optional[int] = Field(None, alias="HttpStatus")
+    task_uri: Optional[str] = Field(None, alias="TaskUri")
+    retry_after: Optional[str] = Field(None, alias="RetryAfter")
