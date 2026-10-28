@@ -39,7 +39,12 @@ from .exceptions import (
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
 from .models.drive import Drive
 from .models.event import EventService, Subscription
-from .models.fabric import CXLLogicalDevice, Port, PortMetrics
+from .models.fabric import (
+    CXLLogicalDevice,
+    Port,
+    PortMetrics,
+    ResetTransceiversRequest,
+)
 from .models.logs import Log, LogEntry
 from .models.managers import (
     DnsService,
@@ -99,6 +104,7 @@ __all__ = [
     "Port",
     "PortMetrics",
     "CXLLogicalDevice",
+    "ResetTransceiversRequest",
     "FirewallRules",
     "HttpsCert",
     "KvmService",

@@ -1,11 +1,12 @@
-"""Read-only models for optional Redfish CXL and UALink topology."""
+"""Models for standard Redfish Port topology, metrics, CXL, and UALink."""
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .actions import ActionDescriptor, ActionMap
 from .common import Entity, Link, Status
 from .storage import Identifier
 
@@ -172,10 +173,106 @@ class PortLinks(BaseModel):
     )
 
 
+class ConfiguredNetworkLink(BaseModel):
+    """A speed and width pair enabled for link autonegotiation."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    configured_link_speed_gbps: Optional[float] = Field(
+        None, alias="ConfiguredLinkSpeedGbps"
+    )
+    configured_width: Optional[int] = Field(None, alias="ConfiguredWidth")
+
+
+class PortLinkConfiguration(BaseModel):
+    """Static capabilities and configuration for a port link."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    auto_speed_negotiation_capable: Optional[bool] = Field(
+        None, alias="AutoSpeedNegotiationCapable"
+    )
+    auto_speed_negotiation_enabled: Optional[bool] = Field(
+        None, alias="AutoSpeedNegotiationEnabled"
+    )
+    capable_link_speed_gbps: Optional[List[float]] = Field(
+        None, alias="CapableLinkSpeedGbps"
+    )
+    configured_network_links: Optional[List[ConfiguredNetworkLink]] = Field(
+        None, alias="ConfiguredNetworkLinks"
+    )
+    link_network_technology: Optional[str] = Field(
+        None, alias="LinkNetworkTechnology"
+    )
+
+
+class PortLinkPartnerExpected(BaseModel):
+    """Configured identity expected from a link partner."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    device_type: Optional[str] = Field(None, alias="DeviceType")
+    link_partner_id: Optional[str] = Field(None, alias="LinkPartnerId")
+    port_id: Optional[str] = Field(None, alias="PortId")
+
+
+class PortLinkPartnerInfo(PortLinkPartnerExpected):
+    """Identity received from or transmitted to a link partner."""
+
+    pbr_id: Optional[int] = Field(None, alias="PBRId")
+    primary_fm_id: Optional[str] = Field(None, alias="PrimaryFMId")
+    secondary_fm_id: Optional[str] = Field(None, alias="SecondaryFMId")
+
+
+class PortLinkPartnerValidation(BaseModel):
+    """Configured checks and current validation state for a link partner."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    device_check_enabled: Optional[bool] = Field(None, alias="DeviceCheckEnabled")
+    port_check_enabled: Optional[bool] = Field(None, alias="PortCheckEnabled")
+    validation_state: Optional[str] = Field(None, alias="ValidationState")
+
+
+class PortFunctionBandwidth(BaseModel):
+    """Bandwidth allocation associated with a network device function."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    allocation_percent: Optional[int] = Field(None, alias="AllocationPercent")
+    network_device_function: Optional[Link] = Field(
+        None, alias="NetworkDeviceFunction"
+    )
+
+
+class ResetTransceiversAction(ActionDescriptor):
+    """Advertised descriptor for the parameterless ResetTransceivers action."""
+
+
+class PortActions(ActionMap):
+    """Standard actions advertised by a Port resource."""
+
+    reset_transceivers: Optional[ResetTransceiversAction] = Field(
+        None, alias="#Port.ResetTransceivers"
+    )
+
+    @field_validator("reset_transceivers", mode="before")
+    @classmethod
+    def valid_descriptor(cls, value: Any) -> Any:
+        return value if isinstance(value, (dict, ResetTransceiversAction)) else None
+
+
+class ResetTransceiversRequest(BaseModel):
+    """The standard ResetTransceivers action has no request parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class Port(Entity):
     """A generic Redfish Port, including optional CXL and UALink data."""
 
     active_width: Optional[int] = Field(None, alias="ActiveWidth")
+    actions: Optional[PortActions] = Field(None, alias="Actions")
     capable_protocol_versions: Optional[List[str]] = Field(
         None, alias="CapableProtocolVersions"
     )
@@ -188,11 +285,34 @@ class Port(Entity):
     cxl: Optional[PortCXL] = Field(None, alias="CXL")
     enabled: Optional[bool] = Field(None, alias="Enabled")
     interface_enabled: Optional[bool] = Field(None, alias="InterfaceEnabled")
+    function_max_bandwidth: Optional[List[PortFunctionBandwidth]] = Field(
+        None, alias="FunctionMaxBandwidth"
+    )
+    function_min_bandwidth: Optional[List[PortFunctionBandwidth]] = Field(
+        None, alias="FunctionMinBandwidth"
+    )
+    is_aggregation: Optional[bool] = Field(None, alias="IsAggregation")
+    is_split: Optional[bool] = Field(None, alias="IsSplit")
+    link_configuration: Optional[List[PortLinkConfiguration]] = Field(
+        None, alias="LinkConfiguration"
+    )
     link_network_technology: Optional[str] = Field(
         None, alias="LinkNetworkTechnology"
     )
     link_state: Optional[str] = Field(None, alias="LinkState")
     link_status: Optional[str] = Field(None, alias="LinkStatus")
+    link_partner_expected: Optional[PortLinkPartnerExpected] = Field(
+        None, alias="LinkPartnerExpected"
+    )
+    link_partner_received: Optional[PortLinkPartnerInfo] = Field(
+        None, alias="LinkPartnerReceived"
+    )
+    link_partner_transmit: Optional[PortLinkPartnerInfo] = Field(
+        None, alias="LinkPartnerTransmit"
+    )
+    link_partner_validation: Optional[PortLinkPartnerValidation] = Field(
+        None, alias="LinkPartnerValidation"
+    )
     links: Optional[PortLinks] = Field(None, alias="Links")
     max_speed_gbps: Optional[float] = Field(None, alias="MaxSpeedGbps")
     metrics: Optional[Link] = Field(None, alias="Metrics")

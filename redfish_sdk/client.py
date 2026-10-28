@@ -203,6 +203,14 @@ class RedfishClient:
         """List Ports advertised by one processor or all processors."""
         return self._fabric.processor_ports(processor_id, system_id)
 
+    def get_ports(self, owner_odata_id: str) -> List[Port]:
+        """List standard Ports through a resource's advertised Ports link."""
+        return self._fabric.ports(owner_odata_id)
+
+    def get_port(self, identifier: str, owner_odata_id: str) -> Port:
+        """Select a standard Port by Id or advertised member URI."""
+        return self._fabric.port(identifier, owner_odata_id)
+
     def get_connected_pcie_ports(
         self, pcie_device_id: str, chassis_id: Optional[str] = None
     ) -> List[Port]:
@@ -216,11 +224,23 @@ class RedfishClient:
         pcie_device_id: Optional[str] = None,
         system_id: Optional[str] = None,
         chassis_id: Optional[str] = None,
+        owner_odata_id: Optional[str] = None,
     ) -> PortMetrics:
-        """Get metrics advertised by a selected processor or PCIe Port."""
+        """Get metrics advertised by a selected standard Port."""
         return self._fabric.port_metrics(
-            port_id, processor_id, pcie_device_id, system_id, chassis_id
+            port_id,
+            processor_id,
+            pcie_device_id,
+            system_id,
+            chassis_id,
+            owner_odata_id,
         )
+
+    def reset_port_transceivers(
+        self, port_id: str, owner_odata_id: str
+    ) -> RedfishResponse:
+        """Invoke a selected Port's advertised ResetTransceivers action."""
+        return self._fabric.reset_transceivers(port_id, owner_odata_id)
 
     def get_cxl_logical_devices(
         self, pcie_device_id: str, chassis_id: Optional[str] = None

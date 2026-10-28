@@ -6,19 +6,28 @@ from .cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor, 
 from .drive import Location  # noqa: F401
 from .event import EventService, Subscription
 from .fabric import (
+    ConfiguredNetworkLink,
     CXLLogicalDevice,
     CXLLogicalDeviceLinks,
     CXLLogicalDeviceQoS,
     CXLTelemetryCapabilities,
     Port,
+    PortActions,
     PortCXL,
     PortCXLCongestion,
+    PortFunctionBandwidth,
+    PortLinkConfiguration,
+    PortLinkPartnerExpected,
+    PortLinkPartnerInfo,
+    PortLinkPartnerValidation,
     PortLinks,
     PortMetrics,
     PortMetricsCXL,
     PortUALink,
     ProcessorLinks,
     ProcessorUALink,
+    ResetTransceiversAction,
+    ResetTransceiversRequest,
 )
 from .fru import Fru, FruChassis, FruProduct
 from .logs import Log, LogEntry
@@ -58,6 +67,9 @@ __all__ = [
     "Chassis", "Drive", "NetworkAdapter", "Power", "PowerSupply", "Thermal",
     "PCIeDevice", "Fan", "Temperature",
     "Port", "PortMetrics", "PortCXL", "PortCXLCongestion", "PortUALink", "PortLinks", "PortMetricsCXL",
+    "ConfiguredNetworkLink", "PortLinkConfiguration", "PortLinkPartnerExpected",
+    "PortLinkPartnerInfo", "PortLinkPartnerValidation", "PortFunctionBandwidth",
+    "PortActions", "ResetTransceiversAction", "ResetTransceiversRequest",
     "CXLLogicalDevice", "CXLLogicalDeviceLinks", "CXLLogicalDeviceQoS",
     "CXLTelemetryCapabilities", "ProcessorUALink", "ProcessorLinks",
     "Manager", "NetworkProtocol", "EthernetInterface", "HostInterface",
