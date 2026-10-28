@@ -136,6 +136,7 @@ class ThermalSubsystem(Entity):
 
     coolant_connectors: Optional[Link] = Field(None, alias="CoolantConnectors")
     environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")
+    fans: Optional[Link] = Field(None, alias="Fans")
     sensors: Optional[Link] = Field(None, alias="Sensors")
     status: Optional[Status] = Field(None, alias="Status")
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")

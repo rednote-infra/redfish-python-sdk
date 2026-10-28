@@ -8,7 +8,9 @@ import logging
 import time
 from typing import TYPE_CHECKING, List
 
+from ..exceptions import RedfishNotFoundError
 from ..models.task import Task
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -39,13 +41,28 @@ class TaskServiceManager:
         Get a specific task by ID.
 
         Args:
-            task_id: Task ID
+            task_id: Advertised Task Id or ``@odata.id``.
 
         Returns:
             Task resource
         """
-        task_service = self._client._get_task_service()
-        return self._http.get(f"{task_service.tasks.odata_id}/{task_id}", Task)
+        if task_id.startswith("/"):
+            return self._http.get(task_id, Task)
+        try:
+            return select_member(self.tasks(), task_id)
+        except RedfishNotFoundError:
+            # Compatibility fallback for BMCs whose running tasks are
+            # retrievable but temporarily omitted from the Tasks collection.
+            task_service = self._client._get_task_service()
+            if not task_service.tasks or not task_service.tasks.odata_id:
+                raise
+            path = f"{task_service.tasks.odata_id}/{task_id}"
+            logger.debug(
+                "Task %s is not advertised in the collection; trying %s",
+                task_id,
+                path,
+            )
+            return self._http.get(path, Task)
 
     def wait_for_task(
         self,

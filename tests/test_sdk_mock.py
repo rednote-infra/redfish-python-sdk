@@ -10,10 +10,9 @@ import os
 
 import pytest
 
-from redfish_sdk.models.oem import MainBoard
-
 from redfish_sdk import RedfishClient as RedfishSDK
 from redfish_sdk import RedfishResource
+from redfish_sdk.models.oem import MainBoard
 
 # ---------------------------------------------------------------------------
 # Dummy credentials for mock tests.
@@ -1202,23 +1201,14 @@ class TestNewDelegateMethods:
             "ReadingUnits": "RPM",
             "Status": {"State": "Enabled", "Health": "OK"},
         }
-        collection = {
-            "Members": [
-                {"@odata.id": "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/0"},
-                {"@odata.id": "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/1"},
-            ]
-        }
-
-        def mock_get_raw(path):
-            if path == "/redfish/v1/Chassis/1/ThermalSubsystem/Fans":
-                return collection
-            if path == "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/0":
-                return fan0_raw
-            if path == "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/1":
-                return fan1_raw
-            pytest.fail(f"unexpected path: {path}")
-
-        monkeypatch.setattr(client, "get_raw", mock_get_raw)
+        monkeypatch.setattr(
+            client,
+            "_get_collection",
+            lambda path, model: [
+                Fan.model_validate(fan0_raw),
+                Fan.model_validate(fan1_raw),
+            ],
+        )
         result = client.get_fan()
         assert len(result) == 2
         assert all(isinstance(f, Fan) for f in result)
@@ -1242,8 +1232,11 @@ class TestNewDelegateMethods:
             "get_chassis",
             lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
         )
-        monkeypatch.setattr(client, "get_raw",
-                            lambda path: (_ for _ in ()).throw(RedfishNotFoundError(path)))
+        monkeypatch.setattr(
+            client,
+            "_get_collection",
+            lambda path, model: (_ for _ in ()).throw(RedfishNotFoundError(path)),
+        )
         monkeypatch.setattr(client, "get_thermal", lambda cid=None: thermal)
 
         result = client.get_fan()
@@ -1264,8 +1257,11 @@ class TestNewDelegateMethods:
             "get_chassis",
             lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
         )
-        monkeypatch.setattr(client, "get_raw",
-                            lambda path: (_ for _ in ()).throw(RedfishNotFoundError(path)))
+        monkeypatch.setattr(
+            client,
+            "_get_collection",
+            lambda path, model: (_ for _ in ()).throw(RedfishNotFoundError(path)),
+        )
         monkeypatch.setattr(client, "get_thermal",
                             lambda cid=None: (_ for _ in ()).throw(RedfishNotFoundError("/thermal")))
 

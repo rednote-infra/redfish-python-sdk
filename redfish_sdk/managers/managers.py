@@ -43,6 +43,7 @@ from ..models.managers import (
     VncService,
 )
 from ..models.task import Task
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -76,6 +77,11 @@ class ManagersManager:
             Manager resource
         """
         manager_id = manager_id or "1"
+
+        if manager_id != "1":
+            return select_member(
+                self._client._get_managers_collection(), manager_id
+            )
 
         managers_odata_id = self._client._get_managers_collection_odata_id()
         resource_url = f"{managers_odata_id}/{manager_id}"
@@ -769,15 +775,7 @@ class ManagersManager:
     def serial_interface(
         self, identifier: Optional[str] = None, manager_id: Optional[str] = None
     ) -> SerialInterface:
-        resources = self.serial_interfaces(manager_id)
-        matches = resources if identifier is None else [
-            resource for resource in resources if resource.id == identifier or resource.odata_id == identifier
-        ]
-        if not matches:
-            raise RedfishNotFoundError(f"No SerialInterface with Id or @odata.id {identifier!r}")
-        if len(matches) > 1:
-            raise RedfishValidationError("Multiple SerialInterfaces match; specify a unique @odata.id")
-        return matches[0]
+        return select_member(self.serial_interfaces(manager_id), identifier)
 
     def update_serial_interface(
         self, identifier: Optional[str] = None, manager_id: Optional[str] = None,

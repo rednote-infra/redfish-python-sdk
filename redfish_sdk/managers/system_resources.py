@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, TypeVar
+from typing import TYPE_CHECKING, List, Optional, Tuple, TypeVar
 
 from ..exceptions import RedfishNotFoundError, RedfishValidationError
 from ..models.actions import ActionInfo
@@ -35,9 +35,19 @@ def require_link(resource: Entity, field: str) -> str:
     return link.odata_id
 
 
-def select_member(resources: List[SystemMember], identifier: Optional[str]) -> SystemMember:
+def select_member(
+    resources: List[SystemMember],
+    identifier: Optional[str],
+    *,
+    aliases: Tuple[str, ...] = (),
+) -> SystemMember:
+    """Select an advertised member by Id, @odata.id, or explicit aliases."""
     matches = resources if identifier is None else [
-        resource for resource in resources if resource.id == identifier or resource.odata_id == identifier
+        resource
+        for resource in resources
+        if resource.id == identifier
+        or resource.odata_id == identifier
+        or any(getattr(resource, alias, None) == identifier for alias in aliases)
     ]
     if not matches:
         raise RedfishNotFoundError(f"No resource with Id or @odata.id {identifier!r}")

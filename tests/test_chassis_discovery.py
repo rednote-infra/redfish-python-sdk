@@ -36,6 +36,11 @@ def _client_with_self_chassis(monkeypatch):
             return chassis
         if path == "/redfish/v1/Chassis/Self/Thermal":
             return Thermal.model_construct(odata_id=path)
+        if path == "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans/0":
+            return Fan.model_construct(
+                odata_id=path, name="Fan 1", reading=6000,
+                reading_units="RPM",
+            )
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(client._http_client, "get_raw", fake_get_raw)
@@ -82,13 +87,6 @@ def test_get_fan_derives_its_path_from_the_discovered_chassis(monkeypatch):
             return {"Members": [{"@odata.id": "/redfish/v1/Chassis/Self"}]}
         if path == "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans":
             return {"Members": [{"@odata.id": fan_path}]}
-        if path == fan_path:
-            return {
-                "@odata.id": fan_path,
-                "Name": "Fan 1",
-                "Reading": 6000,
-                "ReadingUnits": "RPM",
-            }
         raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(client._http_client, "get_raw", fake_get_raw)
@@ -115,15 +113,14 @@ def test_get_chassis_preserves_an_explicit_identifier(monkeypatch):
     )
     monkeypatch.setattr(client, "_get_root", lambda: root)
 
-    def fake_get(path, model_class):
-        assert path == "/redfish/v1/Chassis/Custom"
-        return Chassis.model_construct(odata_id=path)
+    chassis = Chassis.model_construct(
+        id="Custom", odata_id="/custom/chassis-node"
+    )
+    monkeypatch.setattr(client, "_get_chassis_collection", lambda: [chassis])
 
-    monkeypatch.setattr(client._http_client, "get", fake_get)
+    result = client.get_chassis("Custom")
 
-    chassis = client.get_chassis("Custom")
-
-    assert chassis.odata_id == "/redfish/v1/Chassis/Custom"
+    assert result is chassis
     client.close()
 
 

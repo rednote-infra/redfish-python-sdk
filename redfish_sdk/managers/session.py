@@ -17,6 +17,7 @@ import logging
 from typing import TYPE_CHECKING, List
 
 from ..models.session import Session
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -50,9 +51,7 @@ class SessionServiceManager:
 
 
         """
-        session_service = self._client._get_session_service()
-        path = f"{session_service.sessions.odata_id}/{session_id}"
-        return self._http.get(path, Session)
+        return select_member(self.sessions(), session_id)
 
     def create(
         self,
@@ -123,8 +122,7 @@ class SessionServiceManager:
         Returns:
             Response body (usually empty)
         """
-        session_service = self._client._get_session_service()
-        path = f"{session_service.sessions.odata_id}/{session_id}"
-        result = self._http.delete(path)
+        session = select_member(self.sessions(), session_id)
+        result = self._http.delete(session.odata_id)
         logger.info("Session %s deleted", session_id)
         return result

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..exceptions import RedfishValidationError
 from ..models.event import EventService, Subscription
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -37,20 +38,17 @@ class EventServiceManager:
         """
         Accept either a bare subscription Id (e.g. ``"1"``) or a full
         ``@odata.id`` path (e.g. ``"/redfish/v1/EventService/Subscriptions/1"``)
-        and return the absolute Redfish path to GET/DELETE against.
+        and return the member's advertised Redfish path for DELETE.
 
-        The dual-form is needed because some callers (e.g. those iterating
-        over the ``Members`` block of the Subscriptions collection) already
-        hold the absolute path.
+        The collection is enumerated so a bare Id never assumes that the Id is
+        also the final URI segment.
         """
         if not isinstance(id_or_uri, str) or not id_or_uri:
             raise RedfishValidationError(
                 "subscription id_or_uri must be a non-empty string"
             )
-        if id_or_uri.startswith("/redfish/"):
-            return id_or_uri
-        event_service = self._client._get_event_service()
-        return f"{event_service.subscriptions.odata_id}/{id_or_uri}"
+        subscription = select_member(self.subscriptions(), id_or_uri)
+        return subscription.odata_id
 
     # ------------------------------------------------------------------
     # EventService resource
@@ -95,8 +93,11 @@ class EventServiceManager:
         Returns:
             The :class:`Subscription` resource.
         """
-        path = self._resolve_subscription_path(id_or_uri)
-        return self._http.get(path, Subscription)
+        if not isinstance(id_or_uri, str) or not id_or_uri:
+            raise RedfishValidationError(
+                "subscription id_or_uri must be a non-empty string"
+            )
+        return select_member(self.subscriptions(), id_or_uri)
 
     def subscribe(
         self,

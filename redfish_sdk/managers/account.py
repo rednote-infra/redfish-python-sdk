@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING, List
 
 from ..models.account import Account, Role
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -76,9 +77,10 @@ class AccountServiceManager:
         Returns:
             Updated account resource
         """
-        account_service = self._client._get_account_service()
-        path = f"{account_service.accounts.odata_id}/{username}"
-        return self._http.patch(path, Account, account)
+        current = select_member(
+            self.accounts(), username, aliases=("user_name",)
+        )
+        return self._http.patch(current.odata_id, Account, account)
 
     def delete(self, username: str) -> str:
         """
@@ -91,6 +93,7 @@ class AccountServiceManager:
         Returns:
             Response body (usually empty)
         """
-        account_service = self._client._get_account_service()
-        path = f"{account_service.accounts.odata_id}/{username}"
-        return self._http.delete(path)
+        current = select_member(
+            self.accounts(), username, aliases=("user_name",)
+        )
+        return self._http.delete(current.odata_id)

@@ -15,7 +15,7 @@ on ``RedfishClient._http_client``.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
 import pytest
 
@@ -526,7 +526,6 @@ class TestIndicatorLed:
 class TestBootOptions:
     @staticmethod
     def _system_with_boot_options() -> System:
-        from redfish_sdk.models.common import Link
         from redfish_sdk.models.systems import Boot
 
         return System.model_construct(
@@ -594,17 +593,9 @@ class TestBootOptions:
             boot_option_enabled=False,
         )
 
-        captured: Dict[str, Any] = {}
-
-        def fake_get(path, model_class):
-            captured["path"] = path
-            assert model_class is BootOption
-            return option
-
-        monkeypatch.setattr(client._http_client, "get", fake_get)
+        monkeypatch.setattr(client, "_get_collection", lambda path, model: [option])
         result = client.get_boot_option("Boot0001")
         assert result is option
-        assert captured["path"] == "/redfish/v1/Systems/1/BootOptions/Boot0001"
         client.close()
 
     def test_set_boot_option_enabled(self, monkeypatch):
@@ -621,9 +612,9 @@ class TestBootOptions:
             id="Boot0001", odata_id=option_id, boot_option_enabled=True
         )
 
-        get_results = iter([before, after])
+        monkeypatch.setattr(client, "_get_collection", lambda path, model: [before])
         monkeypatch.setattr(
-            client._http_client, "get", lambda path, model_class: next(get_results)
+            client._http_client, "get", lambda path, model_class: after
         )
 
         recorder = _CallRecorder()
@@ -724,41 +715,21 @@ class TestEventSubscriptionCrud:
 
     def test_get_subscription_by_id(self, monkeypatch):
         client = _make_client()
-        self._stub_event_service(monkeypatch, client)
-        captured: Dict[str, Any] = {}
-
-        def fake_get(path, model_class):
-            captured["path"] = path
-            return Subscription.model_construct(id="1", odata_id=path)
-
-        monkeypatch.setattr(client._http_client, "get", fake_get)
+        subscription = Subscription.model_construct(
+            id="1", odata_id="/custom/subscriptions/current"
+        )
+        monkeypatch.setattr(client._events, "subscriptions", lambda: [subscription])
         result = client.get_subscription("1")
-        assert captured["path"] == f"{self.SUB_COLLECTION}/1"
-        assert result.id == "1"
+        assert result is subscription
         client.close()
 
     def test_get_subscription_by_odata_id(self, monkeypatch):
         client = _make_client()
-        # If id_or_uri already absolute, _get_event_service must NOT be called.
-        called = {"flag": False}
-        monkeypatch.setattr(
-            client,
-            "_get_event_service",
-            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
-        )
-        called  # silence linter
-
         absolute = "/redfish/v1/EventService/Subscriptions/abc"
-        captured: Dict[str, Any] = {}
-
-        def fake_get(path, model_class):
-            captured["path"] = path
-            return Subscription.model_construct(id="abc", odata_id=path)
-
-        monkeypatch.setattr(client._http_client, "get", fake_get)
+        subscription = Subscription.model_construct(id="abc", odata_id=absolute)
+        monkeypatch.setattr(client._events, "subscriptions", lambda: [subscription])
         result = client.get_subscription(absolute)
-        assert captured["path"] == absolute
-        assert result.odata_id == absolute
+        assert result is subscription
         client.close()
 
     def test_get_subscription_rejects_empty(self, monkeypatch):
@@ -771,7 +742,10 @@ class TestEventSubscriptionCrud:
 
     def test_delete_by_id_resolves_collection_path(self, monkeypatch):
         client = _make_client()
-        self._stub_event_service(monkeypatch, client)
+        subscription = Subscription.model_construct(
+            id="1", odata_id="/custom/subscriptions/current"
+        )
+        monkeypatch.setattr(client._events, "subscriptions", lambda: [subscription])
         captured: Dict[str, Any] = {}
 
         def fake_delete(path):
@@ -780,17 +754,14 @@ class TestEventSubscriptionCrud:
 
         monkeypatch.setattr(client._http_client, "delete", fake_delete)
         client.delete_subscription("1")
-        assert captured["path"] == f"{self.SUB_COLLECTION}/1"
+        assert captured["path"] == "/custom/subscriptions/current"
         client.close()
 
     def test_delete_by_odata_id_passes_through(self, monkeypatch):
         client = _make_client()
         absolute = "/redfish/v1/EventService/Subscriptions/abc"
-        monkeypatch.setattr(
-            client,
-            "_get_event_service",
-            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
-        )
+        subscription = Subscription.model_construct(id="abc", odata_id=absolute)
+        monkeypatch.setattr(client._events, "subscriptions", lambda: [subscription])
         captured: Dict[str, Any] = {}
 
         def fake_delete(path):

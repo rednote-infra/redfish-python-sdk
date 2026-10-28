@@ -30,6 +30,7 @@ from ..models.chassis import (
     Thermal,
 )
 from ..models.thermal import InletHistoryTemperature
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -64,6 +65,11 @@ class ChassisManager:
             Chassis resource
         """
         chassis_id = chassis_id or "1"
+
+        if chassis_id != "1":
+            return select_member(
+                self._client._get_chassis_collection(), chassis_id
+            )
 
         odata_id = self._client._get_chassis_collection_odata_id()
 

@@ -76,15 +76,14 @@ def test_get_manager_preserves_an_explicit_identifier(monkeypatch):
     )
     monkeypatch.setattr(client, "_get_root", lambda: root)
 
-    def fake_get(path, model_class):
-        assert path == "/redfish/v1/Managers/Custom"
-        return Manager.model_construct(odata_id=path)
+    manager = Manager.model_construct(
+        id="Custom", odata_id="/custom/manager-node"
+    )
+    monkeypatch.setattr(client, "_get_managers_collection", lambda: [manager])
 
-    monkeypatch.setattr(client._http_client, "get", fake_get)
+    result = client.get_manager("Custom")
 
-    manager = client.get_manager("Custom")
-
-    assert manager.odata_id == "/redfish/v1/Managers/Custom"
+    assert result is manager
     client.close()
 
 

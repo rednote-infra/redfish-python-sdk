@@ -851,16 +851,15 @@ class RedfishClient:
         Get a single processor (CPU) by ID.
 
         Args:
-            processor_id: Processor ID (e.g., "1")
+            processor_id: Advertised Processor Id or ``@odata.id``.
             system_id: System ID. Auto-selected if only one system exists.
 
         Returns:
             Processor resource
         """
-        system = self._systems.get(system_id)
-        return self._http_client.get(
-            f"{system.processors.odata_id}/{processor_id}", Processor
-        )
+        from .managers.system_resources import select_member
+
+        return select_member(self.get_processors(system_id), processor_id)
 
     def get_memory(self, system_id: Optional[str] = None) -> List[Memory]:
         """
@@ -879,16 +878,15 @@ class RedfishClient:
         Get a single memory module (DIMM) by ID.
 
         Args:
-            memory_id: Memory ID (e.g., "1")
+            memory_id: Advertised Memory Id or ``@odata.id``.
             system_id: System ID. Auto-selected if only one system exists.
 
         Returns:
             Memory resource
         """
-        system = self._systems.get(system_id)
-        return self._http_client.get(
-            f"{system.odata_id}/Memory/{memory_id}", Memory
-        )
+        from .managers.system_resources import select_member
+
+        return select_member(self.get_memory(system_id), memory_id)
 
     def get_storages(self, system_id: Optional[str] = None) -> List:
         """
@@ -2176,9 +2174,10 @@ class RedfishClient:
         Get fan information with multi-path fallback.
 
         Fallback order:
-        1. ``Chassis/ThermalSubsystem/Fans`` — newer Redfish schema, derived from
-           the selected Chassis resource's ``@odata.id``,
-           fetches the collection then GETs each member individually.
+        1. Follow the advertised ``Chassis.ThermalSubsystem`` and
+           ``ThermalSubsystem.Fans`` links. If an older BMC omits the first
+           link, retain the conventional ``ThermalSubsystem/Fans`` path as a
+           compatibility fallback.
         2. ``/redfish/v1/Chassis/{id}/Thermal`` — legacy schema,
            extracts the ``Fans`` array from the Thermal resource.
 
@@ -2190,22 +2189,24 @@ class RedfishClient:
         """
         # Path 1: ThermalSubsystem/Fans (newer Redfish schema)
         try:
+            from .models.cooling import ThermalSubsystem
+
             chassis = self.get_chassis(chassis_id)
-            subsystem_path = f"{chassis.odata_id}/ThermalSubsystem/Fans"
-            collection = self.get_raw(subsystem_path)
-            if collection is not None:
-                members = collection.get("Members", [])
-                fans: List[Fan] = []
-                for member in members:
-                    odata_id = member.get("@odata.id")
-                    if odata_id:
-                        try:
-                            fan_raw = self.get_raw(odata_id)
-                            fans.append(Fan.model_validate(fan_raw))
-                        except Exception as exc:
-                            logger.debug("Failed to fetch fan member %s: %s", odata_id, exc)
+            fans_path = None
+            if chassis.thermal_subsystem and chassis.thermal_subsystem.odata_id:
+                subsystem = self._http_client.get(
+                    chassis.thermal_subsystem.odata_id, ThermalSubsystem
+                )
+                if subsystem.fans and subsystem.fans.odata_id:
+                    fans_path = subsystem.fans.odata_id
+            else:
+                # Compatibility fallback for older BMCs that omit the
+                # ThermalSubsystem link but implement the conventional path.
+                fans_path = f"{chassis.odata_id}/ThermalSubsystem/Fans"
+            if fans_path:
+                fans = self._get_collection(fans_path, Fan)
                 if fans:
-                    logger.debug("Fans found via %s (%d fans)", subsystem_path, len(fans))
+                    logger.debug("Fans found via %s (%d fans)", fans_path, len(fans))
                     return fans
         except RedfishException as exc:
             logger.debug("Failed to get fans via ThermalSubsystem: %s", exc)

@@ -40,6 +40,7 @@ from ..models.systems import (
     SystemPatchSetting,
     Volume,
 )
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -88,7 +89,8 @@ class SystemsManager:
 
 
         Args:
-            system_id: System ID (e.g., "1"). If None, auto-selects the sole system.
+            system_id: Advertised System Id or ``@odata.id``. If None,
+                auto-selects the sole system.
 
         Returns:
             System resource
@@ -107,10 +109,7 @@ class SystemsManager:
                 )
             return systems[0]
 
-        systems_odata_id = self._client._get_systems_collection_odata_id()
-        return self._http.get(
-            f"{systems_odata_id}/{system_id}", System
-        )
+        return select_member(self._client._get_systems_collection(), system_id)
 
     def processors(self, system_id: Optional[str] = None) -> List[Processor]:
         """
@@ -146,8 +145,12 @@ class SystemsManager:
 
 
         """
-        system = self.get(system_id)
-        path = f"{system.storage.odata_id}/{storage_id}/Volumes"
+        storage = select_member(self.storages(system_id), storage_id)
+        path = (
+            storage.volumes.odata_id
+            if storage.volumes and storage.volumes.odata_id
+            else f"{storage.odata_id}/Volumes"
+        )
         return self._client._get_collection(path, Volume)
 
     def bios(self, system_id: Optional[str] = None) -> Bios:
@@ -345,7 +348,7 @@ class SystemsManager:
         Get a single BootOption resource.
 
         Args:
-            option_id: BootOption ID (the trailing segment of its odata_id).
+            option_id: Advertised BootOption Id or ``@odata.id``.
             system_id: System ID. Auto-selected if only one system exists.
 
         Raises:
@@ -357,8 +360,7 @@ class SystemsManager:
             raise RedfishValidationError(
                 "System does not expose a BootOptions collection"
             )
-        path = f"{system.boot.boot_options.odata_id}/{option_id}"
-        return self._http.get(path, BootOption)
+        return select_member(self.boot_options(system_id), option_id)
 
     def set_boot_option_enabled(
         self,
@@ -446,7 +448,7 @@ class SystemsManager:
         if system.graphics_controllers is not None:
             try:
                 gpu_members = self._client._get_collection(
-                    f"{system.odata_id}/GraphicsControllers", Gpu
+                    system.graphics_controllers.odata_id, Gpu
                 )
             except RedfishException as exc:
                 logger.warning("GraphicsControllers fetch failed: %s", exc)

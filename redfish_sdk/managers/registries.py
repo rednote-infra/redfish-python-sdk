@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING, List
 
 from ..models.registry import Registry
+from .system_resources import select_member
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -39,10 +40,9 @@ class RegistriesManager:
         Get a specific message registry by ID.
 
         Args:
-            registry_id: Registry ID (e.g., "Base.1.15.0")
+            registry_id: Advertised Registry Id or ``@odata.id``.
 
         Returns:
             Registry resource
         """
-        registries_odata_id = self._client._get_registries_collection_odata_id()
-        return self._http.get(f"{registries_odata_id}/{registry_id}", Registry)
+        return select_member(self.registries(), registry_id)
