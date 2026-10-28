@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 _VENDOR_KEYWORDS: Dict[str, List[str]] = {
     "enginetech": ["enginetech", "安擎"],
     "inspur": ["inspur", "浪潮", "maginfra"],
+    "ieit": ["ieit systems"],
     "zte": ["zte", "中兴"],
     "h3c": ["h3c", "新华三", "h3c servers"],
     "nettrix": ["nettrix", "宁畅"],

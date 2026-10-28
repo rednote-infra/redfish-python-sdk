@@ -14,6 +14,8 @@ Architecture:
                                             Manager.GeneralDownload SDS flow
       ├── InspurLogCollectStrategy        — Inspur (浪潮), collection-level
                                             CollectAllLog / DownloadAllLog pair
+      │   └── IeitLogCollectStrategy  — IEIT SYSTEMS, member actions +
+                                            in-flight Task reuse
       ├── LenovoLogCollectStrategy        — Lenovo (联想, AMI-based),
                                             CollectAllLog + private
                                             CollectProgress + DownloadAllLog
@@ -40,7 +42,7 @@ from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
 from .enginetech import EnginetechLogCollectStrategy
 from .h3c import H3cLogCollectStrategy
-from .inspur import InspurLogCollectStrategy
+from .inspur import IeitLogCollectStrategy, InspurLogCollectStrategy
 from .lenovo import LenovoLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
 from .smoothcompute import SmoothcomputeLogCollectStrategy
@@ -53,6 +55,7 @@ LogCollectStrategyRegistry.register("enginetech", EnginetechLogCollectStrategy()
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
 LogCollectStrategyRegistry.register("h3c", H3cLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
+LogCollectStrategyRegistry.register("ieit", IeitLogCollectStrategy())
 LogCollectStrategyRegistry.register("lenovo", LenovoLogCollectStrategy())
 LogCollectStrategyRegistry.register("zte", ZteLogCollectStrategy())
 LogCollectStrategyRegistry.register(
@@ -65,6 +68,7 @@ __all__ = [
     "EnginetechLogCollectStrategy",
     "XFusionLogCollectStrategy",
     "H3cLogCollectStrategy",
+    "IeitLogCollectStrategy",
     "InspurLogCollectStrategy",
     "LenovoLogCollectStrategy",
     "ZteLogCollectStrategy",

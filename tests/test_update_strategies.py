@@ -120,6 +120,11 @@ class TestVendorDetector:
         client = _make_mock_client("Maginfra")
         assert VendorDetector.detect(client) == "inspur"
 
+    def test_detect_ieit_systems(self):
+        """IEIT SYSTEMS remains distinct for vendor-specific routing."""
+        client = _make_mock_client("IEIT SYSTEMS")
+        assert VendorDetector.detect(client) == "ieit"
+
     def test_detect_zte(self):
         client = _make_mock_client("ZTE Corporation")
         assert VendorDetector.detect(client) == "zte"

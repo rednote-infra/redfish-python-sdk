@@ -41,6 +41,7 @@ from redfish_sdk.managers.log_collect_strategies import (
     EnginetechLogCollectStrategy,
     GenericLogCollectStrategy,
     H3cLogCollectStrategy,
+    IeitLogCollectStrategy,
     InspurLogCollectStrategy,
     LenovoLogCollectStrategy,
     LogCollectStrategyRegistry,
@@ -1121,6 +1122,11 @@ class TestStrategies(unittest.TestCase):
             LogCollectStrategyRegistry.get("inspur"), InspurLogCollectStrategy
         )
 
+    def test_ieit_uses_inspur_compatible_strategy(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("ieit"), IeitLogCollectStrategy
+        )
+
     def test_zte_registered(self) -> None:
         self.assertIsInstance(
             LogCollectStrategyRegistry.get("zte"), ZteLogCollectStrategy
@@ -1283,6 +1289,44 @@ class TestInspurStrategy(VendorRestoreMixin):
             },
         })
 
+    def _stub_member_actions(self, client) -> None:
+        public = f"{self._COLLECTION}/Public"
+
+        def fetch(path):
+            if path == self._COLLECTION:
+                return {
+                    "@odata.id": self._COLLECTION,
+                    "Members": [{"@odata.id": public}],
+                    "Members@odata.count": 1,
+                }
+            if path == public:
+                return {
+                    "@odata.id": public,
+                    "Id": "Public",
+                    "Actions": {
+                        "Oem": {
+                            "#LogService.CollectAllLog": {
+                                "target": self._COLLECT,
+                            },
+                            "#LogService.DownloadAllLog": {
+                                "target": self._DOWNLOAD,
+                            },
+                        }
+                    },
+                }
+            if path == "/redfish/v1/TaskService/Tasks/7":
+                return {
+                    "@odata.id": path,
+                    "Id": "7",
+                    "Name": "One-click log collection task",
+                    "TaskState": "Running",
+                    "TaskStatus": "OK",
+                    "PercentComplete": 1,
+                }
+            raise AssertionError(f"unexpected GET: {path}")
+
+        _install_get_dispatch(client, fetch)
+
     def test_collect_uses_collection_action_and_empty_body(self) -> None:
         client = _make_client()
         _stub_manager(client)
@@ -1341,6 +1385,96 @@ class TestInspurStrategy(VendorRestoreMixin):
         self.assertEqual(recorder.last["path"], download)
         client.close()
 
+    def test_ieit_member_actions_end_to_end(self) -> None:
+        client = _make_client()
+        _stub_manager(client)
+        self._stub_member_actions(client)
+        client.get_system = lambda system_id=None: System.model_construct(  # type: ignore[assignment]
+            id="1",
+            odata_id="/redfish/v1/Systems/1",
+            manufacturer="IEIT SYSTEMS",
+        )
+        VendorDetector.clear_cache()
+
+        recorder = _CallRecorder()
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, mc, body=None, raw_body=None: (
+                recorder.record(kind="collect", path=path, body=raw_body)
+                or Task.model_construct(
+                    id="7",
+                    odata_id="/redfish/v1/TaskService/Tasks/7",
+                )
+            )
+        )
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id=task_id,
+                odata_id=f"/redfish/v1/TaskService/Tasks/{task_id}",
+                task_state="Completed",
+                task_status="OK",
+            )
+        )
+        client._http_client.download_via_post = (  # type: ignore[assignment]
+            lambda path, output_path=None, raw_body=None: (
+                recorder.record(kind="download", path=path, body=raw_body)
+                or os.path.abspath(output_path)
+            )
+        )
+
+        try:
+            result = client.collect_and_download_diagnostic_data(
+                "/tmp/ieit-logs.tar.gz", reuse_existing=False
+            )
+            self.assertEqual(result, "/tmp/ieit-logs.tar.gz")
+            self.assertEqual(
+                [(call["kind"], call["path"]) for call in recorder.calls],
+                [
+                    ("collect", self._COLLECT),
+                    ("download", self._DOWNLOAD),
+                ],
+            )
+        finally:
+            VendorDetector.clear_cache()
+            client.close()
+
+    def test_member_discovery_skips_unreadable_services(self) -> None:
+        client = _make_client()
+        broken = f"{self._COLLECTION}/Broken"
+        public = f"{self._COLLECTION}/Public"
+
+        def fetch(path):
+            if path == self._COLLECTION:
+                return {
+                    "@odata.id": self._COLLECTION,
+                    "Members": [
+                        {"@odata.id": broken},
+                        {"@odata.id": public},
+                    ],
+                }
+            if path == broken:
+                raise RedfishException(503, "temporarily unavailable")
+            if path == public:
+                return {
+                    "@odata.id": public,
+                    "Actions": {
+                        "Oem": {
+                            "#LogService.CollectAllLog": {
+                                "target": self._COLLECT,
+                            }
+                        }
+                    },
+                }
+            raise AssertionError(f"unexpected GET: {path}")
+
+        _install_get_dispatch(client, fetch)
+        self.assertEqual(
+            InspurLogCollectStrategy().discover_collect_target(
+                client, self._COLLECTION, None
+            ),
+            self._COLLECT,
+        )
+        client.close()
+
     def test_find_existing_task_always_none(self) -> None:
         """
         Inspur must never reuse a prior task — its collection artifact
@@ -1362,6 +1496,131 @@ class TestInspurStrategy(VendorRestoreMixin):
         self.assertIsNone(
             strategy.find_existing_task(client, self._COLLECTION, manager_id="1")
         )
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# IEIT SYSTEMS task lifecycle compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestIeitStrategy(unittest.TestCase):
+    def test_reuses_running_one_click_log_task(self) -> None:
+        client = _make_client()
+        task_url = "/redfish/v1/TaskService/Tasks/99"
+        client.get_tasks = lambda: [  # type: ignore[assignment]
+            Task.model_construct(id="99", odata_id=task_url)
+        ]
+        client._http_client.get = (  # type: ignore[assignment]
+            lambda path, model_class: Task.model_construct(
+                id="99",
+                odata_id=task_url,
+                name="One-click log collection task",
+                task_state="Running",
+                task_status="OK",
+                percent_complete=65,
+            )
+        )
+
+        task = IeitLogCollectStrategy().find_existing_task(
+            client, "/redfish/v1/Managers/1/LogServices"
+        )
+
+        self.assertIsNotNone(task)
+        self.assertEqual(task.id, "99")
+        self.assertEqual(task.percent_complete, 65)
+        client.close()
+
+    def test_does_not_reuse_completed_one_click_log_task(self) -> None:
+        client = _make_client()
+        task_url = "/redfish/v1/TaskService/Tasks/99"
+        client.get_tasks = lambda: [  # type: ignore[assignment]
+            Task.model_construct(id="99", odata_id=task_url)
+        ]
+        client._http_client.get = (  # type: ignore[assignment]
+            lambda path, model_class: Task.model_construct(
+                id="99",
+                odata_id=task_url,
+                name="One-click log collection task",
+                task_state="Completed",
+                task_status="OK",
+                percent_complete=100,
+            )
+        )
+
+        task = IeitLogCollectStrategy().find_existing_task(
+            client, "/redfish/v1/Managers/1/LogServices"
+        )
+
+        self.assertIsNone(task)
+        client.close()
+
+    def test_wait_retries_until_new_task_becomes_visible(self) -> None:
+        client = _make_client()
+        task_url = "/redfish/v1/TaskService/Tasks/99"
+        responses = [
+            RedfishException(
+                500,
+                f"Request to {task_url} failed",
+                '{"error":"No running task!","code":17017}',
+            ),
+            Task.model_construct(
+                id="99",
+                odata_id=task_url,
+                name="One-click log collection task",
+                task_state="Running",
+                task_status="OK",
+                percent_complete=1,
+            ),
+        ]
+
+        def get(path, model_class):
+            response = responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        client._http_client.get = get  # type: ignore[assignment]
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id=task_id,
+                odata_id=task_url,
+                task_state="Completed",
+                task_status="OK",
+                percent_complete=100,
+            )
+        )
+
+        finished = IeitLogCollectStrategy().wait_until_ready(
+            client,
+            Task.model_construct(id="99", odata_id=task_url),
+            poll_interval=0.001,
+            timeout=1,
+        )
+
+        self.assertEqual(finished.task_state, "Completed")
+        self.assertEqual(finished.percent_complete, 100)
+        self.assertEqual(responses, [])
+        client.close()
+
+    def test_wait_does_not_hide_unrelated_task_errors(self) -> None:
+        client = _make_client()
+        client._http_client.get = (  # type: ignore[assignment]
+            lambda path, model_class: (_ for _ in ()).throw(
+                RedfishException(500, "unexpected", '{"code":999}')
+            )
+        )
+
+        with self.assertRaisesRegex(RedfishException, "unexpected"):
+            IeitLogCollectStrategy().wait_until_ready(
+                client,
+                Task.model_construct(
+                    id="99",
+                    odata_id="/redfish/v1/TaskService/Tasks/99",
+                ),
+                poll_interval=0.001,
+                timeout=1,
+            )
         client.close()
 
 
