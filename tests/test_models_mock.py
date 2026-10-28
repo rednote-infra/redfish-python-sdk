@@ -93,26 +93,11 @@ from redfish_sdk.models.systems import MemoryLocation, ProcessorId
 # Helpers
 # ---------------------------------------------------------------------------
 
-TESTDATA_DIR = os.environ.get(
-    "REDFISH_TESTDATA_DIR",
-    os.path.join(os.path.dirname(__file__), "..", "testdata"),
-)
-RUN_LEGACY_TESTDATA = os.environ.get("REDFISH_RUN_LEGACY_TESTDATA") == "1"
-LEGACY_TESTDATA_ONLY = pytest.mark.skipif(
-    not RUN_LEGACY_TESTDATA,
-    reason=(
-        "legacy private drill testdata is opt-in; set REDFISH_RUN_LEGACY_TESTDATA=1 "
-        "with a complete REDFISH_TESTDATA_DIR"
-    ),
-)
+TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
 
 
 def load_json(filename: str) -> dict:
     """从 testdata 目录加载 JSON 文件"""
-    if not RUN_LEGACY_TESTDATA:
-        pytest.skip(
-            "legacy private drill testdata requires REDFISH_RUN_LEGACY_TESTDATA=1"
-        )
     filepath = os.path.join(TESTDATA_DIR, filename)
     with open(filepath, encoding="utf-8") as f:
         return json.load(f)
@@ -999,7 +984,6 @@ class TestCommonModels:
         assert err.message is None
 
 
-@LEGACY_TESTDATA_ONLY
 class TestModelsWithoutDirectTestdata:
     """
     验证所有 __init__.py 中导出的 Model 类都能被测试覆盖。
@@ -1349,7 +1333,6 @@ class TestModelsWithoutDirectTestdata:
 # ============================================================================
 
 
-@LEGACY_TESTDATA_ONLY
 class TestModelCoverage:
     """验证所有导出的 Model 都已在本测试文件中被覆盖"""
 

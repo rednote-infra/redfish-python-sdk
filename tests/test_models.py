@@ -10,6 +10,7 @@ from redfish_sdk.models.common import Collection, Entity, Link
 from redfish_sdk.models.drive import Drive
 from redfish_sdk.models.managers import HTTPSProtocol, NetworkProtocol, NTPProtocol, SNMPProtocol
 from redfish_sdk.models.oem import Oem
+from redfish_sdk.models.registry import Registry
 from redfish_sdk.models.session import Session
 from redfish_sdk.models.systems import Memory, Processor, System
 from redfish_sdk.models.thermal import Fan
@@ -189,6 +190,15 @@ class TestUpdateService:
         )
 
         assert service.multi_part_http_push_uri == "/redfish/v1/UpdateService/legacy-upload"
+
+
+class TestRegistry:
+    def test_standard_and_legacy_registry_aliases(self):
+        standard = Registry.model_validate({"Registry": "Base.1.0"})
+        legacy = Registry.model_validate({"RegistryPrefix": "Base.1.0"})
+
+        assert standard.registry_prefix == "Base.1.0"
+        assert legacy.registry_prefix == "Base.1.0"
 
 
 class TestNetworkProtocol:

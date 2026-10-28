@@ -5,7 +5,6 @@ Connect directly to a Redfish-capable BMC via RedfishClient and exercise
 read-only resource endpoints to validate response shape and data quality.
 
 Required environment variables (set them before running the test):
-    export REDFISH_RUN_REAL_BMC=1
     export BMC_IP="<bmc-ip>"
     export BMC_USER="<bmc-user>"
     export BMC_PASSWORD="<bmc-password>"
