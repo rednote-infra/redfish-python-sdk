@@ -10,6 +10,8 @@ Architecture:
     BaseLogCollectStrategy (ABC)
       ├── GenericLogCollectStrategy       — standard Redfish (DMTF) default
       ├── XFusionLogCollectStrategy       — xFusion (超聚变), OEM diagnostic body
+      ├── H3cLogCollectStrategy           — H3C (新华三), Manager.Dump +
+                                            Manager.GeneralDownload SDS flow
       ├── InspurLogCollectStrategy        — Inspur (浪潮), collection-level
                                             CollectAllLog / DownloadAllLog pair
       ├── LenovoLogCollectStrategy        — Lenovo (联想, AMI-based),
@@ -25,7 +27,7 @@ Architecture:
 
 Only vendors that genuinely differ from the standard DMTF behaviour get a
 dedicated strategy. Vendors whose ``CollectDiagnosticData`` matches the
-standard body (e.g. Lenovo, Nettrix) intentionally have no file and fall back
+standard body (e.g. Nettrix) intentionally have no file and fall back
 to :class:`GenericLogCollectStrategy` via the registry.
 
 Vendor detection is shared with the firmware ``update_strategies`` package
@@ -37,6 +39,7 @@ All strategies are auto-registered when this package is imported.
 from ..update_strategies.vendor_detect import VendorDetector
 from .base import BaseLogCollectStrategy, GenericLogCollectStrategy
 from .enginetech import EnginetechLogCollectStrategy
+from .h3c import H3cLogCollectStrategy
 from .inspur import InspurLogCollectStrategy
 from .lenovo import LenovoLogCollectStrategy
 from .registry import LogCollectStrategyRegistry
@@ -48,6 +51,7 @@ from .zte import ZteLogCollectStrategy
 LogCollectStrategyRegistry.register("generic", GenericLogCollectStrategy())
 LogCollectStrategyRegistry.register("enginetech", EnginetechLogCollectStrategy())
 LogCollectStrategyRegistry.register("xfusion", XFusionLogCollectStrategy())
+LogCollectStrategyRegistry.register("h3c", H3cLogCollectStrategy())
 LogCollectStrategyRegistry.register("inspur", InspurLogCollectStrategy())
 LogCollectStrategyRegistry.register("lenovo", LenovoLogCollectStrategy())
 LogCollectStrategyRegistry.register("zte", ZteLogCollectStrategy())
@@ -60,6 +64,7 @@ __all__ = [
     "GenericLogCollectStrategy",
     "EnginetechLogCollectStrategy",
     "XFusionLogCollectStrategy",
+    "H3cLogCollectStrategy",
     "InspurLogCollectStrategy",
     "LenovoLogCollectStrategy",
     "ZteLogCollectStrategy",

@@ -40,6 +40,7 @@ from redfish_sdk.models.task import Message, Task
 from redfish_sdk.managers.log_collect_strategies import (
     EnginetechLogCollectStrategy,
     GenericLogCollectStrategy,
+    H3cLogCollectStrategy,
     InspurLogCollectStrategy,
     LenovoLogCollectStrategy,
     LogCollectStrategyRegistry,
@@ -160,6 +161,165 @@ class VendorRestoreMixin(unittest.TestCase):
 
     def tearDown(self) -> None:  # noqa: D401
         _restore_vendor()
+
+
+class TestH3cLogCollect(VendorRestoreMixin):
+    """H3C uses Manager.Dump + Manager.GeneralDownload for SDS bundles."""
+
+    _MANAGER = "/redfish/v1/Managers/1"
+    _DUMP = f"{_MANAGER}/Actions/Oem/Public/Manager.Dump"
+    _DOWNLOAD = f"{_MANAGER}/Actions/Oem/Public/Manager.GeneralDownload"
+    _TASK = "/redfish/v1/TaskService/Tasks/9"
+
+    @staticmethod
+    def _manager_payload():
+        return {
+            "@odata.id": TestH3cLogCollect._MANAGER,
+            "Id": "1",
+            "Actions": {
+                "Oem": {
+                    "Public": {
+                        "#Manager.Dump": {"target": TestH3cLogCollect._DUMP},
+                        # H3C HDM 2.09 advertises this action but omits target.
+                        "#Manager.GeneralDownload": {},
+                    }
+                }
+            },
+            "LogServices": {"@odata.id": f"{TestH3cLogCollect._MANAGER}/LogServices"},
+        }
+
+    def test_end_to_end_uses_h3c_sds_actions(self) -> None:
+        client = _make_client()
+        manager = Manager.model_validate(self._manager_payload())
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
+        _force_vendor("h3c")
+
+        recorder = _CallRecorder()
+
+        def post(path, model_class, body=None, raw_body=None):
+            recorder.record(kind="collect", path=path, body=raw_body)
+            return model_class.model_validate(
+                {"Members": [{"@odata.id": self._TASK}]}
+            )
+
+        client._http_client.post = post  # type: ignore[assignment]
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval, timeout: Task.model_construct(
+                id=task_id,
+                odata_id=self._TASK,
+                task_state="Completed",
+                task_status="OK",
+            )
+        )
+
+        def download_via_post(path, output_path=None, raw_body=None):
+            recorder.record(
+                kind="download", path=path, output_path=output_path, body=raw_body
+            )
+            return os.path.abspath(output_path)
+
+        client._http_client.download_via_post = download_via_post  # type: ignore[assignment]
+
+        path = client.collect_and_download_diagnostic_data(
+            "/tmp/h3c-sds.tar.gz", reuse_existing=False
+        )
+
+        self.assertEqual(path, "/tmp/h3c-sds.tar.gz")
+        self.assertEqual(recorder.calls[0]["path"], self._DUMP)
+        self.assertEqual(
+            recorder.calls[0]["body"],
+            {
+                "Type": "URI",
+                "Content": "/mnt/sdmmc0p1/sds/bmc/dump.tar.gz",
+            },
+        )
+        self.assertEqual(recorder.calls[1]["path"], self._DOWNLOAD)
+        self.assertEqual(
+            recorder.calls[1]["body"],
+            {
+                "TransferProtocol": "HTTPS",
+                "Content": "/mnt/sdmmc0p1/sds/bmc/dump.tar.gz",
+            },
+        )
+        client.close()
+
+    def test_explicit_type_maps_to_h3c_log_type(self) -> None:
+        strategy = H3cLogCollectStrategy()
+        self.assertEqual(
+            strategy.build_collect_body("EventLog"),
+            {
+                "Type": "URI",
+                "Content": "/mnt/sdmmc0p1/sds/bmc/dump.tar.gz",
+                "LogType": "EventLog",
+            },
+        )
+
+    def test_missing_dump_action_raises_validation_error(self) -> None:
+        client = _make_client()
+        manager = Manager.model_validate({
+            "@odata.id": self._MANAGER,
+            "Id": "1",
+            "Actions": {
+                "Oem": {
+                    "Public": {
+                        "#Manager.GeneralDownload": {},
+                    }
+                }
+            },
+            "LogServices": {"@odata.id": f"{self._MANAGER}/LogServices"},
+        })
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
+        _force_vendor("h3c")
+
+        with self.assertRaisesRegex(RedfishValidationError, "#Manager.Dump"):
+            client.collect_diagnostic_data()
+
+        client.close()
+
+    def test_dump_response_without_task_raises_validation_error(self) -> None:
+        client = _make_client()
+        manager = Manager.model_validate(self._manager_payload())
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
+        _force_vendor("h3c")
+        client._http_client.post = (  # type: ignore[assignment]
+            lambda path, model_class, body=None, raw_body=None: (
+                model_class.model_validate({"Members": []})
+            )
+        )
+
+        with self.assertRaisesRegex(RedfishValidationError, "Task"):
+            client.collect_diagnostic_data()
+
+        client.close()
+
+    def test_missing_download_action_raises_validation_error(self) -> None:
+        client = _make_client()
+        manager = Manager.model_validate({
+            "@odata.id": self._MANAGER,
+            "Id": "1",
+            "Actions": {
+                "Oem": {
+                    "Public": {
+                        "#Manager.Dump": {"target": self._DUMP},
+                    }
+                }
+            },
+            "LogServices": {"@odata.id": f"{self._MANAGER}/LogServices"},
+        })
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
+
+        task = Task.model_construct(id="9", _h3c_manager_id="1")
+        with self.assertRaisesRegex(
+            RedfishValidationError, "#Manager.GeneralDownload"
+        ):
+            H3cLogCollectStrategy().download_artifact(client, task)
+
+        client.close()
+
+    def test_registry_contains_h3c_strategy(self) -> None:
+        self.assertIsInstance(
+            LogCollectStrategyRegistry.get("h3c"), H3cLogCollectStrategy
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -931,7 +1091,7 @@ class TestStrategies(unittest.TestCase):
     def test_registered_vendors(self) -> None:
         vendors = LogCollectStrategyRegistry.registered_vendors()
         # Only vendors that differ from the DMTF default get a strategy.
-        for v in ("generic", "xfusion"):
+        for v in ("generic", "h3c", "xfusion"):
             self.assertIn(v, vendors)
 
     def test_standard_vendors_fall_back_to_generic(self) -> None:
