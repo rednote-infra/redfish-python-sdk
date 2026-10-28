@@ -96,7 +96,7 @@ class UpdateServiceManager:
 
     def _upload(
         self, target: str, file_path: Union[str, Path], field: str,
-        fields: Optional[Dict[str, str]] = None,
+        fields: Optional[Dict[str, Any]] = None,
     ) -> FirmwareUpdateResponse:
         path = Path(file_path)
         with path.open("rb") as image:
@@ -124,9 +124,17 @@ class UpdateServiceManager:
             raise RedfishValidationError("UpdateService does not advertise MultipartHttpPushUri or HttpPushUri")
         fields = {}
         if service.multi_part_http_push_uri or update_parameters is not None:
-            fields["UpdateParameters"] = json.dumps(update_parameters or {})
+            fields["UpdateParameters"] = (
+                None,
+                json.dumps(update_parameters or {}),
+                "application/json",
+            )
         if oem_parameters is not None:
-            fields["OemParameters"] = json.dumps(oem_parameters)
+            fields["OemParameters"] = (
+                None,
+                json.dumps(oem_parameters),
+                "application/json",
+            )
         return self._upload(target, file_path, field_name, fields)
 
     def bmc_firmware_update(

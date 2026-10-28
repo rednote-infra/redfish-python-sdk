@@ -22,6 +22,19 @@ def response(status=204, body=None, location=None):
     return result
 
 
+def multipart_parts(arguments):
+    """Return ordered multipart headers and bodies from a prepared request."""
+    content_type = arguments["headers"]["Content-Type"]
+    boundary = content_type.split("boundary=", 1)[1].encode()
+    result = []
+    for raw_part in arguments["data"].split(b"--" + boundary)[1:-1]:
+        header_block, body = raw_part.strip(b"\r\n").split(b"\r\n\r\n", 1)
+        headers = header_block.decode("utf-8")
+        name = headers.split('name="', 1)[1].split('"', 1)[0]
+        result.append((name, headers, body.rstrip(b"\r\n")))
+    return result
+
+
 @pytest.fixture
 def firmware_client(monkeypatch):
     client = RedfishClient(host="mock-bmc", username="user", password="password")
@@ -69,19 +82,64 @@ def test_upload_multipart_and_no_sensitive_logging(firmware_client, monkeypatch,
     assert result.http_status == 202
 
 
-def test_standard_multipart_push_parameters(firmware_client, monkeypatch, tmp_path):
+def test_standard_multipart_push_parameters(
+    firmware_client, monkeypatch, tmp_path, caplog
+):
     client, service = firmware_client
     service.multi_part_http_push_uri = "/custom/multipart"
     image = tmp_path / "fw.bin"
     image.write_bytes(b"firmware")
     request = Mock(return_value=response())
     monkeypatch.setattr(client._http_client, "_request", request)
-    client.upload_firmware_file(image, update_parameters={"Targets": ["/custom/bmc"]}, oem_parameters={"PreserveConfiguration": True})
+    with caplog.at_level(logging.INFO, logger="redfish_sdk"):
+        client.upload_firmware_file(
+            image,
+            update_parameters={
+                "Targets": ["/custom/bmc"],
+                "Password": "SENSITIVE-PARAMETER",
+            },
+            oem_parameters={"PreserveConfiguration": True},
+        )
     assert request.call_args.args == ("POST", "/custom/multipart")
-    payload = request.call_args.kwargs["data"]
-    assert b'name="UpdateParameters"' in payload
-    assert b'name="OemParameters"' in payload
-    assert b'"Targets": ["/custom/bmc"]' in payload
+    arguments = request.call_args.kwargs
+    parts = multipart_parts(arguments)
+    assert [part[0] for part in parts] == [
+        "UpdateParameters",
+        "OemParameters",
+        "UpdateFile",
+    ]
+    assert sum(part[0] == "UpdateParameters" for part in parts) == 1
+    assert "Content-Type: application/json" in parts[0][1]
+    assert json.loads(parts[0][2]) == {
+        "Targets": ["/custom/bmc"],
+        "Password": "SENSITIVE-PARAMETER",
+    }
+    assert parts[1][0].startswith("Oem")
+    assert "Content-Type: application/json" in parts[1][1]
+    assert json.loads(parts[1][2]) == {"PreserveConfiguration": True}
+    assert 'filename="fw.bin"' in parts[2][1]
+    assert "Content-Type: application/octet-stream" in parts[2][1]
+    assert parts[2][2] == b"firmware"
+    assert "SENSITIVE-PARAMETER" not in caplog.text
+    assert str(image) not in caplog.text
+
+
+def test_standard_multipart_push_includes_empty_parameters(
+    firmware_client, monkeypatch, tmp_path
+):
+    client, service = firmware_client
+    service.multi_part_http_push_uri = "/custom/multipart"
+    image = tmp_path / "fw.bin"
+    image.write_bytes(b"firmware")
+    request = Mock(return_value=response())
+    monkeypatch.setattr(client._http_client, "_request", request)
+
+    client.upload_firmware_file(image)
+
+    parts = multipart_parts(request.call_args.kwargs)
+    assert [part[0] for part in parts] == ["UpdateParameters", "UpdateFile"]
+    assert "Content-Type: application/json" in parts[0][1]
+    assert json.loads(parts[0][2]) == {}
 
 
 @pytest.mark.parametrize("flash_type,selector", [("FULLFwUpdate", None), ("DUALIMAGEFwUpdate", "ImageBoth")])
@@ -128,8 +186,32 @@ def test_upload_errors_propagate(firmware_client, monkeypatch, tmp_path):
     assert error.value.status_code == 400
 
 
-def test_multipart_retry_reuses_complete_body(firmware_client, monkeypatch, tmp_path):
-    client, _ = firmware_client
+def test_standard_multipart_push_errors_propagate(
+    firmware_client, monkeypatch, tmp_path
+):
+    client, service = firmware_client
+    service.multi_part_http_push_uri = "/custom/multipart"
+    image = tmp_path / "fw.bin"
+    image.write_bytes(b"firmware")
+    monkeypatch.setattr(
+        client._http_client,
+        "_request",
+        lambda *args, **kwargs: response(
+            400, {"error": {"code": "Rejected", "message": "Image rejected"}}
+        ),
+    )
+
+    with pytest.raises(RedfishException) as error:
+        client.upload_firmware_file(image)
+
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("standard_push", [False, True], ids=["ami-action", "standard-push"])
+def test_multipart_retry_reuses_complete_body(
+    firmware_client, monkeypatch, tmp_path, standard_push
+):
+    client, service = firmware_client
     client._http_client.retry_5xx = 1
     client._http_client.retry_backoff = 0
     image = tmp_path / "fw.bin"
@@ -141,10 +223,19 @@ def test_multipart_retry_reuses_complete_body(firmware_client, monkeypatch, tmp_
         return response(503 if len(calls) == 1 else 204)
 
     monkeypatch.setattr(client._http_client._session, "post", post)
-    client.upload_firmware_image(image)
+    if standard_push:
+        service.multi_part_http_push_uri = "/custom/multipart"
+        client.upload_firmware_file(image)
+    else:
+        client.upload_firmware_image(image)
     assert len(calls) == 2
     assert calls[0]["data"] == calls[1]["data"]
     assert b"full-firmware" in calls[1]["data"]
+    if standard_push:
+        assert [part[0] for part in multipart_parts(calls[1])] == [
+            "UpdateParameters",
+            "UpdateFile",
+        ]
 
 
 def test_action_info_allowable_values_are_respected(firmware_client, monkeypatch):

@@ -449,15 +449,21 @@ class RedfishHttpClient:
         return response
 
     def post_multipart(
-        self, path: str, files: Dict[str, Any], fields: Optional[Dict[str, str]] = None
+        self, path: str, files: Dict[str, Any], fields: Optional[Dict[str, Any]] = None
     ) -> requests.Response:
         """POST multipart data with a replayable body and no payload logging.
 
         Requests generates the boundary. Encoding once keeps a complete body
-        available if the configured transport retries the upload.
+        available if the configured transport retries the upload. Field values
+        can use Requests' file tuple format to set per-part content types.
         """
+        parts = []
+        for name, value in (fields or {}).items():
+            part = value if isinstance(value, tuple) else (None, value)
+            parts.append((name, part))
+        parts.extend(files.items())
         prepared = requests.Request(
-            "POST", self._build_url("/"), files=files, data=fields
+            "POST", self._build_url("/"), files=parts
         ).prepare()
         response = self._request(
             "POST", path, data=prepared.body,
