@@ -445,6 +445,11 @@ class RedfishClient:
         return TaskServiceManager(self)
 
     @cached_property
+    def _resource_aliases(self):
+        from .managers.resource_alias import ResourceAliasManager
+        return ResourceAliasManager(self)
+
+    @cached_property
     def _composition(self):
         from .managers.composition import CompositionServiceManager
         return CompositionServiceManager(self)
@@ -2112,6 +2117,27 @@ class RedfishClient:
             timeout,
             recovery_policy=recovery_policy,
         )
+
+    def get_resource_by_alias(
+        self,
+        collection_uri: str,
+        alias: str,
+        model_class: Type[T],
+    ) -> T:
+        """Get a collection member using a ``~alias`` URI segment."""
+        return self._resource_aliases.get(collection_uri, alias, model_class)
+
+    def resource_alias_uri(self, collection_uri: str, alias: str) -> str:
+        """Build a capability-checked ``~alias`` collection-member URI."""
+        return self._resource_aliases.alias_uri(collection_uri, alias)
+
+    def set_resource_alias(self, resource: T, alias: str) -> T:
+        """Assign a user-defined alias to a resource with ETag protection."""
+        return self._resource_aliases.set(resource, alias)
+
+    def clear_resource_alias(self, resource: T) -> T:
+        """Clear a resource alias by assigning the standard empty value."""
+        return self._resource_aliases.clear(resource)
 
     # ==================================================================
     # Component query methods — Firmware / FRU

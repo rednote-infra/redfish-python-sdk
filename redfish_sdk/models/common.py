@@ -8,6 +8,17 @@ from typing import Generic, List, Optional, TypeVar, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ExtendedInfo(BaseModel):
+    """Extended Redfish message information."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    message_id: Optional[str] = Field(None, alias="MessageId")
+    message: Optional[str] = Field(None, alias="Message")
+    message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
+    severity: Optional[str] = Field(None, alias="Severity")
+    resolution: Optional[str] = Field(None, alias="Resolution")
+
+
 class Link(BaseModel):
     """
     Base class for all Redfish resource links.
@@ -33,6 +44,10 @@ class Entity(Link):
     id: Optional[Union[str, int]] = Field(None, alias="Id")
     name: Optional[str] = Field(None, alias="Name")
     description: Optional[str] = Field(None, alias="Description")
+    redfish_alias: Optional[str] = Field(None, alias="@Redfish.Alias")
+    extended_info: Optional[List[ExtendedInfo]] = Field(
+        None, alias="@Message.ExtendedInfo"
+    )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r}, name={self.name!r})"
@@ -64,17 +79,6 @@ class Status(BaseModel):
     state: Optional[str] = Field(None, alias="State")
     health: Optional[str] = Field(None, alias="Health")
     health_rollup: Optional[str] = Field(None, alias="HealthRollup")
-
-
-class ExtendedInfo(BaseModel):
-    """Extended error information."""
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    message_id: Optional[str] = Field(None, alias="MessageId")
-    message: Optional[str] = Field(None, alias="Message")
-    message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
-    severity: Optional[str] = Field(None, alias="Severity")
-    resolution: Optional[str] = Field(None, alias="Resolution")
 
 
 class RedfishError(BaseModel):

@@ -49,7 +49,7 @@ from .power import InputRange, PowerControl, Voltage  # noqa: F401
 # Additional component models (also available via individual modules)
 from .processor import ProcessorId  # noqa: F401
 from .registry import Registry
-from .root import RootService
+from .root import ProtocolFeaturesSupported, RootService
 from .session import Session, SessionService
 from .storage import CacheSummary, Identifier, StorageController  # noqa: F401
 from .system_resources import MemoryChunks, MemoryDomain, MemoryMetrics, NetworkInterface, NetworkPort, SecureBoot
@@ -61,7 +61,7 @@ from .update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse
 
 __all__ = [
     "Link", "Entity", "Collection", "Status", "RedfishResponse", "RedfishError",
-    "RootService",
+    "RootService", "ProtocolFeaturesSupported",
     "TelemetryService", "MetricDefinition", "MetricReportDefinition", "MetricReport", "Triggers",
     "System", "Processor", "Memory", "Storage", "Volume", "Bios", "Boot", "Gpu", "GpuOEM",
     "Chassis", "Drive", "NetworkAdapter", "Power", "PowerSupply", "Thermal",
