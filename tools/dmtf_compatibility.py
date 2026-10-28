@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh and verify the pinned DMTF compatibility baseline."""
+"""Refresh, verify, and report the pinned DMTF compatibility baseline."""
 
 from __future__ import annotations
 
@@ -103,9 +103,6 @@ def build_report() -> dict[str, Any]:
             "schema_file": schema_file,
             "schema_properties": properties,
             "sdk_fields": aliases,
-            "typed_schema_properties": sorted(set(properties) & set(aliases)),
-            "untyped_schema_properties": sorted(set(properties) - set(aliases)),
-            "sdk_only_aliases": sorted(set(aliases) - set(properties)),
         }
     return {
         "dmtf_release": DMTF_RELEASE,
@@ -113,6 +110,22 @@ def build_report() -> dict[str, Any]:
         "scope": "Top-level properties only; nested definitions require separate review.",
         "resources": resources,
     }
+
+
+def render_report(baseline: dict[str, Any]) -> dict[str, Any]:
+    """Derive review classifications from the committed minimal baseline."""
+    report = dict(baseline)
+    report["resources"] = {}
+    for resource, recorded in baseline["resources"].items():
+        schema_properties = set(recorded["schema_properties"])
+        sdk_fields = set(recorded["sdk_fields"])
+        report["resources"][resource] = {
+            **recorded,
+            "typed_schema_properties": sorted(schema_properties & sdk_fields),
+            "untyped_schema_properties": sorted(schema_properties - sdk_fields),
+            "sdk_only_aliases": sorted(sdk_fields - schema_properties),
+        }
+    return report
 
 
 def refresh_fixtures(manifest_path: Path) -> None:
@@ -139,17 +152,15 @@ def check(report_path: Path, manifest_path: Path) -> None:
 
     for resource, model_reference in RESOURCE_MODELS.items():
         recorded = report["resources"][resource]
+        if recorded["model"] != model_reference:
+            raise ValueError(f"Model mapping changed for {resource}; refresh the coverage report")
         current_aliases = _model_aliases(model_reference)
         if recorded["sdk_fields"] != current_aliases:
             raise ValueError(
                 f"SDK fields changed for {resource}; refresh and review the coverage report"
             )
-        schema_properties = set(recorded["schema_properties"])
-        classified = set(recorded["typed_schema_properties"]) | set(
-            recorded["untyped_schema_properties"]
-        )
-        if schema_properties != classified:
-            raise ValueError(f"Coverage classification is incomplete for {resource}")
+        if recorded["schema_properties"] != sorted(set(recorded["schema_properties"])):
+            raise ValueError(f"Schema properties are not sorted and unique for {resource}")
 
     fixture_dir = manifest_path.parent
     for fixture in manifest["fixtures"]:
@@ -175,14 +186,27 @@ def main() -> int:
     check_parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     check_parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
 
+    report_parser = subparsers.add_parser(
+        "report", help="Print the derived coverage report without network access"
+    )
+    report_parser.add_argument("--baseline", type=Path, default=DEFAULT_REPORT)
+
     arguments = parser.parse_args()
     try:
         if arguments.command == "refresh-report":
             _write_json(arguments.output, build_report())
         elif arguments.command == "refresh-fixtures":
             refresh_fixtures(arguments.manifest)
-        else:
+        elif arguments.command == "check":
             check(arguments.report, arguments.manifest)
+        else:
+            print(
+                json.dumps(
+                    render_report(_read_json(arguments.baseline)),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"compatibility check failed: {error}", file=sys.stderr)
         return 1

@@ -15,9 +15,11 @@ from redfish_sdk.models.chassis import Chassis
 from redfish_sdk.models.registry import Registry
 from redfish_sdk.models.task import Task
 from redfish_sdk.models.update import UpdateService
+from tools.dmtf_compatibility import render_report
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures/dmtf/2026.2"
 MANIFEST = json.loads((FIXTURE_DIR / "manifest.json").read_text(encoding="utf-8"))
+COVERAGE_BASELINE = Path(__file__).parents[1] / "compatibility/dmtf-2026.2-coverage.json"
 
 
 def _load_model(reference: str) -> type[Any]:
@@ -98,3 +100,15 @@ def test_multipart_uri_accepts_standard_and_legacy_spelling():
 
     assert standard.multi_part_http_push_uri == "/standard"
     assert legacy.multi_part_http_push_uri == "/legacy"
+
+
+def test_coverage_classifications_are_derived_from_minimal_baseline():
+    baseline = json.loads(COVERAGE_BASELINE.read_text(encoding="utf-8"))
+    report = render_report(baseline)
+
+    for resource in report["resources"].values():
+        schema_properties = set(resource["schema_properties"])
+        sdk_fields = set(resource["sdk_fields"])
+        assert set(resource["typed_schema_properties"]) == schema_properties & sdk_fields
+        assert set(resource["untyped_schema_properties"]) == schema_properties - sdk_fields
+        assert set(resource["sdk_only_aliases"]) == sdk_fields - schema_properties
