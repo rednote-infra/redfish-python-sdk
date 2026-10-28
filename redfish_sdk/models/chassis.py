@@ -53,6 +53,7 @@ class ChassisLinks(BaseModel):
     contains: Optional[List[Link]] = Field(None, alias="Contains")
     contained_by: Optional[Link] = Field(None, alias="ContainedBy")
     computer_systems: Optional[List[Link]] = Field(None, alias="ComputerSystems")
+    cooling_units: Optional[List[Link]] = Field(None, alias="CoolingUnits")
 
 
 class Chassis(Entity):
@@ -83,4 +84,6 @@ class Chassis(Entity):
     pcie_devices: Optional[Link] = Field(None, alias="PCIeDevices")
     network_adapters: Optional[Link] = Field(None, alias="NetworkAdapters")
     sensors: Optional[Link] = Field(None, alias="Sensors")
+    environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")
+    thermal_subsystem: Optional[Link] = Field(None, alias="ThermalSubsystem")
     oem: Optional[Oem] = Field(None, alias="Oem")

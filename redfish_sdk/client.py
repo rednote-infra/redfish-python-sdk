@@ -50,6 +50,7 @@ from .models.account import Account, AccountService, Role
 from .models.chassis import Chassis
 from .models.common import Collection, Entity, Link, RedfishResponse
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
+from .models.cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor
 from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.fru import Fru
@@ -182,6 +183,39 @@ class RedfishClient:
     def _system_resources(self):
         from .managers.system_resources import SystemResourcesManager
         return SystemResourcesManager(self)
+
+    @cached_property
+    def _cooling(self):
+        from .managers.cooling import CoolingManager
+        return CoolingManager(self)
+
+    def get_cooling_units(self, chassis_id: Optional[str] = None) -> List[CoolingUnit]:
+        """List cooling equipment advertised by the selected chassis."""
+        return self._cooling.cooling_units(chassis_id)
+
+    def get_coolant_connectors(
+        self,
+        cooling_unit_id: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> List[CoolantConnector]:
+        """List advertised coolant connectors without deriving resource paths."""
+        return self._cooling.coolant_connectors(cooling_unit_id, chassis_id)
+
+    def get_sensors(self, chassis_id: Optional[str] = None) -> List[Sensor]:
+        """List generic sensors advertised by the selected chassis."""
+        return self._cooling.sensors(chassis_id)
+
+    def get_sensor(self, identifier: str, chassis_id: Optional[str] = None) -> Sensor:
+        """Select an advertised sensor by Id or full URI."""
+        return self._cooling.sensor(identifier, chassis_id)
+
+    def get_environment_metrics(
+        self,
+        cooling_unit_id: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> EnvironmentMetrics:
+        """Get metrics advertised by a chassis or selected cooling unit."""
+        return self._cooling.environment_metrics(cooling_unit_id, chassis_id)
 
     def get_secure_boot(self, system_id: Optional[str] = None) -> SecureBoot:
         """Get optional SecureBoot information through the advertised system link."""
