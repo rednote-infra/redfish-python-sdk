@@ -68,7 +68,7 @@ from .models.systems import BootOption
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.update import FirmwareUpdateResponse
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
