@@ -20,7 +20,7 @@ Architecture:
                                             CollectAllLog + private
                                             CollectProgress + DownloadAllLog
       ├── ZteLogCollectStrategy           — ZTE (中兴), Dump + Dump/Progress +
-                                            GeneralDownload
+                                            ExportLogs
       └── SmoothcomputeLogCollectStrategy — smoothcompute (顺算), OEM
                                             DiagnosticService.CollectBlackBox /
                                             ExportBlackBox (trigger returns a

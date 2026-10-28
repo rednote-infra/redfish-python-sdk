@@ -8,18 +8,19 @@ endpoint:
 
     #LogServices.Dump          -> POST .../LogServices/Actions/LogServices.Dump
     #LogServices.Dump/Progress -> GET  .../LogServices/Actions/LogServices.Dump/Progress
-    #Manager.GeneralDownload   -> POST .../Managers/Self/Actions/Manager.GeneralDownload
+    #LogServices.ExportLogs    -> POST .../LogServices/Actions/LogServices.ExportLogs
 
 Observed flow (verified against a real BMC):
     1. POST Dump  body={"Type": "AllLogs"}  -> HTTP 200 (Base.1.8.1.Success);
        NOT a Redfish Task.
     2. GET Dump/Progress -> {"State", "Percentage", "TarPath", "Type"}.
-       Poll until State == "STATE_COMPLETED"; TarPath is the produced file.
-    3. POST GeneralDownload body={"Path": <TarPath>} -> the bundle bytes.
+       Poll until State == "STATE_SUCCESSED"; TarPath is the produced file.
+    3. POST ExportLogs body={"Type": <Type>, "Content": <TarPath>} -> the
+       bundle bytes with ``Content-Disposition`` carrying the filename.
 
 Because the trigger response is not a Redfish Task, this strategy returns a
-*synthetic* Task carrying the progress URL / manager id it needs later, and
-overrides ``wait_until_ready`` to poll the OEM progress endpoint.
+*synthetic* Task carrying the progress URL / LogServices context needed later,
+and overrides ``wait_until_ready`` to poll the OEM progress endpoint.
 
 Reference: 各厂商 redfish 一键采集 — 中兴
 """
@@ -38,9 +39,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DUMP_ACTION = "#LogServices.Dump"
+_EXPORT_ACTION = "#LogServices.ExportLogs"
 _DEFAULT_TYPE = "AllLogs"
 # Terminal progress states.
-_DONE_STATES = {"STATE_COMPLETED", "STATE_SUCCESS", "STATE_FINISH"}
+_DONE_STATES = {
+    "STATE_COMPLETED",
+    "STATE_SUCCESS",
+    "STATE_SUCCESSED",
+    "STATE_FINISH",
+}
 _FAIL_STATES = {"STATE_FAILED", "STATE_ERROR"}
 
 
@@ -89,8 +96,9 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         manager_id: Optional[str] = None,
     ) -> Task:
         """POST Dump and return a synthetic Task carrying progress context."""
-        from ...exceptions import RedfishValidationError
+        from ...exceptions import RedfishException, RedfishValidationError
         from ...models.common import RedfishResponse
+        from ...models.log_collect import ZteDumpProgress
 
         target = self.discover_collect_target(
             client, log_services_odata_id, log_id
@@ -101,17 +109,31 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
                 f"{log_services_odata_id}"
             )
         body = self.build_collect_body(diagnostic_data_type, oem_params)
+        progress_url = f"{target}/Progress"
+        previous_tar_path = None
+        try:
+            previous = client._http_client.get(
+                progress_url, ZteDumpProgress
+            )
+            if previous.is_valid_tar_path():
+                previous_tar_path = previous.tar_path
+        except RedfishException as exc:
+            logger.debug(
+                "Could not capture ZTE progress before collection: %s", exc
+            )
         logger.info("ZTE Dump trigger POST %s body=%s", target, body)
         # Dump returns a success message, not a Task; ignore the parsed body.
         client._http_client.post(target, RedfishResponse, raw_body=body)
 
-        progress_url = f"{target}/Progress"
         # Stash context on the synthetic Task (Entity allows extra fields).
         return Task.model_construct(
             id="zte-dump",
             task_state="Running",
             _zte_progress_url=progress_url,
+            _zte_log_services_odata_id=log_services_odata_id,
             _zte_manager_id=manager_id,
+            _zte_fresh_trigger=True,
+            _zte_previous_tar_path=previous_tar_path,
         )
 
     # ------------------------------------------------------------------
@@ -127,16 +149,14 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         """
         Probe ``Dump/Progress`` for a reusable collection.
 
-        - ``State`` in DONE + valid ``TarPath`` → synthetic Task marked
-          ``Completed`` with ``_zte_tar_path`` set, so the caller can skip
-          straight to download.
+        - Terminal success or 100 percent → return ``None`` because ZTE
+          may retain stale progress after deleting the generated archive.
         - Non-terminal (Running / preparing) → synthetic Task marked
           ``Running`` carrying the progress URL, so the caller can just wait.
         - ``State`` in FAIL or missing → return ``None`` (no reuse; a fresh
           collection should be triggered).
         """
         from ...exceptions import RedfishException
-
         from ...models.log_collect import ZteDumpProgress
 
         target = self.discover_collect_target(
@@ -151,18 +171,12 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
             return None
 
         state = prog.state or ""
-        if state in _DONE_STATES and prog.is_valid_tar_path():
+        if state in _DONE_STATES or str(prog.percentage) == "100":
             logger.info(
-                "ZTE find_existing_task: reusing completed collection tar=%s",
+                "ZTE find_existing_task: ignoring completed collection tar=%s",
                 prog.tar_path,
             )
-            return Task.model_construct(
-                id="zte-dump",
-                task_state="Completed",
-                _zte_progress_url=progress_url,
-                _zte_manager_id=manager_id,
-                _zte_tar_path=prog.tar_path,
-            )
+            return None
         if state and state not in _FAIL_STATES:
             logger.info(
                 "ZTE find_existing_task: reusing in-flight collection (state=%s)",
@@ -172,6 +186,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
                 id="zte-dump",
                 task_state="Running",
                 _zte_progress_url=progress_url,
+                _zte_log_services_odata_id=log_services_odata_id,
                 _zte_manager_id=manager_id,
             )
         return None
@@ -203,6 +218,9 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         tar_path: Optional[str] = None
         iteration = 0
         history: list = []
+        fresh_trigger = bool(getattr(task, "_zte_fresh_trigger", False))
+        previous_tar_path = getattr(task, "_zte_previous_tar_path", None)
+        observed_new_run = False
         while elapsed < timeout:
             prog = client._http_client.get(progress_url, ZteDumpProgress)
             state = prog.state or ""
@@ -213,10 +231,30 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
                 "ZTE Dump progress: state=%s percent=%s tar=%s",
                 state, pct, tar_path,
             )
-            if state in _DONE_STATES or str(pct) == "100":
-                task._zte_tar_path = tar_path  # type: ignore[attr-defined]
-                task.task_state = "Completed"
-                return task
+            terminal_success = state in _DONE_STATES or str(pct) == "100"
+            if not terminal_success and state not in _FAIL_STATES:
+                observed_new_run = True
+            if terminal_success:
+                stale_terminal = (
+                    fresh_trigger
+                    and not observed_new_run
+                    and previous_tar_path
+                    and tar_path == previous_tar_path
+                )
+                if stale_terminal or (
+                    fresh_trigger
+                    and previous_tar_path is None
+                    and iteration == 0
+                ):
+                    logger.info(
+                        "Ignoring stale ZTE terminal progress for tar=%s",
+                        tar_path,
+                    )
+                else:
+                    task._zte_tar_path = tar_path  # type: ignore[attr-defined]
+                    task._zte_type = prog.type_ or _DEFAULT_TYPE  # type: ignore[attr-defined]
+                    task.task_state = "Completed"
+                    return task
             # Ignore a stale STATE_FAILED reading on the very first poll (the
             # BMC often keeps the previous run's terminal state until the new
             # task takes over); treat it as terminal on the second read.
@@ -242,7 +280,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         )
 
     # ------------------------------------------------------------------
-    # Download (GeneralDownload with the produced TarPath)
+    # Download (ExportLogs streams the produced TarPath)
     # ------------------------------------------------------------------
 
     def download_artifact(
@@ -251,45 +289,47 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
         task: Task,
         output_path: Optional[str] = None,
     ) -> "bytes | str":
-        """POST ``Manager.GeneralDownload`` with the TarPath from progress."""
+        """POST ``LogServices.ExportLogs`` and stream the returned archive."""
         from ...exceptions import RedfishValidationError
-        from ...models.log_collect import ZteDumpProgress
+        from ...models.log_collect import LogServicesCollection, ZteDumpProgress
 
         tar_path = getattr(task, "_zte_tar_path", None)
-        if not tar_path:
+        log_type = getattr(task, "_zte_type", None)
+        if not tar_path or not log_type:
             # Fall back to reading progress once more.
             progress_url = getattr(task, "_zte_progress_url", None)
             if progress_url:
                 prog = client._http_client.get(progress_url, ZteDumpProgress)
-                tar_path = prog.tar_path
+                tar_path = tar_path or prog.tar_path
+                log_type = log_type or prog.type_
         if not tar_path:
             raise RedfishValidationError(
                 "ZTE download failed: no TarPath resolved from Dump/Progress"
             )
 
         manager_id = getattr(task, "_zte_manager_id", None)
-        download_target = self._general_download_target(client, manager_id)
+        log_services_odata_id = getattr(
+            task, "_zte_log_services_odata_id", None
+        ) or self.resolve_log_services_odata_id(client, manager_id)
+        collection = client._http_client.get(
+            log_services_odata_id, LogServicesCollection
+        )
+        action = collection.oem_action(_EXPORT_ACTION)
+        if not action or not action.target:
+            raise RedfishValidationError(
+                f"ZTE BMC does not expose {_EXPORT_ACTION} under "
+                f"{log_services_odata_id}"
+            )
+        body = {
+            "Type": log_type or _DEFAULT_TYPE,
+            "Content": tar_path,
+        }
         logger.info(
-            "ZTE GeneralDownload POST %s Path=%s", download_target, tar_path
+            "ZTE ExportLogs POST %s Type=%s Content=%s",
+            action.target,
+            body["Type"],
+            tar_path,
         )
         return client._http_client.download_via_post(
-            download_target, output_path, raw_body={"Path": tar_path}
+            action.target, output_path, raw_body=body
         )
-
-    @staticmethod
-    def _general_download_target(
-        client: "RedfishClient", manager_id: Optional[str]
-    ) -> str:
-        """
-        Discover ``#Manager.GeneralDownload`` target from the Manager.
-
-        ZTE uses ``/redfish/v1/Managers/Self`` on some BMCs, so resolve an
-        omitted manager ID from the advertised Managers collection.
-        """
-        manager = client.get_manager(manager_id)
-        actions = manager.actions or {}
-        action = actions.get("#Manager.GeneralDownload") or {}
-        target = action.get("target") if isinstance(action, dict) else None
-        if isinstance(target, str) and target:
-            return target
-        return f"{manager.odata_id}/Actions/Manager.GeneralDownload"

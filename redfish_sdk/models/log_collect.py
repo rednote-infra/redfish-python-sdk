@@ -132,8 +132,8 @@ class ZteDumpProgress(BaseModel):
     Not a Redfish TaskService entry — it's a bespoke progress endpoint
     unique to ZTE. Fields observed in the wild:
 
-    ``State``       — e.g. ``"STATE_COMPLETED"``, ``"STATE_FAILED"``,
-                      ``"STATE_RUNNING"``.
+    ``State``       — e.g. ``"STATE_COMPLETED"``, ``"STATE_SUCCESSED"``,
+                      ``"STATE_FAILED"``, ``"STATE_RUNNING"``.
     ``Percentage``  — string int (``"-1"`` when idle/failed, ``"100"`` at
                       completion).
     ``TarPath``     — path of the produced bundle on the BMC. When idle

@@ -24,6 +24,7 @@ import os
 import tempfile
 import unittest
 from typing import Any, Dict, List, Optional
+from unittest.mock import patch
 
 from redfish_sdk import (
     LogCollectFailedError,
@@ -1027,7 +1028,7 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
         )
         client.close()
 
-    def test_zte_reuses_completed_progress(self) -> None:
+    def test_zte_does_not_reuse_completed_progress(self) -> None:
         client = _make_client()
         _force_vendor("zte")
         from redfish_sdk.managers.log_collect_strategies import ZteLogCollectStrategy
@@ -1044,9 +1045,38 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
                 }
             if path.endswith("Dump/Progress"):
                 return {
-                    "State": "STATE_COMPLETED",
+                    "State": "STATE_SUCCESSED",
                     "Percentage": "100",
-                    "TarPath": "/tmp/logs/ok.tar.gz",
+                    "TarPath": "/var/bmcdata/stale.tar.gz",
+                    "Type": "AllLogs",
+                }
+            raise AssertionError(f"unexpected: {path}")
+
+        _install_get_dispatch(client, fake_get_raw)
+        found = strategy.find_existing_task(client, "/x/LogServices", "Self")
+        self.assertIsNone(found)
+        client.close()
+
+    def test_zte_reuses_running_progress(self) -> None:
+        client = _make_client()
+        _force_vendor("zte")
+        from redfish_sdk.managers.log_collect_strategies import ZteLogCollectStrategy
+
+        strategy = ZteLogCollectStrategy()
+
+        def fake_get_raw(path):
+            if path == "/x/LogServices":
+                return {
+                    "@odata.id": "/x/LogServices",
+                    "Actions": {"Oem": {"#LogServices.Dump": {
+                        "target": "/x/LogServices/Actions/LogServices.Dump"
+                    }}},
+                }
+            if path.endswith("Dump/Progress"):
+                return {
+                    "State": "STATE_RUNNING",
+                    "Percentage": "65",
+                    "TarPath": ".tar.gz",
                     "Type": "AllLogs",
                 }
             raise AssertionError(f"unexpected: {path}")
@@ -1054,8 +1084,7 @@ class TestFindExistingTaskDiscovery(VendorRestoreMixin):
         _install_get_dispatch(client, fake_get_raw)
         found = strategy.find_existing_task(client, "/x/LogServices", "Self")
         self.assertIsNotNone(found)
-        self.assertEqual(found.task_state, "Completed")
-        self.assertEqual(getattr(found, "_zte_tar_path"), "/tmp/logs/ok.tar.gz")
+        self.assertEqual(found.task_state, "Running")
         client.close()
 
     def test_zte_returns_none_when_progress_failed(self) -> None:
@@ -1942,21 +1971,21 @@ class TestTaskMessagesNormalisation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# ZTE (中兴) Dump / Dump/Progress / GeneralDownload OEM flow
+# ZTE (中兴) Dump / Dump/Progress / ExportLogs OEM flow
 # ---------------------------------------------------------------------------
 
 
 class TestZteStrategy(VendorRestoreMixin):
     """
     Verify ZTE uses the OEM Dump action + bespoke progress endpoint +
-    Manager.GeneralDownload for the artifact.
+    ExportLogs for the artifact.
     """
 
     _LOGSVCS = "/redfish/v1/Managers/Self/LogServices"
     _DUMP = f"{_LOGSVCS}/Actions/LogServices.Dump"
     _PROGRESS = f"{_DUMP}/Progress"
+    _EXPORT = f"{_LOGSVCS}/Actions/LogServices.ExportLogs"
     _MANAGER = "/redfish/v1/Managers/Self"
-    _GD = f"{_MANAGER}/Actions/Manager.GeneralDownload"
 
     def _stub_manager(self, client) -> None:
         """Stub a ZTE-style Manager (id='Self') with a LogServices link."""
@@ -1969,15 +1998,15 @@ class TestZteStrategy(VendorRestoreMixin):
 
     def _stub_get_raw(self, client, *, progress_state="STATE_COMPLETED",
                      tar_path="/tmp/logs/xxx.tar.gz"):
-        """Stub get_raw for: LogServices collection, Dump/Progress, Managers
-        collection, and Manager resource (for GeneralDownload discovery)."""
-        managers_col = "/redfish/v1/Managers"
-
+        """Stub the ZTE LogServices collection and Dump/Progress."""
         def fake(path):
             if path == self._LOGSVCS:
                 return {
                     "@odata.id": self._LOGSVCS,
-                    "Actions": {"Oem": {"#LogServices.Dump": {"target": self._DUMP}}},
+                    "Actions": {"Oem": {
+                        "#LogServices.Dump": {"target": self._DUMP},
+                        "#LogServices.ExportLogs": {"target": self._EXPORT},
+                    }},
                 }
             if path == self._PROGRESS:
                 return {
@@ -1987,19 +2016,9 @@ class TestZteStrategy(VendorRestoreMixin):
                     "Type": "AllLogs",
                     "Message": "",
                 }
-            if path == managers_col:
-                return {"Members": [{"@odata.id": self._MANAGER}]}
-            if path == self._MANAGER:
-                return {
-                    "@odata.id": self._MANAGER,
-                    "Actions": {"#Manager.GeneralDownload": {"target": self._GD}},
-                }
             raise AssertionError(f"unexpected get_raw path: {path}")
 
         _install_get_dispatch(client, fake)
-        client._get_managers_collection_odata_id = (  # type: ignore[assignment]
-            lambda: managers_col
-        )
 
     def test_trigger_posts_dump_with_default_type(self) -> None:
         client = _make_client()
@@ -2022,6 +2041,13 @@ class TestZteStrategy(VendorRestoreMixin):
         self.assertEqual(recorder.last["raw_body"], {"Type": "AllLogs"})
         # Synthetic task should carry progress URL context.
         self.assertEqual(getattr(task, "_zte_progress_url"), self._PROGRESS)
+        self.assertEqual(
+            getattr(task, "_zte_log_services_odata_id"), self._LOGSVCS
+        )
+        self.assertEqual(
+            getattr(task, "_zte_previous_tar_path"),
+            "/tmp/logs/xxx.tar.gz",
+        )
         client.close()
 
     def test_wait_until_ready_polls_progress_endpoint(self) -> None:
@@ -2038,6 +2064,52 @@ class TestZteStrategy(VendorRestoreMixin):
         finished = strategy.wait_until_ready(client, task, poll_interval=1, timeout=5)
         self.assertEqual(finished.task_state, "Completed")
         self.assertEqual(getattr(finished, "_zte_tar_path"), "/tmp/logs/ok.tar.gz")
+        self.assertEqual(getattr(finished, "_zte_type"), "AllLogs")
+        client.close()
+
+    def test_fresh_trigger_ignores_stale_success_first_poll(self) -> None:
+        client = _make_client()
+        responses = [
+            {
+                "State": "STATE_SUCCESSED",
+                "Percentage": "100",
+                "TarPath": "/var/bmcdata/stale.tar.gz",
+                "Type": "AllLogs",
+            },
+            {
+                "State": "STATE_SUCCESSED",
+                "Percentage": "100",
+                "TarPath": "/var/bmcdata/stale.tar.gz",
+                "Type": "AllLogs",
+            },
+            {
+                "State": "STATE_SUCCESSED",
+                "Percentage": "100",
+                "TarPath": "/var/bmcdata/fresh.tar.gz",
+                "Type": "AllLogs",
+            },
+        ]
+        _install_get_dispatch(client, lambda path: responses.pop(0))
+        task = Task.model_construct(
+            id="zte-dump",
+            _zte_progress_url=self._PROGRESS,
+            _zte_manager_id="Self",
+            _zte_fresh_trigger=True,
+            _zte_previous_tar_path="/var/bmcdata/stale.tar.gz",
+        )
+
+        with patch(
+            "redfish_sdk.managers.log_collect_strategies.zte.time.sleep"
+        ):
+            finished = ZteLogCollectStrategy().wait_until_ready(
+                client, task, poll_interval=1, timeout=5
+            )
+
+        self.assertEqual(
+            getattr(finished, "_zte_tar_path"),
+            "/var/bmcdata/fresh.tar.gz",
+        )
+        self.assertEqual(responses, [])
         client.close()
 
     def test_wait_until_ready_raises_on_failed_state(self) -> None:
@@ -2056,7 +2128,7 @@ class TestZteStrategy(VendorRestoreMixin):
         self.assertIn("ZTE diagnostic collection", str(ctx.exception))
         client.close()
 
-    def test_download_uses_general_download_with_tar_path(self) -> None:
+    def test_download_uses_export_logs_with_progress_values(self) -> None:
         client = _make_client()
         self._stub_get_raw(client)
         _force_vendor("zte")
@@ -2074,13 +2146,20 @@ class TestZteStrategy(VendorRestoreMixin):
         task = Task.model_construct(
             id="zte-dump",
             _zte_progress_url=self._PROGRESS,
-            _zte_manager_id="Self",
+            _zte_log_services_odata_id=self._LOGSVCS,
             _zte_tar_path="/tmp/logs/ok.tar.gz",
+            _zte_type="AllLogs",
         )
         path = client.download_diagnostic_data(task, output_path="/tmp/out/")
         self.assertEqual(path, "/tmp/out/ok.tar.gz")
-        self.assertEqual(recorder.last["path"], self._GD)
-        self.assertEqual(recorder.last["raw_body"], {"Path": "/tmp/logs/ok.tar.gz"})
+        self.assertEqual(recorder.last["path"], self._EXPORT)
+        self.assertEqual(
+            recorder.last["raw_body"],
+            {
+                "Type": "AllLogs",
+                "Content": "/tmp/logs/ok.tar.gz",
+            },
+        )
         client.close()
 
 
