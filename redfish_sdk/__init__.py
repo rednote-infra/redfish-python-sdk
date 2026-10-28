@@ -26,7 +26,7 @@ Quick start:
 
     client.close()
 """
-from .client import RedfishClient
+from .client import CollectionFailure, CollectionResult, RedfishClient
 from .exceptions import (
     LogCollectFailedError,
     RedfishAuthError,
@@ -79,6 +79,8 @@ __author__ = "RedNote Infrastructure"
 
 __all__ = [
     "RedfishClient",
+    "CollectionFailure",
+    "CollectionResult",
     "TelemetryService",
     "MetricDefinition",
     "MetricReportDefinition",

@@ -40,11 +40,13 @@ Usage:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from .exceptions import RedfishException
+from .exceptions import RedfishException, RedfishValidationError
 from .http_client import RedfishHttpClient
 from .models.account import Account, AccountService, Role
 from .models.chassis import Chassis
@@ -101,6 +103,33 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Entity)
 
+
+@dataclass(frozen=True)
+class CollectionFailure:
+    """A page or member that could not be retrieved in best-effort mode."""
+
+    stage: Literal["page", "member"]
+    resource: str
+    error: RedfishException
+
+
+class CollectionResult(list, Generic[T]):
+    """List-compatible collection result with structured partial diagnostics."""
+
+    def __init__(
+        self,
+        members: Optional[List[T]] = None,
+        failures: Optional[List[CollectionFailure]] = None,
+    ) -> None:
+        super().__init__(members or [])
+        self.failures = failures or []
+
+    @property
+    def is_partial(self) -> bool:
+        """Return whether one or more pages or members could not be retrieved."""
+        return bool(self.failures)
+
+
 class RedfishClient:
     """
     Top-level Redfish Client.
@@ -127,6 +156,7 @@ class RedfishClient:
         retry_5xx: int = 0,
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
+        strict_collection_errors: bool = False,
     ):
         """
         Initialize the Redfish Client.
@@ -151,6 +181,10 @@ class RedfishClient:
                 (default False). Same idempotency rule as ``retry_5xx``.
             retry_backoff: Base seconds between retries (linear back-off:
                 attempt ``n`` sleeps ``retry_backoff * n``). Default 1.0s.
+            strict_collection_errors: Raise the original SDK exception when a
+                collection member or continuation page fails. The default is
+                best-effort expansion with failures attached to the returned
+                list-compatible ``CollectionResult``.
         """
         self._http_client = RedfishHttpClient(
             host=host,
@@ -168,6 +202,7 @@ class RedfishClient:
 
         # Root service cache
         self._root_cache: Optional[RootService] = None
+        self.strict_collection_errors = bool(strict_collection_errors)
 
         logger.info("RedfishClient initialized for host: %s", host)
 
@@ -526,7 +561,38 @@ class RedfishClient:
         """
         return self._http_client.get("/redfish/v1/", RootService)
 
-    def _get_collection(self, odata_id: str, model_class: Type[T]) -> List[T]:
+    def _collection_path(self, link: str, current_page: str) -> str:
+        """Resolve a collection link and reject cross-origin destinations."""
+        base_url = f"{self._http_client.scheme}://{self._http_client.host}/"
+        current_url = urljoin(base_url, current_page)
+        resolved = urlsplit(urljoin(current_url, link))
+        origin = urlsplit(base_url)
+
+        def effective_port(parts) -> Optional[int]:
+            if parts.port is not None:
+                return parts.port
+            return 443 if parts.scheme.lower() == "https" else 80
+
+        try:
+            same_origin = (
+                resolved.scheme.lower() == origin.scheme.lower()
+                and (resolved.hostname or "").lower()
+                == (origin.hostname or "").lower()
+                and effective_port(resolved) == effective_port(origin)
+                and resolved.username is None
+                and resolved.password is None
+            )
+        except ValueError as exc:
+            raise RedfishValidationError("Invalid Redfish collection link") from exc
+        if not same_origin:
+            raise RedfishValidationError(
+                "Refusing cross-origin Redfish collection link"
+            )
+        return urlunsplit(("", "", resolved.path or "/", resolved.query, ""))
+
+    def _get_collection(
+        self, odata_id: str, model_class: Type[T]
+    ) -> CollectionResult[T]:
         """
         Generic collection fetcher.
 
@@ -539,51 +605,103 @@ class RedfishClient:
             model_class: The pydantic model class for collection members
 
         Returns:
-            List of fully populated model instances
+            A list-compatible result. In best-effort mode, inspect
+            ``result.is_partial`` and ``result.failures`` to distinguish a
+            partial retrieval from an empty collection.
         """
         from pydantic import TypeAdapter
 
-        # Step 1: fetch collection index
         collection_type = Collection[model_class]
         try:
             adapter = TypeAdapter(collection_type)
         except Exception:
-            # Fallback: fetch raw and parse manually
-            raw = self._http_client.get_raw(odata_id)
-            members_raw = raw.get("Members", [])
-            members = []
-            for member_raw in members_raw:
-                link_id = member_raw.get("@odata.id")
-                if link_id:
-                    try:
-                        member = self._http_client.get(link_id, model_class)
-                        members.append(member)
-                    except RedfishException as exc:
-                        logger.warning("Failed to fetch member %s: %s, skipping", link_id, exc)
-            return members
+            adapter = None
 
-        raw = self._http_client.get_raw(odata_id)
-        collection = adapter.validate_python(raw)
+        failures: List[CollectionFailure] = []
+        expanded_members: List[T] = []
+        visited_pages = set()
+        visited_members = set()
+        saw_member_link = False
+        page_path = self._collection_path(odata_id, "/")
+        first_page = True
 
-        if not collection.members:
-            logger.warning("Collection %s has no members", odata_id)
-            return []
+        def handle_failure(
+            stage: Literal["page", "member"],
+            resource: str,
+            error: RedfishException,
+        ) -> None:
+            if self.strict_collection_errors:
+                raise error
+            failures.append(CollectionFailure(stage, resource, error))
+            logger.warning(
+                "Failed to fetch collection %s %s: %s, skipping",
+                stage,
+                resource,
+                error,
+            )
 
-        # Step 2: expand each member
-        expanded_members = []
-        for member in collection.members:
-            if not member.odata_id:
-                continue
-            try:
-                full_member = self._http_client.get(member.odata_id, model_class)
-                expanded_members.append(full_member)
-            except RedfishException as exc:
-                logger.warning(
-                    "Failed to fetch collection member %s: %s, skipping",
-                    member.odata_id, exc
+        while page_path:
+            if page_path in visited_pages:
+                handle_failure(
+                    "page",
+                    page_path,
+                    RedfishValidationError("Collection paging loop detected"),
                 )
+                break
+            visited_pages.add(page_path)
 
-        return expanded_members
+            try:
+                raw = self._http_client.get_raw(page_path)
+            except RedfishException as exc:
+                if first_page and not self.strict_collection_errors:
+                    raise
+                handle_failure("page", page_path, exc)
+                break
+            first_page = False
+
+            if adapter is not None:
+                collection = adapter.validate_python(raw)
+                members = collection.members or []
+                next_link = collection.members_next_link
+            else:
+                members = [
+                    Link.model_validate(member)
+                    for member in raw.get("Members", [])
+                ]
+                next_link = raw.get("Members@odata.nextLink")
+
+            for member in members:
+                if not member.odata_id:
+                    continue
+                saw_member_link = True
+                try:
+                    member_path = self._collection_path(
+                        member.odata_id, page_path
+                    )
+                except RedfishException as exc:
+                    handle_failure("member", member.odata_id, exc)
+                    continue
+                if member_path in visited_members:
+                    continue
+                visited_members.add(member_path)
+                try:
+                    expanded_members.append(
+                        self._http_client.get(member_path, model_class)
+                    )
+                except RedfishException as exc:
+                    handle_failure("member", member_path, exc)
+
+            if not next_link:
+                break
+            try:
+                page_path = self._collection_path(next_link, page_path)
+            except RedfishException as exc:
+                handle_failure("page", next_link, exc)
+                break
+
+        if not saw_member_link and not failures:
+            logger.warning("Collection %s has no members", odata_id)
+        return CollectionResult(expanded_members, failures)
 
     def _get_list(self, links: List[Link], model_class: Type[T]) -> List[T]:
         """

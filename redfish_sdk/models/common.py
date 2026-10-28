@@ -51,6 +51,7 @@ class Collection(Entity, Generic[T]):
 
     """
     members_count: Optional[int] = Field(None, alias="Members@odata.count")
+    members_next_link: Optional[str] = Field(None, alias="Members@odata.nextLink")
     members: Optional[List[T]] = Field(default_factory=list, alias="Members")
 
 
