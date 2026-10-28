@@ -6,10 +6,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, model_validator, AliasChoices, AliasPath
+from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Link, Status
+from .fabric import ProcessorLinks, ProcessorUALink
 from .oem import Oem
 
 
@@ -48,3 +49,6 @@ class Processor(Entity):
     status: Optional[Status] = Field(None, alias="Status", validate="status")
     oem: Optional[Oem] = Field(None, alias="Oem")
     environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")
+    ports: Optional[Link] = Field(None, alias="Ports")
+    ualink: Optional[ProcessorUALink] = Field(None, alias="UALink")
+    links: Optional[ProcessorLinks] = Field(None, alias="Links")

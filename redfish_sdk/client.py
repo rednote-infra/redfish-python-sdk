@@ -53,6 +53,7 @@ from .models.composition import CompositionService, ResourceBlock, ResourceZone
 from .models.cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor
 from .models.drive import Drive
 from .models.event import EventService, Subscription
+from .models.fabric import CXLLogicalDevice, Port, PortMetrics
 from .models.fru import Fru
 from .models.logs import Log, LogEntry
 from .models.managers import (
@@ -188,6 +189,57 @@ class RedfishClient:
     def _cooling(self):
         from .managers.cooling import CoolingManager
         return CoolingManager(self)
+
+    @cached_property
+    def _fabric(self):
+        from .managers.fabric import FabricManager
+        return FabricManager(self)
+
+    def get_processor_ports(
+        self,
+        processor_id: Optional[str] = None,
+        system_id: Optional[str] = None,
+    ) -> List[Port]:
+        """List Ports advertised by one processor or all processors."""
+        return self._fabric.processor_ports(processor_id, system_id)
+
+    def get_connected_pcie_ports(
+        self, pcie_device_id: str, chassis_id: Optional[str] = None
+    ) -> List[Port]:
+        """Follow a PCIeDevice's advertised ConnectedPCIePorts links."""
+        return self._fabric.connected_pcie_ports(pcie_device_id, chassis_id)
+
+    def get_port_metrics(
+        self,
+        port_id: Optional[str] = None,
+        processor_id: Optional[str] = None,
+        pcie_device_id: Optional[str] = None,
+        system_id: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> PortMetrics:
+        """Get metrics advertised by a selected processor or PCIe Port."""
+        return self._fabric.port_metrics(
+            port_id, processor_id, pcie_device_id, system_id, chassis_id
+        )
+
+    def get_cxl_logical_devices(
+        self, pcie_device_id: str, chassis_id: Optional[str] = None
+    ) -> List[CXLLogicalDevice]:
+        """List CXL logical devices advertised by a PCIeDevice."""
+        return self._fabric.cxl_logical_devices(pcie_device_id, chassis_id)
+
+    def get_port_cxl_logical_devices(
+        self,
+        port_id: Optional[str] = None,
+        processor_id: Optional[str] = None,
+        pcie_device_id: Optional[str] = None,
+        system_id: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> List[CXLLogicalDevice]:
+        """Follow CXLLogicalDevices links advertised by a selected Port."""
+        return self._fabric.port_cxl_logical_devices(
+            port_id, processor_id, pcie_device_id, system_id, chassis_id
+        )
 
     def get_cooling_units(self, chassis_id: Optional[str] = None) -> List[CoolingUnit]:
         """List cooling equipment advertised by the selected chassis."""

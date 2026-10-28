@@ -20,6 +20,52 @@ class PCIeInterface(BaseModel):
     pcie_type: Optional[str] = Field(None, alias="PCIeType")
 
 
+class CXLDeviceProperties(BaseModel):
+    """CXL capabilities and current protocol state for a PCIe device."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    capable_protocol_versions: Optional[List[str]] = Field(
+        None, alias="CapableProtocolVersions"
+    )
+    current_protocol_version: Optional[str] = Field(
+        None, alias="CurrentProtocolVersion"
+    )
+    device_class: Optional[str] = Field(None, alias="DeviceClass")
+    device_type: Optional[str] = Field(None, alias="DeviceType")
+    egress_port_congestion_support: Optional[bool] = Field(
+        None, alias="EgressPortCongestionSupport"
+    )
+    max_number_logical_devices: Optional[int] = Field(
+        None, alias="MaxNumberLogicalDevices"
+    )
+    temporary_throughput_reduction_enabled: Optional[bool] = Field(
+        None, alias="TemporaryThroughputReductionEnabled"
+    )
+    temporary_throughput_reduction_supported: Optional[bool] = Field(
+        None, alias="TemporaryThroughputReductionSupported"
+    )
+    throughput_reduction_support: Optional[bool] = Field(
+        None, alias="ThroughputReductionSupport"
+    )
+    timestamp: Optional[str] = Field(None, alias="Timestamp")
+
+
+class PCIeDeviceLinks(BaseModel):
+    """Topology links advertised by a PCIeDevice resource."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    chassis: Optional[List[Link]] = Field(None, alias="Chassis")
+    connected_pcie_ports: Optional[List[Link]] = Field(
+        None, alias="ConnectedPCIePorts"
+    )
+    fabric_adapters: Optional[List[Link]] = Field(None, alias="FabricAdapters")
+    pcie_functions: Optional[List[Link]] = Field(None, alias="PCIeFunctions")
+    processors: Optional[List[Link]] = Field(None, alias="Processors")
+    switch: Optional[Link] = Field(None, alias="Switch")
+
+
 class GpuCore(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
     build_time: Optional[str] = Field(None, alias="BuildTime")
@@ -84,7 +130,16 @@ class PCIeDevice(Entity):
     must not be used as a generic PCIe BDF source.
 
     """
+    asset_tag: Optional[str] = Field(None, alias="AssetTag")
     card_model: Optional[str] = Field(None, alias="CardModel")
+    cxl_device: Optional[CXLDeviceProperties] = Field(None, alias="CXLDevice")
+    cxl_logical_devices: Optional[Link] = Field(None, alias="CXLLogicalDevices")
+    device_type: Optional[str] = Field(None, alias="DeviceType")
+    environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")
+    links: Optional[PCIeDeviceLinks] = Field(None, alias="Links")
+    location_indicator_active: Optional[bool] = Field(
+        None, alias="LocationIndicatorActive"
+    )
     pcie_functions: Optional[Link] = Field(None, alias="PCIeFunctions")
     pcie_interface: Optional[PCIeInterface] = Field(None, alias="PCIeInterface")
     oem: Optional[PCIeDeviceOEM] = Field(None, alias="Oem")
@@ -94,4 +149,8 @@ class PCIeDevice(Entity):
     manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="type=str")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     part_number: Optional[str] = Field(None, alias="PartNumber")
+    ready_to_remove: Optional[bool] = Field(None, alias="ReadyToRemove")
+    sku: Optional[str] = Field(None, alias="SKU")
+    spare_part_number: Optional[str] = Field(None, alias="SparePartNumber")
     firmware_version: Optional[str] = Field(None, alias="FirmwareVersion", validate="type=str")
+    uuid: Optional[str] = Field(None, alias="UUID")

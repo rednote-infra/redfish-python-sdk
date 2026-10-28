@@ -5,6 +5,21 @@ from .composition import CompositionService, ResourceBlock, ResourceZone
 from .cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor, SensorExcerpt, ThermalSubsystem
 from .drive import Location  # noqa: F401
 from .event import EventService, Subscription
+from .fabric import (
+    CXLLogicalDevice,
+    CXLLogicalDeviceLinks,
+    CXLLogicalDeviceQoS,
+    CXLTelemetryCapabilities,
+    Port,
+    PortCXL,
+    PortCXLCongestion,
+    PortLinks,
+    PortMetrics,
+    PortMetricsCXL,
+    PortUALink,
+    ProcessorLinks,
+    ProcessorUALink,
+)
 from .fru import Fru, FruChassis, FruProduct
 from .logs import Log, LogEntry
 from .managers import EthernetInterface, HostInterface, Manager, NetworkProtocol, SerialInterface
@@ -12,8 +27,10 @@ from .memory import MemoryLocation  # noqa: F401
 from .network_adapter import Controller, ControllerCapabilities  # noqa: F401
 from .oem import Bmc, MainBoard, Oem
 from .pcie_device import (  # noqa: F401
+    CXLDeviceProperties,
     GpuCore,
     GpuPerformanceParameters,
+    PCIeDeviceLinks,
     PCIeDeviceOEM,
     PCIeDeviceOEMPublic,
     PCIeInterface,
@@ -40,6 +57,9 @@ __all__ = [
     "System", "Processor", "Memory", "Storage", "Volume", "Bios", "Boot", "Gpu", "GpuOEM",
     "Chassis", "Drive", "NetworkAdapter", "Power", "PowerSupply", "Thermal",
     "PCIeDevice", "Fan", "Temperature",
+    "Port", "PortMetrics", "PortCXL", "PortCXLCongestion", "PortUALink", "PortLinks", "PortMetricsCXL",
+    "CXLLogicalDevice", "CXLLogicalDeviceLinks", "CXLLogicalDeviceQoS",
+    "CXLTelemetryCapabilities", "ProcessorUALink", "ProcessorLinks",
     "Manager", "NetworkProtocol", "EthernetInterface", "HostInterface",
     "SerialInterface",
     "AccountService", "Account", "Role",
@@ -58,7 +78,7 @@ __all__ = [
     # Additional component models
     "ProcessorId", "MemoryLocation", "StorageController", "CacheSummary", "Identifier",
     "Location", "Controller", "ControllerCapabilities",
-    "PCIeInterface", "PCIeDeviceOEM", "PCIeDeviceOEMPublic",
+    "PCIeInterface", "PCIeDeviceLinks", "CXLDeviceProperties", "PCIeDeviceOEM", "PCIeDeviceOEMPublic",
     "GpuCore", "GpuPerformanceParameters",
     "PowerControl", "Voltage", "InputRange", "Redundancy",
     "InletHistoryTemperature", "HistoricalInletTempEntry",
