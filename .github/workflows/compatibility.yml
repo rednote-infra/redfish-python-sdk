@@ -1,0 +1,49 @@
+name: Compatibility
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: Offline tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+
+      - name: Verify pinned compatibility assets
+        run: python tools/dmtf_compatibility.py check
+
+      - name: Run offline test suite
+        run: pytest
+
+      - name: Run Ruff
+        run: >-
+          ruff check
+          redfish_sdk/models/registry.py
+          tests/conftest.py
+          tests/test_models_mock.py
+          tests/test_real_bmc.py
+          tests/test_dmtf_compatibility.py
+          tools/dmtf_compatibility.py
+
+      - name: Compile sources
+        run: python -m compileall -q redfish_sdk tools

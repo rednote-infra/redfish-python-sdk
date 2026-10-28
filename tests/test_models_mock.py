@@ -93,7 +93,19 @@ from redfish_sdk.models.systems import MemoryLocation, ProcessorId
 # Helpers
 # ---------------------------------------------------------------------------
 
-TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
+TESTDATA_DIR = os.environ.get(
+    "REDFISH_TESTDATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "testdata"),
+)
+RUN_LEGACY_TESTDATA = os.environ.get("REDFISH_RUN_LEGACY_TESTDATA") == "1"
+
+pytestmark = pytest.mark.skipif(
+    not RUN_LEGACY_TESTDATA or not os.path.isdir(TESTDATA_DIR),
+    reason=(
+        "legacy private drill testdata is opt-in; set REDFISH_RUN_LEGACY_TESTDATA=1 "
+        "with a complete REDFISH_TESTDATA_DIR"
+    ),
+)
 
 
 def load_json(filename: str) -> dict:

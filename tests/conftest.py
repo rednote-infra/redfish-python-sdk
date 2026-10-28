@@ -31,13 +31,19 @@ def bmc_client():
     Session-scoped RedfishClient for real-BMC integration tests.
 
     Required environment variables:
+      REDFISH_RUN_REAL_BMC - must be exactly "1" to authorize network tests
       BMC_IP        - target BMC IP or hostname
       BMC_USER      - BMC login username
       BMC_PASSWORD  - BMC login password
 
-    If any variable is missing, the test is skipped (fail-safe: never
-    fall back to default credentials that could hit a production BMC).
+    If explicit authorization or any credential is missing, the test is
+    skipped. This prevents an ordinary offline pytest run from contacting a
+    production BMC merely because credentials exist in the shell environment.
     """
+    if os.environ.get("REDFISH_RUN_REAL_BMC") != "1":
+        pytest.skip(
+            "REDFISH_RUN_REAL_BMC=1 is required to authorize real-BMC tests"
+        )
     ip = os.environ.get("BMC_IP")
     user = os.environ.get("BMC_USER")
     pwd = os.environ.get("BMC_PASSWORD")

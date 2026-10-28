@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from .common import Entity
 
@@ -21,7 +21,11 @@ class Registry(Entity):
     languages: Optional[List[str]] = Field(None, alias="Languages")
     location: Optional[List[RegistryLocation]] = Field(None, alias="Location")
     owning_entity: Optional[str] = Field(None, alias="OwningEntity")
-    registry_prefix: Optional[str] = Field(None, alias="RegistryPrefix")
+    registry_prefix: Optional[str] = Field(
+        None,
+        alias="RegistryPrefix",
+        validation_alias=AliasChoices("RegistryPrefix", "Registry"),
+    )
     registry_version: Optional[str] = Field(None, alias="RegistryVersion")
 
 
