@@ -170,8 +170,8 @@ class ZteDumpProgress(BaseModel):
         }
 
 
-class _OemPublicProgress(BaseModel):
-    """Inner ``Oem.Public`` object of :class:`LenovoCollectProgress`."""
+class _LenovoProgressFields(BaseModel):
+    """Progress fields used under Lenovo ``Oem`` namespace variants."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     progress: Optional[int] = Field(None, alias="Progress")
@@ -179,25 +179,29 @@ class _OemPublicProgress(BaseModel):
 
 
 class _OemLenovoWrapper(BaseModel):
-    """The ``Oem`` container as Lenovo returns it: ``{"Public": {...}}``."""
+    """Lenovo progress container supporting observed OEM namespace variants."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    public: Optional[_OemPublicProgress] = Field(None, alias="Public")
+    public: Optional[_LenovoProgressFields] = Field(None, alias="Public")
+    lenovo: Optional[_LenovoProgressFields] = Field(None, alias="Lenovo")
+
+    @property
+    def progress_fields(self) -> Optional[_LenovoProgressFields]:
+        """Prefer the vendor namespace, falling back to the legacy layout."""
+        return self.lenovo or self.public
 
 
 class LenovoCollectProgress(BaseModel):
     """
-    Lenovo OEM ``.../LogServices/Actions/Oem/Public/CollectProgress`` payload.
+    Lenovo OEM ``.../LogServices/Actions/Oem/Lenovo/CollectProgress`` payload.
 
     Not a Redfish TaskService entry — GET-only endpoint that returns::
 
-        {"Oem": {"Public": {"Progress": <0..100>, "Status": <int>}}}
+        {"Oem": {"Lenovo": {"Progress": <0..100>, "Status": <int>}}}
 
-    ``Progress`` is an int percentage (jumps quickly to 100 on this BMC's
-    firmware — observed on Lenovo servers with an AMI MegaRAC base). Lenovo
-    does not appear to expose a distinct terminal state code; the strategy
-    treats ``Progress >= 100`` as done and any non-zero ``Status`` as a
-    failure signal (Status:0 = OK based on real-BMC observation).
+    Older observed firmware used ``Oem.Public`` instead; both layouts are
+    accepted. String values are coerced to integers. ``Progress >= 100`` is
+    terminal, with status 0 or 5 indicating success on verified firmware.
     """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -205,16 +209,18 @@ class LenovoCollectProgress(BaseModel):
 
     @property
     def progress(self) -> Optional[int]:
-        """Convenience: return ``Oem.Public.Progress`` or ``None``."""
-        if self.oem and self.oem.public:
-            return self.oem.public.progress
+        """Return progress from ``Oem.Lenovo`` or legacy ``Oem.Public``."""
+        fields = self.oem and self.oem.progress_fields
+        if fields:
+            return fields.progress
         return None
 
     @property
     def status(self) -> Optional[int]:
-        """Convenience: return ``Oem.Public.Status`` or ``None``."""
-        if self.oem and self.oem.public:
-            return self.oem.public.status
+        """Return status from ``Oem.Lenovo`` or legacy ``Oem.Public``."""
+        fields = self.oem and self.oem.progress_fields
+        if fields:
+            return fields.status
         return None
 
     def is_done(self) -> bool:

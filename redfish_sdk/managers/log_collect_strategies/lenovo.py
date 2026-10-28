@@ -7,13 +7,13 @@ returns a plain ``{"Oem":{"Public":{"Status":0}}}`` response (NOT a Redfish
 Task), and progress is polled on a bespoke GET-only endpoint::
 
     #LogService.CollectAllLog          POST -> HTTP 200 + Status:0
-    #LogService.GetLogCollectProgress  GET  -> {"Oem":{"Public":{"Progress":N,"Status":0}}}
+    #LogService.GetLogCollectProgress  GET  -> {"Oem":{"Lenovo":{"Progress":N,"Status":5}}}
     #LogService.DownloadAllLog         POST -> binary bundle (Content-Disposition)
 
 Observed flow (verified end-to-end against a real Lenovo BMC 10.27.97.152):
     1. POST CollectAllLog (empty body)   → HTTP 200, ``Status:0`` means accepted.
-    2. Poll CollectProgress until ``Progress >= 100``.
-    3. POST DownloadAllLog (empty body)  → binary bundle in the body,
+    2. Poll CollectProgress until ``Progress >= 100``; status 5 is success.
+    3. POST DownloadAllLog (explicit ``{}``) → binary bundle in the body,
        filename in ``Content-Disposition``.
 
 Similar to :class:`InspurLogCollectStrategy` in overall shape, but uses a
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 _COLLECT_ACTION = "#LogService.CollectAllLog"
 _DOWNLOAD_ACTION = "#LogService.DownloadAllLog"
 _PROGRESS_ACTION = "#LogService.GetLogCollectProgress"
+_SUCCESS_STATUSES = {0, 5}
 
 
 class LenovoLogCollectStrategy(BaseLogCollectStrategy):
@@ -158,9 +159,11 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
                 prog.progress, prog.status,
             )
             if prog.is_done():
-                # Status:0 == OK on this BMC firmware; anything else is a
-                # vendor-defined failure signal.
-                if prog.status is not None and prog.status != 0:
+                # Verified Lenovo firmware uses 0 or 5 for success.
+                if (
+                    prog.status is not None
+                    and prog.status not in _SUCCESS_STATUSES
+                ):
                     raise LogCollectFailedError(
                         f"Lenovo diagnostic collection finished with "
                         f"non-OK status={prog.status!r}",
@@ -201,7 +204,9 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
                 "Lenovo download URL missing on the collection task"
             )
         logger.info("Lenovo DownloadAllLog -> %s", download_target)
-        return client._http_client.download_via_post(download_target, output_path)
+        return client._http_client.download_via_post(
+            download_target, output_path, raw_body={}
+        )
 
     # ------------------------------------------------------------------
     # Existing-task discovery

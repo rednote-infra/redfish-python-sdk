@@ -1705,13 +1705,16 @@ class TestLenovoStrategy(VendorRestoreMixin):
     def test_wait_until_ready_polls_progress_until_100(self) -> None:
         client = _make_client()
 
-        # Fake progress dispenser: 40 → 100.
-        progresses = iter([40, 100])
+        # Preserve the legacy Public layout while accepting the observed
+        # Lenovo namespace and string values at completion.
+        responses = iter([
+            {"Oem": {"Public": {"Progress": 40, "Status": 0}}},
+            {"Oem": {"Lenovo": {"Progress": "100", "Status": "5"}}},
+        ])
 
         def fetch(path):
             if path == self._PROGRESS:
-                p = next(progresses)
-                return {"Oem": {"Public": {"Progress": p, "Status": 0}}}
+                return next(responses)
             raise AssertionError(f"unexpected path: {path}")
 
         _install_get_dispatch(client, fetch)
@@ -1751,7 +1754,11 @@ class TestLenovoStrategy(VendorRestoreMixin):
         recorder = _CallRecorder()
         client._http_client.download_via_post = (  # type: ignore[assignment]
             lambda path, output_path=None, raw_body=None: (
-                recorder.record(path=path, output_path=output_path)
+                recorder.record(
+                    path=path,
+                    output_path=output_path,
+                    raw_body=raw_body,
+                )
                 or "/tmp/out/lenovo_dump.tar.gz"
             )
         )
@@ -1765,6 +1772,7 @@ class TestLenovoStrategy(VendorRestoreMixin):
         path = strategy.download_artifact(client, task, output_path="/tmp/out/")
         self.assertEqual(path, "/tmp/out/lenovo_dump.tar.gz")
         self.assertEqual(recorder.last["path"], self._DOWNLOAD)
+        self.assertEqual(recorder.last["raw_body"], {})
         client.close()
 
     def test_find_existing_task_always_none(self) -> None:
