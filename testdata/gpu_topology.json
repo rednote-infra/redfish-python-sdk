@@ -29,6 +29,7 @@
           "Id": "accelerator-0",
           "Name": "Compute accelerator",
           "ProcessorType": "GPU",
+          "EnvironmentMetrics": {"@odata.id": "/topology/processors/accelerator-0/environment"},
           "AccelerationFunctions": {"@odata.id": "/topology/acceleration-functions"}
         }
       ],
@@ -45,7 +46,15 @@
         }
       ]
     },
-    "resources": {}
+    "resources": {
+      "/topology/processors/accelerator-0/environment": {
+        "@odata.id": "/topology/processors/accelerator-0/environment",
+        "PowerWatts": {
+          "DataSourceUri": "/topology/sensors/accelerator-0-power",
+          "Reading": 275.5
+        }
+      }
+    }
   },
   "pcie_only": {
     "system": {

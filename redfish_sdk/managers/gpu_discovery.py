@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, List, Optional
 
 from ..exceptions import RedfishException
 from ..models.chassis import PCIeDevice
+from ..models.common import Link
+from ..models.cooling import EnvironmentMetrics
 from ..models.gpu import AccelerationFunction, Gpu, GpuOEM, PCIeFunction
 from ..models.processor import Processor
 
@@ -149,8 +151,33 @@ def _add_processor_accelerators(
             if processor.serial_number
             else None,
         )
+        _enrich_from_environment_metrics(
+            client, processor.environment_metrics, gpu, identities, processor.odata_id
+        )
         _enrich_from_acceleration_functions(client, processor, gpu, identities)
         inventory.add(gpu, "Processor", identities)
+
+
+def _enrich_from_environment_metrics(
+    client: RedfishClient,
+    link: Optional[Link],
+    gpu: Gpu,
+    identities: set[str],
+    source_odata_id: Optional[str],
+) -> None:
+    if not link or not link.odata_id:
+        return
+    identities.add(link.odata_id)
+    try:
+        metrics = client._http_client.get(link.odata_id, EnvironmentMetrics)
+    except RedfishException as exc:
+        logger.warning(
+            "EnvironmentMetrics fetch failed for %s: %s", source_odata_id, exc
+        )
+        return
+    reading = metrics.power_watts and metrics.power_watts.reading
+    if reading is not None:
+        gpu.power_watts = str(reading)
 
 
 def _enrich_from_acceleration_functions(
@@ -230,6 +257,9 @@ def _add_pcie_devices(
         )
         if device.links:
             identities.update(_link_ids(device.links.processors))
+        _enrich_from_environment_metrics(
+            client, device.environment_metrics, gpu, identities, device.odata_id
+        )
         inventory.add(gpu, "PCIeDevice", identities)
 
 

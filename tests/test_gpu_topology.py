@@ -59,7 +59,7 @@ def test_processor_accelerator_accepts_missing_optional_identity_fields(
     assert gpus[0].manufacturer is None
     assert gpus[0].model is None
     assert gpus[0].version == "2.0"
-    assert gpus[0].power_watts == "300"
+    assert gpus[0].power_watts == "275.5"
     assert "/topology/acceleration-functions/video-0" in (
         gpus[0].related_resource_odata_ids
     )
