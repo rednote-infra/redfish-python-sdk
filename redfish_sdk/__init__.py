@@ -110,7 +110,7 @@ from .models.update import (
     UpdateServiceCapabilities,
 )
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-15
+
+### Added
+- Offline-aware asynchronous operation monitoring with task recovery policies and task-monitor support.
+- Typed resource aliases and alias-based resource addressing.
+- Referenced message-registry resolution and `VendorCode` modeling.
+- Current inventory, authentication, and NTP schema fields while retaining compatibility with older payloads.
+- UpdateService capability discovery and software-image lifecycle APIs.
+- Capability-driven PolicyService discovery and policy lifecycle APIs.
+- Standard ComputerSystem graphical-console actions and typed request and response models.
+- Standard VirtualMedia insert and eject actions, including `HTTPHeaders` support.
+- Modern power-subsystem, power-supply metrics, and sensor discovery APIs.
+- Standard Port and PortMetrics discovery with capability-checked transceiver reset support.
+- Optional CXL and UALink topology discovery.
+- Optional liquid-cooling equipment and fluid-reading discovery.
+
+### Changed
+- Collection traversal follows pagination links and reports partial retrieval failures.
+- Resource discovery follows service-advertised collection and member links instead of assuming URI layouts.
+
+### Fixed
+- Standard multipart firmware updates encode `UpdateParameters` as a JSON part.
+
 ## [1.3.0] - 2026-10-12
 
 ### Added
