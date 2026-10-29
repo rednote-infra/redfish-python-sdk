@@ -759,6 +759,56 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
         self.assertEqual(recorder.last["uri"], "/redfish/v1/download/new.tar.gz")
         client.close()
 
+    def test_from_resulting_log_entry_without_created_timestamp(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task_uri = "/redfish/v1/TaskService/Tasks/42"
+        log_uri = "/redfish/v1/Managers/Self/LogServices/BMCDebugLogs"
+        entries_uri = f"{log_uri}/Entries"
+        action_uri = f"{log_uri}/Actions/LogService.CollectDiagnosticData"
+        task = Task.model_construct(id="42", odata_id=task_uri)
+
+        def fetch(path):
+            if path == task_uri:
+                return {
+                    "@odata.id": task_uri,
+                    "Id": "42",
+                    "TaskState": "Completed",
+                    "StartTime": "2026-10-27T06:20:00Z",
+                    "Payload": {"TargetUri": action_uri},
+                }
+            if path == log_uri:
+                return {
+                    "@odata.id": log_uri,
+                    "Id": "BMCDebugLogs",
+                    "Entries": {"@odata.id": entries_uri},
+                }
+            raise AssertionError(f"Unexpected GET {path}")
+
+        _install_get_dispatch(client, fetch)
+        client._get_collection = (  # type: ignore[assignment]
+            lambda path, model: [
+                LogEntry.model_construct(
+                    id="diagnostic-42",
+                    additional_data_uri="/redfish/v1/download/diagnostic.tar.gz",
+                ),
+            ] if path == entries_uri and model is LogEntry else []
+        )
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(
+            recorder.last["uri"],
+            "/redfish/v1/download/diagnostic.tar.gz",
+        )
+        client.close()
+
     def test_missing_uri_raises(self) -> None:
         client = _make_client()
         entry = LogEntry.model_construct(id="1", additional_data_uri=None)

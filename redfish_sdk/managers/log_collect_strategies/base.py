@@ -640,16 +640,31 @@ def _latest_resulting_log_entry(
     downloadable = [entry for entry in entries if entry.additional_data_uri]
     task_started = _parse_redfish_timestamp(task.start_time)
     if task_started is not None:
-        downloadable = [
+        recent = [
             entry for entry in downloadable
             if (
-                (created := _parse_redfish_timestamp(entry.created)) is not None
+                (
+                    created := _parse_redfish_timestamp(
+                        entry.created or entry.event_timestamp
+                    )
+                ) is not None
                 and created >= task_started
             )
         ]
+        if recent:
+            downloadable = recent
+        elif downloadable:
+            logger.debug(
+                "No diagnostic LogEntry timestamp matched Task %s start time; "
+                "falling back to the newest entry advertising AdditionalDataURI",
+                task.odata_id or task.id,
+            )
     if not downloadable:
         return None
-    downloadable.sort(key=lambda entry: entry.created or "", reverse=True)
+    downloadable.sort(
+        key=lambda entry: entry.created or entry.event_timestamp or "",
+        reverse=True,
+    )
     return downloadable[0]
 
 
