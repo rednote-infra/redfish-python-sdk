@@ -1,0 +1,43 @@
+{
+  "SpeedRPM": {
+    "@odata.id": "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans/160",
+    "Id": "160",
+    "Name": "Fan 160",
+    "Manufacturer": "Contoso",
+    "Model": "FAN-12K",
+    "PhysicalContext": "Chassis",
+    "SpeedPercent": {
+      "SpeedRPM": 7500,
+      "DataSourceUri": "/redfish/v1/Chassis/Self/Sensors/Fan160"
+    },
+    "Status": {
+      "State": "Enabled",
+      "Health": "OK"
+    }
+  },
+  "SpeedPercent": {
+    "Id": "160",
+    "SpeedPercent": {
+      "Reading": 62.5
+    }
+  },
+  "LocationAndLinks": {
+    "Id": "Bay1",
+    "LocationIndicatorActive": true,
+    "HotPluggable": true,
+    "Location": {
+      "PartLocation": {
+        "ServiceLabel": "Chassis Fan Bay 1",
+        "LocationType": "Bay",
+        "LocationOrdinalValue": 1
+      }
+    },
+    "Links": {
+      "CoolingChassis": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/Self"
+        }
+      ]
+    }
+  }
+}

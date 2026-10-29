@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import requests
@@ -11,6 +12,13 @@ from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishNotFoundError
 from redfish_sdk.models.chassis import Chassis
 from redfish_sdk.models.cooling import CoolantConnector, CoolingUnit, Fan, Sensor
+
+TESTDATA_DIR = Path(__file__).parent.parent / "testdata"
+
+
+def _fan_fixture(name: str) -> dict:
+    with (TESTDATA_DIR / "standalone_fans.json").open(encoding="utf-8") as fixture:
+        return json.load(fixture)[name]
 
 
 @pytest.fixture
@@ -138,19 +146,7 @@ def test_fluid_models_preserve_readings_units_and_older_payloads():
 
 
 def test_standalone_fan_parses_speed_rpm_and_inventory_fields():
-    fan = Fan.model_validate({
-        "@odata.id": "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans/160",
-        "Id": "160",
-        "Name": "Fan 160",
-        "Manufacturer": "Contoso",
-        "Model": "FAN-12K",
-        "PhysicalContext": "Chassis",
-        "SpeedPercent": {
-            "SpeedRPM": 7500,
-            "DataSourceUri": "/redfish/v1/Chassis/Self/Sensors/Fan160",
-        },
-        "Status": {"State": "Enabled", "Health": "OK"},
-    })
+    fan = Fan.model_validate(_fan_fixture("SpeedRPM"))
 
     assert fan.speed_percent.speed_rpm == 7500
     assert fan.speed_percent.data_source_uri.endswith("/Sensors/Fan160")
@@ -159,33 +155,14 @@ def test_standalone_fan_parses_speed_rpm_and_inventory_fields():
 
 
 def test_standalone_fan_parses_speed_percent_reading():
-    fan = Fan.model_validate({
-        "Id": "160",
-        "SpeedPercent": {"Reading": 62.5},
-    })
+    fan = Fan.model_validate(_fan_fixture("SpeedPercent"))
 
     assert fan.speed_percent.reading == 62.5
     assert fan.speed_percent.speed_rpm is None
 
 
 def test_standalone_fan_parses_location_and_cooling_chassis_links():
-    fan = Fan.model_validate({
-        "Id": "Bay1",
-        "LocationIndicatorActive": True,
-        "HotPluggable": True,
-        "Location": {
-            "PartLocation": {
-                "ServiceLabel": "Chassis Fan Bay 1",
-                "LocationType": "Bay",
-                "LocationOrdinalValue": 1,
-            }
-        },
-        "Links": {
-            "CoolingChassis": [
-                {"@odata.id": "/redfish/v1/Chassis/Self"},
-            ]
-        },
-    })
+    fan = Fan.model_validate(_fan_fixture("LocationAndLinks"))
 
     assert fan.location_indicator_active is True
     assert fan.hot_pluggable is True
