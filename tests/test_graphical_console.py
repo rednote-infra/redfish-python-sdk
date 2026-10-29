@@ -1,6 +1,8 @@
 """Standard ComputerSystem graphical-console models and actions."""
 
+import json
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,52 +19,18 @@ from redfish_sdk.models.systems import (
     System,
 )
 
+TESTDATA_DIR = Path(__file__).parent.parent / "testdata"
+
+
+def _load_fixture(name: str) -> dict:
+    with (TESTDATA_DIR / "graphical_console.json").open(
+        encoding="utf-8"
+    ) as fixture:
+        return json.load(fixture)[name]
+
 
 def _system() -> System:
-    return System.model_validate({
-        "@odata.id": "/redfish/v1/Systems/1",
-        "Id": "1",
-        "Manufacturer": "Example",
-        "Model": "Server",
-        "SerialNumber": "serial",
-        "PowerState": "On",
-        "GraphicalConsole": {
-            "ConnectTypesSupported": ["KVMIP"],
-            "MaxConcurrentSessions": 4,
-            "VendorField": "preserved",
-            "VNC": {
-                "ServiceEnabled": True,
-                "SupportedAccessModes": ["ReadWrite", "ReadOnly"],
-                "SupportsOneTimePassword": True,
-                "SupportsPersistentPassword": True,
-                "SupportedEncodings": ["Hextile"],
-            },
-            "RDP": {"ServiceEnabled": True, "SupportedAccessModes": ["ReadOnly"]},
-            "HTML5": {
-                "ServiceEnabled": True,
-                "SupportedAccessModes": ["ReadWrite"],
-                "SupportsOneTimeURL": True,
-                "ConsoleURI": "/console",
-            },
-            "KVMIP": {"ServiceEnabled": True},
-        },
-        "Actions": {
-            "#ComputerSystem.GraphicalConsoleGetOneTimeURL": {
-                "target": "/custom/console/url",
-                "ConsoleType@Redfish.AllowableValues": ["HTML5"],
-                "AccessMode@Redfish.AllowableValues": ["ReadWrite"],
-                "ValidityPeriodSeconds@Redfish.AllowableValues": [60, 120],
-            },
-            "#ComputerSystem.GraphicalConsoleSetOneTimePassword": {
-                "target": "/custom/console/otp",
-                "ConsoleType@Redfish.AllowableValues": ["VNC"],
-            },
-            "#ComputerSystem.GraphicalConsoleSetPassword": {
-                "target": "/custom/console/password",
-                "ConsoleType@Redfish.AllowableValues": ["VNC"],
-            },
-        },
-    })
+    return System.model_validate(_load_fixture("System"))
 
 
 def _manager(system=None):
@@ -86,11 +54,9 @@ def test_models_all_protocols_and_preserves_legacy_and_unknown_fields():
 
 def test_get_one_time_url_uses_custom_target_and_typed_response():
     manager, http = _manager()
-    expected = GraphicalConsoleGetOneTimeURLResponse.model_validate({
-        "ConsoleType": "HTML5",
-        "AccessMode": "ReadWrite",
-        "ConsoleURL": "https://bmc/console?token=secret",
-    })
+    expected = GraphicalConsoleGetOneTimeURLResponse.model_validate(
+        _load_fixture("GetOneTimeURLResponse")
+    )
     http.post.return_value = expected
 
     result = manager.graphical_console_get_one_time_url(
@@ -111,14 +77,14 @@ def test_get_one_time_url_uses_custom_target_and_typed_response():
 
 def test_one_time_and_persistent_password_actions_are_typed():
     manager, http = _manager()
-    response = GraphicalConsoleSetOneTimePasswordResponse.model_validate({
-        "ConsoleType": "VNC", "AccessMode": "ReadOnly", "Password": "generated"
-    })
+    response = GraphicalConsoleSetOneTimePasswordResponse.model_validate(
+        _load_fixture("SetOneTimePasswordResponse")
+    )
     http.post.side_effect = [response, RedfishResponse()]
 
     assert manager.graphical_console_set_one_time_password(
         "VNC", "ReadOnly", "requested", 30
-    ).password == "generated"
+    ).password == "mock-generated-password"
     assert http.post.call_args_list[0].args[0] == "/custom/console/otp"
     assert http.post.call_args_list[0].kwargs["body"].password == "requested"
 
@@ -172,17 +138,12 @@ def test_action_info_constraints_are_discovered():
     action.validity_period_seconds_allowable_values = None
     action.action_info = "/custom/console/action-info"
     manager, http = _manager(system)
-    http.get.return_value = ActionInfo.model_validate({
-        "Parameters": [
-            {"Name": "ConsoleType", "AllowableValues": ["HTML5"]},
-            {"Name": "AccessMode", "AllowableValues": ["ReadWrite"]},
-            {"Name": "ValidityPeriodSeconds", "MinimumValue": 30, "MaximumValue": 90},
-        ]
-    })
-    http.post.return_value = GraphicalConsoleGetOneTimeURLResponse.model_validate({
-        "ConsoleType": "HTML5", "AccessMode": "ReadWrite",
-        "ConsoleURL": "https://bmc/console?token=secret",
-    })
+    http.get.return_value = ActionInfo.model_validate(
+        _load_fixture("ActionInfo")
+    )
+    http.post.return_value = GraphicalConsoleGetOneTimeURLResponse.model_validate(
+        _load_fixture("GetOneTimeURLResponse")
+    )
 
     manager.graphical_console_get_one_time_url("HTML5", "ReadWrite", 60)
     http.get.assert_called_once_with("/custom/console/action-info", ActionInfo)
@@ -201,10 +162,10 @@ def _response(status, body):
 
 def test_http_logs_redact_password_and_sensitive_console_url(caplog):
     http = RedfishHttpClient("bmc", "user", "password")
-    http._session.post = MagicMock(return_value=_response(400, (
-        '{"Password":"response-secret",'
-        '"ConsoleURL":"https://bmc/console?token=url-secret"}'
-    )))
+    error_body = _load_fixture("SensitiveError")
+    http._session.post = MagicMock(
+        return_value=_response(400, json.dumps(error_body))
+    )
     caplog.set_level(logging.INFO)
 
     with pytest.raises(RedfishException) as exc_info:

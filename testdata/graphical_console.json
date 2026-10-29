@@ -1,0 +1,108 @@
+{
+  "System": {
+    "@odata.id": "/redfish/v1/Systems/1",
+    "Id": "1",
+    "Manufacturer": "Example",
+    "Model": "Server",
+    "SerialNumber": "mock-serial",
+    "PowerState": "On",
+    "GraphicalConsole": {
+      "ConnectTypesSupported": [
+        "KVMIP"
+      ],
+      "MaxConcurrentSessions": 4,
+      "VendorField": "preserved",
+      "VNC": {
+        "ServiceEnabled": true,
+        "SupportedAccessModes": [
+          "ReadWrite",
+          "ReadOnly"
+        ],
+        "SupportsOneTimePassword": true,
+        "SupportsPersistentPassword": true,
+        "SupportedEncodings": [
+          "Hextile"
+        ]
+      },
+      "RDP": {
+        "ServiceEnabled": true,
+        "SupportedAccessModes": [
+          "ReadOnly"
+        ]
+      },
+      "HTML5": {
+        "ServiceEnabled": true,
+        "SupportedAccessModes": [
+          "ReadWrite"
+        ],
+        "SupportsOneTimeURL": true,
+        "ConsoleURI": "/console"
+      },
+      "KVMIP": {
+        "ServiceEnabled": true
+      }
+    },
+    "Actions": {
+      "#ComputerSystem.GraphicalConsoleGetOneTimeURL": {
+        "target": "/custom/console/url",
+        "ConsoleType@Redfish.AllowableValues": [
+          "HTML5"
+        ],
+        "AccessMode@Redfish.AllowableValues": [
+          "ReadWrite"
+        ],
+        "ValidityPeriodSeconds@Redfish.AllowableValues": [
+          60,
+          120
+        ]
+      },
+      "#ComputerSystem.GraphicalConsoleSetOneTimePassword": {
+        "target": "/custom/console/otp",
+        "ConsoleType@Redfish.AllowableValues": [
+          "VNC"
+        ]
+      },
+      "#ComputerSystem.GraphicalConsoleSetPassword": {
+        "target": "/custom/console/password",
+        "ConsoleType@Redfish.AllowableValues": [
+          "VNC"
+        ]
+      }
+    }
+  },
+  "ActionInfo": {
+    "Parameters": [
+      {
+        "Name": "ConsoleType",
+        "AllowableValues": [
+          "HTML5"
+        ]
+      },
+      {
+        "Name": "AccessMode",
+        "AllowableValues": [
+          "ReadWrite"
+        ]
+      },
+      {
+        "Name": "ValidityPeriodSeconds",
+        "MinimumValue": 30,
+        "MaximumValue": 90
+      }
+    ]
+  },
+  "GetOneTimeURLResponse": {
+    "ConsoleType": "HTML5",
+    "AccessMode": "ReadWrite",
+    "ConsoleURL": "https://bmc.example/console?token=mock-url-secret"
+  },
+  "SetOneTimePasswordResponse": {
+    "ConsoleType": "VNC",
+    "AccessMode": "ReadOnly",
+    "Password": "mock-generated-password"
+  },
+  "SensitiveError": {
+    "Password": "response-secret",
+    "ConsoleURL": "https://bmc.example/console?token=url-secret"
+  }
+}
