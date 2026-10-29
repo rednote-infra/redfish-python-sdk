@@ -1,6 +1,8 @@
 """Tests for dynamically discovering the default Manager member."""
 from __future__ import annotations
 
+import pytest
+
 from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishNotFoundError
 from redfish_sdk.models.common import Link
@@ -106,10 +108,25 @@ def test_get_manager_uses_one_when_none_is_passed(monkeypatch):
     client.close()
 
 
-def test_get_gpus_uses_default_system_id_when_omitted(monkeypatch):
+def test_get_gpus_uses_advertised_systems_when_id_is_omitted(monkeypatch):
+    client = RedfishClient(host="mock-bmc", username="user", password="password")
+    system = System.model_construct(odata_id="/redfish/v1/Systems/Self")
+    monkeypatch.setattr(client, "_get_systems_collection", lambda: [system])
+    monkeypatch.setattr(
+        client._systems,
+        "get",
+        lambda system_id=None: pytest.fail("constructed system lookup"),
+    )
+    monkeypatch.setattr(client, "_get_chassis_collection", lambda: [])
+
+    assert client.get_gpus() == []
+    client.close()
+
+
+def test_get_gpus_keeps_explicit_system_selection(monkeypatch):
     client = RedfishClient(host="mock-bmc", username="user", password="password")
     requested_system_ids = []
-    system = System.model_construct(odata_id="/redfish/v1/Systems/Self")
+    system = System.model_construct(odata_id="/redfish/v1/Systems/Compute")
 
     def fake_get(system_id=None):
         requested_system_ids.append(system_id)
@@ -118,6 +135,6 @@ def test_get_gpus_uses_default_system_id_when_omitted(monkeypatch):
     monkeypatch.setattr(client._systems, "get", fake_get)
     monkeypatch.setattr(client, "_get_chassis_collection", lambda: [])
 
-    assert client.get_gpus() == []
-    assert requested_system_ids == ["1"]
+    assert client.get_gpus("Compute") == []
+    assert requested_system_ids == ["Compute"]
     client.close()

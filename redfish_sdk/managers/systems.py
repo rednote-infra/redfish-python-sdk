@@ -440,10 +440,14 @@ class SystemsManager:
         AccelerationFunction, PCIeDevice, and PCIeFunction resources can
         supplement it.
         """
-        system = self.get(system_id or "1")
+        systems = (
+            [self.get(system_id)]
+            if system_id is not None
+            else self._client._get_systems_collection()
+        )
         from .gpu_discovery import discover_gpus
 
-        return discover_gpus(self._client, system)
+        return discover_gpus(self._client, systems)
 
     def pcie_device(self, odata_id: str) -> PCIeDevice:
         """

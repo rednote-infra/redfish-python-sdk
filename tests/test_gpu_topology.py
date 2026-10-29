@@ -20,7 +20,7 @@ def topology_cases():
 def discover(monkeypatch, case):
     client = RedfishClient(host="mock-bmc", username="user", password="password")
     system = System.model_validate(case["system"])
-    monkeypatch.setattr(client._systems, "get", lambda system_id=None: system)
+    monkeypatch.setattr(client, "_get_systems_collection", lambda: [system])
     monkeypatch.setattr(
         ChassisManager,
         "get",
@@ -92,3 +92,50 @@ def test_mixed_topology_merges_related_representations_deterministically(
 
 def test_non_gpu_pcie_topology_is_not_manufactured(monkeypatch, topology_cases):
     assert discover(monkeypatch, topology_cases["no_gpu"]) == []
+
+
+def test_gpu_discovery_combines_multiple_advertised_systems(monkeypatch):
+    client = RedfishClient(host="mock-bmc", username="user", password="password")
+    systems = [
+        System.model_validate(
+            {
+                "@odata.id": "/redfish/v1/Systems/Baseboard",
+                "Id": "Baseboard",
+            }
+        ),
+        System.model_validate(
+            {
+                "@odata.id": "/redfish/v1/Systems/Compute",
+                "Id": "Compute",
+                "Processors": {"@odata.id": "/topology/compute/processors"},
+            }
+        ),
+    ]
+    monkeypatch.setattr(client, "_get_systems_collection", lambda: systems)
+    monkeypatch.setattr(
+        ChassisManager,
+        "get",
+        lambda self: Chassis.model_construct(odata_id="/topology/chassis"),
+    )
+
+    def get_collection(path, model_class):
+        if path == "/topology/compute/processors":
+            return [
+                model_class.model_validate(
+                    {
+                        "@odata.id": "/topology/compute/processors/gpu-0",
+                        "Id": "gpu-0",
+                        "ProcessorType": "GPU",
+                        "Manufacturer": "Example",
+                        "Model": "Accelerator",
+                    }
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(client, "_get_collection", get_collection)
+
+    gpus = client.get_gpus()
+
+    assert [gpu.id for gpu in gpus] == ["gpu-0"]
+    client.close()

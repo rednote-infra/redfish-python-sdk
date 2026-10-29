@@ -79,12 +79,13 @@ class _GpuInventory:
         return [gpu for gpu, _ in self.candidates]
 
 
-def discover_gpus(client: RedfishClient, system: System) -> List[Gpu]:
-    """Discover logical GPUs by following advertised standard Redfish links."""
+def discover_gpus(client: RedfishClient, systems: List[System]) -> List[Gpu]:
+    """Discover logical GPUs across advertised ComputerSystem resources."""
     inventory = _GpuInventory()
-    _add_graphics_controllers(client, system, inventory)
-    _add_processor_accelerators(client, system, inventory)
-    _add_pcie_devices(client, system, inventory)
+    for system in systems:
+        _add_graphics_controllers(client, system, inventory)
+        _add_processor_accelerators(client, system, inventory)
+        _add_pcie_devices(client, system, inventory)
     return inventory.result()
 
 

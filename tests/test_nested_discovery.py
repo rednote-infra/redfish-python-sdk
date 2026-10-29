@@ -188,7 +188,7 @@ def test_gpu_collection_uses_the_advertised_link(monkeypatch):
     )
     gpu = Gpu.model_construct(id="GPU0", odata_id="/custom/gpus/accelerator-a")
     request = Mock(return_value=[gpu])
-    monkeypatch.setattr(client._systems, "get", lambda identifier=None: system)
+    monkeypatch.setattr(client, "_get_systems_collection", lambda: [system])
     monkeypatch.setattr(client, "_get_collection", request)
 
     assert client.get_gpus() == [gpu]
