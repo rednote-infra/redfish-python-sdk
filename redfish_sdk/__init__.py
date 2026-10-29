@@ -82,7 +82,19 @@ from .models.system_resources import (
     NetworkPort,
     SecureBoot,
 )
-from .models.systems import BootOption
+from .models.systems import (
+    BootOption,
+    GraphicalConsoleAction,
+    GraphicalConsoleGetOneTimeURLRequest,
+    GraphicalConsoleGetOneTimeURLResponse,
+    GraphicalConsoleProtocol,
+    GraphicalConsoleSetOneTimePasswordRequest,
+    GraphicalConsoleSetOneTimePasswordResponse,
+    GraphicalConsoleSetPasswordRequest,
+    HostGraphicalConsole,
+    HTML5Console,
+    VNCConsole,
+)
 from .models.task import AsyncOperationResult, TaskRecoveryPolicy
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.update import (
@@ -118,6 +130,16 @@ __all__ = [
     "AsyncOperationResult",
     # Models commonly used at API boundary.
     "BootOption",
+    "GraphicalConsoleAction",
+    "GraphicalConsoleGetOneTimeURLRequest",
+    "GraphicalConsoleGetOneTimeURLResponse",
+    "GraphicalConsoleProtocol",
+    "GraphicalConsoleSetOneTimePasswordRequest",
+    "GraphicalConsoleSetOneTimePasswordResponse",
+    "GraphicalConsoleSetPasswordRequest",
+    "HostGraphicalConsole",
+    "HTML5Console",
+    "VNCConsole",
     "CompositionService",
     "Condition",
     "ResourceBlock",

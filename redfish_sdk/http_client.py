@@ -15,8 +15,11 @@ Design notes:
 from __future__ import annotations
 
 import base64
+import json
 import logging
+import re
 from typing import Any, Dict, Optional, Type, TypeVar
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 import urllib3
@@ -40,6 +43,42 @@ T = TypeVar("T", bound=BaseModel)
 
 # HTTP status codes that indicate success
 _SUCCESS_CODES = {200, 201, 202, 204, 302}
+_REDACTED = "<redacted>"
+_SENSITIVE_LOG_KEYS = {
+    "password", "consoleurl", "credential", "secret", "token",
+    "accesstoken", "authtoken", "xauthtoken",
+}
+
+
+def _redact_for_log(value: Any) -> Any:
+    """Return a log-safe copy of request or response data."""
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            redacted[key] = (
+                _REDACTED if normalized in _SENSITIVE_LOG_KEYS
+                else _redact_for_log(item)
+            )
+        return redacted
+    if isinstance(value, (list, tuple)):
+        return [_redact_for_log(item) for item in value]
+    if isinstance(value, str):
+        try:
+            parsed_json = json.loads(value)
+        except (TypeError, ValueError):
+            parsed_json = None
+        if isinstance(parsed_json, (dict, list)):
+            return json.dumps(_redact_for_log(parsed_json))
+        if "?" in value and ("://" in value or value.startswith("/")):
+            parts = urlsplit(value)
+            query = urlencode([
+                (name, _REDACTED) for name, _ in parse_qsl(
+                    parts.query, keep_blank_values=True
+                )
+            ])
+            return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+    return value
 
 
 def _filename_from_content_disposition(value: Optional[str]) -> Optional[str]:
@@ -315,16 +354,21 @@ class RedfishHttpClient:
         # All other non-2xx responses remain at ERROR.
         if code == 404:
             logger.debug("Request returned 404 (not found): %s %s",
-                         response.request.method, path)
+                         response.request.method, _redact_for_log(path))
         else:
             logger.error("Request failed: %s %s -> HTTP %d, body: %s",
-                         response.request.method, path, code, body[:500])
+                         response.request.method, _redact_for_log(path), code,
+                         str(_redact_for_log(body))[:500])
 
         if code in (401, 403):
             raise RedfishAuthError(code)
         if code == 404:
-            raise RedfishNotFoundError(path)
-        raise RedfishException(code, f"Request to {path} failed", body)
+            raise RedfishNotFoundError(str(_redact_for_log(path)))
+        raise RedfishException(
+            code,
+            f"Request to {_redact_for_log(path)} failed",
+            str(_redact_for_log(body)),
+        )
 
     def _parse(self, response: requests.Response, model_class: Type[T]) -> T:
         """Parse JSON response into a pydantic model."""
@@ -332,11 +376,11 @@ class RedfishHttpClient:
             data = response.json()
             return model_class.model_validate(data)
         except Exception as exc:
-            logger.error("Failed to parse response as %s: %s", model_class.__name__, exc)
+            logger.error("Failed to parse response as %s", model_class.__name__)
             raise RedfishException(
                 response.status_code,
-                f"Failed to parse response as {model_class.__name__}: {exc}",
-                response.text[:1000],
+                f"Failed to parse response as {model_class.__name__}",
+                str(_redact_for_log(response.text))[:1000],
             ) from exc
 
     # ------------------------------------------------------------------
@@ -359,10 +403,10 @@ class RedfishHttpClient:
             RedfishConnectionError: On network errors
             RedfishTimeoutError: On timeout
         """
-        logger.debug("GET %s", path)
+        logger.debug("GET %s", _redact_for_log(path))
         response = self._request("GET", path)
 
-        logger.debug("GET %s -> HTTP %d", path, response.status_code)
+        logger.debug("GET %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         result = self._parse(response, model_class)
@@ -393,7 +437,7 @@ class RedfishHttpClient:
 
         Returns the parsed JSON as a plain ``dict``/``list`` structure.
         """
-        logger.debug("GET (raw) %s", path)
+        logger.debug("GET (raw) %s", _redact_for_log(path))
         response = self._request("GET", path)
 
         self._store_etag(path, response)
@@ -423,10 +467,10 @@ class RedfishHttpClient:
         elif raw_body is not None:
             json_payload = raw_body
 
-        logger.info("POST %s, payload: %s", path, json_payload)
+        logger.info("POST %s, payload: %s", _redact_for_log(path), _redact_for_log(json_payload))
         response = self._request("POST", path, json=json_payload)
 
-        logger.info("POST %s -> HTTP %d", path, response.status_code)
+        logger.info("POST %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
 
@@ -448,10 +492,10 @@ class RedfishHttpClient:
         Send a POST request and return the raw Response object.
         Useful when the caller needs response headers (e.g., X-Auth-Token).
         """
-        logger.info("POST (raw) %s, payload: %s", path, body)
+        logger.info("POST (raw) %s, payload: %s", _redact_for_log(path), _redact_for_log(body))
         response = self._request("POST", path, json=body)
 
-        logger.info("POST (raw) %s -> HTTP %d", path, response.status_code)
+        logger.info("POST (raw) %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         return response
@@ -477,7 +521,7 @@ class RedfishHttpClient:
             "POST", path, data=prepared.body,
             headers={"Content-Type": prepared.headers["Content-Type"]},
         )
-        logger.info("POST multipart %s -> HTTP %d", path, response.status_code)
+        logger.info("POST multipart %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         return response
@@ -509,10 +553,13 @@ class RedfishHttpClient:
         if extra_headers:
             headers.update(extra_headers)
 
-        logger.info("PATCH %s, If-Match: %s, payload: %s", path, etag, json_payload)
+        logger.info(
+            "PATCH %s, If-Match: %s, payload: %s",
+            _redact_for_log(path), etag, _redact_for_log(json_payload),
+        )
         response = self._request("PATCH", path, json=json_payload, headers=headers)
 
-        logger.info("PATCH %s -> HTTP %d", path, response.status_code)
+        logger.info("PATCH %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
 
@@ -546,10 +593,13 @@ class RedfishHttpClient:
         if extra_headers:
             headers.update(extra_headers)
 
-        logger.info("PATCH (raw) %s, If-Match: %s, payload: %s", path, etag, body)
+        logger.info(
+            "PATCH (raw) %s, If-Match: %s, payload: %s",
+            _redact_for_log(path), etag, _redact_for_log(body),
+        )
         response = self._request("PATCH", path, json=body, headers=headers)
 
-        logger.info("PATCH (raw) %s -> HTTP %d", path, response.status_code)
+        logger.info("PATCH (raw) %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
         return response
@@ -567,10 +617,10 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        logger.info("DELETE %s", path)
+        logger.info("DELETE %s", _redact_for_log(path))
         response = self._request("DELETE", path)
 
-        logger.info("DELETE %s -> HTTP %d", path, response.status_code)
+        logger.info("DELETE %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._raise_for_status(response, path)
         return response.text
 
@@ -607,10 +657,10 @@ class RedfishHttpClient:
         """
         import os
 
-        logger.info("DOWNLOAD %s", uri)
+        logger.info("DOWNLOAD %s", _redact_for_log(uri))
         response = self._request("GET", uri, stream=True)
 
-        logger.info("DOWNLOAD %s -> HTTP %d", uri, response.status_code)
+        logger.info("DOWNLOAD %s -> HTTP %d", _redact_for_log(uri), response.status_code)
         self._raise_for_status(response, uri)
 
         if output_path is None:
@@ -657,14 +707,14 @@ class RedfishHttpClient:
         """
         import os
 
-        logger.info("DOWNLOAD (POST) %s", path)
+        logger.info("DOWNLOAD (POST) %s", _redact_for_log(path))
         response = self._request(
             "POST", path,
             json=raw_body if raw_body is not None else {},
             stream=True,
         )
 
-        logger.info("DOWNLOAD (POST) %s -> HTTP %d", path, response.status_code)
+        logger.info("DOWNLOAD (POST) %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._raise_for_status(response, path)
 
         content = response.content

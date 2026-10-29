@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 from pydantic import ValidationError
 
 from ..exceptions import RedfishException, RedfishValidationError
-from ..models.actions import ActionMap
+from ..models.actions import ActionInfo, ActionMap
 from ..models.chassis import PCIeDevice
 from ..models.drive import Drive
 from ..models.fru import Fru
@@ -33,6 +33,12 @@ from ..models.systems import (
     BootSetting,
     Gpu,
     GpuOEM,
+    GraphicalConsoleAction,
+    GraphicalConsoleGetOneTimeURLRequest,
+    GraphicalConsoleGetOneTimeURLResponse,
+    GraphicalConsoleSetOneTimePasswordRequest,
+    GraphicalConsoleSetOneTimePasswordResponse,
+    GraphicalConsoleSetPasswordRequest,
     Memory,
     Processor,
     Storage,
@@ -639,10 +645,194 @@ class SystemsManager:
             raw_body={"ResetType": reset_type},
         )
 
+    def graphical_console_get_one_time_url(
+        self,
+        console_type: Optional[str] = None,
+        access_mode: Optional[str] = None,
+        validity_period_seconds: Optional[int] = None,
+        system_id: Optional[str] = None,
+    ) -> GraphicalConsoleGetOneTimeURLResponse:
+        """Request a temporary URL for an advertised system console."""
+        system, action = self._graphical_console_action(
+            system_id, "graphical_console_get_one_time_url",
+            "#ComputerSystem.GraphicalConsoleGetOneTimeURL",
+        )
+        self._validate_graphical_console_parameters(
+            system, action, console_type, access_mode,
+            validity_period_seconds, "one-time URL",
+        )
+        request = GraphicalConsoleGetOneTimeURLRequest(
+            console_type=console_type,
+            access_mode=access_mode,
+            validity_period_seconds=validity_period_seconds,
+        )
+        return self._http.post(
+            action.target, GraphicalConsoleGetOneTimeURLResponse, body=request
+        )
+
+    def graphical_console_set_one_time_password(
+        self,
+        console_type: Optional[str] = None,
+        access_mode: Optional[str] = None,
+        password: Optional[str] = None,
+        validity_period_seconds: Optional[int] = None,
+        system_id: Optional[str] = None,
+    ) -> GraphicalConsoleSetOneTimePasswordResponse:
+        """Set or generate a temporary password for an advertised console."""
+        system, action = self._graphical_console_action(
+            system_id, "graphical_console_set_one_time_password",
+            "#ComputerSystem.GraphicalConsoleSetOneTimePassword",
+        )
+        self._validate_graphical_console_parameters(
+            system, action, console_type, access_mode,
+            validity_period_seconds, "one-time password",
+        )
+        request = GraphicalConsoleSetOneTimePasswordRequest(
+            console_type=console_type,
+            access_mode=access_mode,
+            password=password,
+            validity_period_seconds=validity_period_seconds,
+        )
+        return self._http.post(
+            action.target,
+            GraphicalConsoleSetOneTimePasswordResponse,
+            body=request,
+        )
+
+    def graphical_console_set_password(
+        self,
+        console_type: str,
+        password: str,
+        system_id: Optional[str] = None,
+    ):
+        """Set the persistent password for an advertised system console."""
+        from ..models.common import RedfishResponse
+
+        system, action = self._graphical_console_action(
+            system_id, "graphical_console_set_password",
+            "#ComputerSystem.GraphicalConsoleSetPassword",
+        )
+        self._validate_graphical_console_parameters(
+            system, action, console_type, None, None, "persistent password"
+        )
+        request = GraphicalConsoleSetPasswordRequest(
+            console_type=console_type, password=password
+        )
+        return self._http.post(action.target, RedfishResponse, body=request)
+
+    def _graphical_console_action(
+        self, system_id: Optional[str], attribute: str, action_name: str
+    ) -> tuple[System, GraphicalConsoleAction]:
+        system = self.get(system_id)
+        if system.graphical_console is None:
+            raise RedfishValidationError(
+                "System does not advertise GraphicalConsole capabilities"
+            )
+        action = getattr(system.actions, attribute, None) if system.actions else None
+        if action is None or not action.target:
+            raise RedfishValidationError(
+                f"System does not expose {action_name} action"
+            )
+        return system, action
+
+    def _validate_graphical_console_parameters(
+        self,
+        system: System,
+        action: GraphicalConsoleAction,
+        console_type: Optional[str],
+        access_mode: Optional[str],
+        validity_period_seconds: Optional[int],
+        operation: str,
+    ) -> None:
+        supplied = (console_type, access_mode, validity_period_seconds)
+        info = (
+            self._http.get(action.action_info, ActionInfo)
+            if action.action_info and any(value is not None for value in supplied)
+            else None
+        )
+        console_values = action.console_type_allowable_values
+        if console_values is None and info:
+            console_values = info.allowable_values("ConsoleType")
+        access_values = action.access_mode_allowable_values
+        if access_values is None and info:
+            access_values = info.allowable_values("AccessMode")
+        validity_values = action.validity_period_seconds_allowable_values
+        if validity_values is None and info:
+            validity_values = info.allowable_values("ValidityPeriodSeconds")
+        _require_allowable("ConsoleType", console_type, console_values)
+        _require_allowable("AccessMode", access_mode, access_values)
+        _require_allowable(
+            "ValidityPeriodSeconds", validity_period_seconds, validity_values
+        )
+        if validity_period_seconds is not None and validity_period_seconds < 1:
+            raise RedfishValidationError(
+                "ValidityPeriodSeconds must be greater than or equal to 1"
+            )
+        validity_parameter = (
+            info.parameter("ValidityPeriodSeconds") if info else None
+        )
+        if validity_period_seconds is not None and validity_parameter:
+            minimum = validity_parameter.minimum_value
+            maximum = validity_parameter.maximum_value
+            if minimum is not None and validity_period_seconds < minimum:
+                raise RedfishValidationError(
+                    f"ValidityPeriodSeconds must be at least {minimum:g}"
+                )
+            if maximum is not None and validity_period_seconds > maximum:
+                raise RedfishValidationError(
+                    f"ValidityPeriodSeconds must be at most {maximum:g}"
+                )
+        if console_type is None:
+            return
+        protocol = _console_protocol(system, console_type)
+        if protocol is None:
+            raise RedfishValidationError(
+                f"ConsoleType '{console_type}' is not advertised by GraphicalConsole"
+            )
+        if protocol.service_enabled is False:
+            raise RedfishValidationError(
+                f"ConsoleType '{console_type}' is disabled"
+            )
+        modes = protocol.supported_access_modes or ["ReadWrite"]
+        if access_mode is not None and access_mode not in modes:
+            raise RedfishValidationError(
+                f"AccessMode '{access_mode}' is not supported by {console_type}; "
+                f"advertised values: {modes}"
+            )
+        capability = {
+            "one-time URL": "supports_one_time_url",
+            "one-time password": "supports_one_time_password",
+            "persistent password": "supports_persistent_password",
+        }[operation]
+        if getattr(protocol, capability, None) is False:
+            raise RedfishValidationError(
+                f"ConsoleType '{console_type}' does not support {operation}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers — Actions block parsing
 # ---------------------------------------------------------------------------
+
+
+def _require_allowable(name, value, allowable) -> None:
+    if value is not None and allowable is not None and value not in allowable:
+        raise RedfishValidationError(
+            f"{name} {value!r} is not in advertised allowable values {allowable}"
+        )
+
+
+def _console_protocol(system: System, console_type: str):
+    console = system.graphical_console
+    if console is None:
+        return None
+    attribute = {
+        "VNC": "vnc",
+        "RDP": "rdp",
+        "HTML5": "html5",
+        "KVMIP": "kvmip",
+    }.get(console_type)
+    return getattr(console, attribute, None) if attribute else None
 
 # Enginetech — System.Oem.FruInfo parser
 # ---------------------------------------------------------------------------

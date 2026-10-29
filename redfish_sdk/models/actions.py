@@ -42,13 +42,19 @@ class ActionInfoParameter(BaseModel):
     data_type: Optional[str] = Field(None, alias="DataType")
     object_data_type: Optional[str] = Field(None, alias="ObjectDataType")
     allowable_values: Optional[List[Any]] = Field(None, alias="AllowableValues")
+    minimum_value: Optional[float] = Field(None, alias="MinimumValue")
+    maximum_value: Optional[float] = Field(None, alias="MaximumValue")
 
 
 class ActionInfo(Entity):
     parameters: Optional[List[ActionInfoParameter]] = Field(None, alias="Parameters")
 
     def allowable_values(self, parameter_name: str) -> Optional[List[Any]]:
+        parameter = self.parameter(parameter_name)
+        return parameter.allowable_values if parameter else None
+
+    def parameter(self, parameter_name: str) -> Optional[ActionInfoParameter]:
         for parameter in self.parameters or []:
             if parameter.name == parameter_name:
-                return parameter.allowable_values
+                return parameter
         return None

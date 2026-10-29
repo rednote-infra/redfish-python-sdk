@@ -93,6 +93,63 @@ class BootOptionPatchSetting(BaseModel):
 # Actions
 # ---------------------------------------------------------------------------
 
+class GraphicalConsoleAction(BaseModel):
+    """Descriptor for a standard ComputerSystem graphical-console action."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    target: Optional[str] = Field(None, alias="target")
+    action_info: Optional[str] = Field(None, alias="@Redfish.ActionInfo")
+    console_type_allowable_values: Optional[List[str]] = Field(
+        None, alias="ConsoleType@Redfish.AllowableValues"
+    )
+    access_mode_allowable_values: Optional[List[str]] = Field(
+        None, alias="AccessMode@Redfish.AllowableValues"
+    )
+    validity_period_seconds_allowable_values: Optional[List[int]] = Field(
+        None, alias="ValidityPeriodSeconds@Redfish.AllowableValues"
+    )
+
+
+class GraphicalConsoleGetOneTimeURLRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    console_type: Optional[str] = Field(None, alias="ConsoleType")
+    access_mode: Optional[str] = Field(None, alias="AccessMode")
+    validity_period_seconds: Optional[int] = Field(
+        None, alias="ValidityPeriodSeconds", ge=1
+    )
+
+
+class GraphicalConsoleSetOneTimePasswordRequest(
+    GraphicalConsoleGetOneTimeURLRequest
+):
+    password: Optional[str] = Field(None, alias="Password")
+
+
+class GraphicalConsoleSetPasswordRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    console_type: str = Field(alias="ConsoleType")
+    password: str = Field(alias="Password")
+
+
+class GraphicalConsoleGetOneTimeURLResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    console_type: str = Field(alias="ConsoleType")
+    access_mode: str = Field(alias="AccessMode")
+    console_url: str = Field(alias="ConsoleURL")
+    valid_until: Optional[str] = Field(None, alias="ValidUntil")
+
+
+class GraphicalConsoleSetOneTimePasswordResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    console_type: str = Field(alias="ConsoleType")
+    access_mode: str = Field(alias="AccessMode")
+    password: str = Field(alias="Password")
+    valid_until: Optional[str] = Field(None, alias="ValidUntil")
+
 class ResetAction(BaseModel):
     """Describes the Reset action target and allowable values."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
@@ -110,6 +167,15 @@ class SystemActions(BaseModel):
 
     computer_system_reset: Optional[ResetAction] = Field(
         None, alias="#ComputerSystem.Reset"
+    )
+    graphical_console_get_one_time_url: Optional[GraphicalConsoleAction] = Field(
+        None, alias="#ComputerSystem.GraphicalConsoleGetOneTimeURL"
+    )
+    graphical_console_set_one_time_password: Optional[GraphicalConsoleAction] = Field(
+        None, alias="#ComputerSystem.GraphicalConsoleSetOneTimePassword"
+    )
+    graphical_console_set_password: Optional[GraphicalConsoleAction] = Field(
+        None, alias="#ComputerSystem.GraphicalConsoleSetPassword"
     )
     reset_type_allowable_values: Optional[List[str]] = Field(
         None, alias="ResetType@Redfish.AllowableValues"
@@ -129,6 +195,57 @@ class SystemLinks(BaseModel):
     managed_by: Optional[List[Link]] = Field(None, alias="ManagedBy")
 
 
+class GraphicalConsoleProtocol(BaseModel):
+    """Capabilities shared by RDP, VNC, HTML5, and KVMIP consoles."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    allows_shared_access: Optional[bool] = Field(None, alias="AllowsSharedAccess")
+    authentication_method: Optional[str] = Field(None, alias="AuthenticationMethod")
+    host_name: Optional[str] = Field(None, alias="HostName")
+    port: Optional[int] = Field(None, alias="Port", ge=0)
+    service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
+    supported_access_modes: Optional[List[str]] = Field(
+        None, alias="SupportedAccessModes"
+    )
+
+
+class VNCConsole(GraphicalConsoleProtocol):
+    supported_encodings: Optional[List[str]] = Field(
+        None, alias="SupportedEncodings"
+    )
+    supports_one_time_password: Optional[bool] = Field(
+        None, alias="SupportsOneTimePassword"
+    )
+    supports_persistent_password: Optional[bool] = Field(
+        None, alias="SupportsPersistentPassword"
+    )
+
+
+class HTML5Console(GraphicalConsoleProtocol):
+    console_uri: Optional[str] = Field(None, alias="ConsoleURI")
+    supports_one_time_url: Optional[bool] = Field(
+        None, alias="SupportsOneTimeURL"
+    )
+
+
+class HostGraphicalConsole(BaseModel):
+    """ComputerSystem graphical-console capabilities, including legacy fields."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    connect_types_supported: Optional[List[str]] = Field(
+        None, alias="ConnectTypesSupported"
+    )
+    max_concurrent_sessions: Optional[int] = Field(
+        None, alias="MaxConcurrentSessions"
+    )
+    port: Optional[int] = Field(None, alias="Port", ge=0)
+    service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
+    vnc: Optional[VNCConsole] = Field(None, alias="VNC")
+    rdp: Optional[GraphicalConsoleProtocol] = Field(None, alias="RDP")
+    html5: Optional[HTML5Console] = Field(None, alias="HTML5")
+    kvmip: Optional[GraphicalConsoleProtocol] = Field(None, alias="KVMIP")
+
+
 # ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------
@@ -144,6 +261,9 @@ class System(Entity):
     bios_version: Optional[str] = Field(None, alias="BiosVersion", validate="type=str")
     bios: Optional[Link] = Field(None, alias="Bios")
     host_name: Optional[str] = Field(None, alias="HostName")
+    graphical_console: Optional[HostGraphicalConsole] = Field(
+        None, alias="GraphicalConsole"
+    )
     indicator_led: Optional[str] = Field(None, alias="IndicatorLED")
     last_reset_time: Optional[str] = Field(None, alias="LastResetTime")
     part_number: Optional[str] = Field(None, alias="PartNumber")

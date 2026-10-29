@@ -1260,6 +1260,43 @@ class RedfishClient:
         """
         return self._systems.reset(reset_type, system_id, skip_power_state_check)
 
+    def graphical_console_get_one_time_url(
+        self,
+        console_type: Optional[str] = None,
+        access_mode: Optional[str] = None,
+        validity_period_seconds: Optional[int] = None,
+        system_id: Optional[str] = None,
+    ):
+        """Request a standard ComputerSystem graphical-console one-time URL."""
+        return self._systems.graphical_console_get_one_time_url(
+            console_type, access_mode, validity_period_seconds, system_id
+        )
+
+    def graphical_console_set_one_time_password(
+        self,
+        console_type: Optional[str] = None,
+        access_mode: Optional[str] = None,
+        password: Optional[str] = None,
+        validity_period_seconds: Optional[int] = None,
+        system_id: Optional[str] = None,
+    ):
+        """Set or generate a standard graphical-console one-time password."""
+        return self._systems.graphical_console_set_one_time_password(
+            console_type, access_mode, password,
+            validity_period_seconds, system_id,
+        )
+
+    def graphical_console_set_password(
+        self,
+        console_type: str,
+        password: str,
+        system_id: Optional[str] = None,
+    ):
+        """Set a standard ComputerSystem graphical-console password."""
+        return self._systems.graphical_console_set_password(
+            console_type, password, system_id
+        )
+
     # ==================================================================
     # Component query methods — Chassis side
     # ==================================================================
