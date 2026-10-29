@@ -10,9 +10,35 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import Entity, Link, Status  # noqa: F401  (Status kept for downstream imports)
+
+
+class EventRecord(BaseModel):
+    """A record in a Redfish event payload."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    member_id: Optional[str] = Field(None, alias="MemberId")
+    event_id: Optional[str] = Field(None, alias="EventId")
+    event_timestamp: Optional[str] = Field(None, alias="EventTimestamp")
+    event_type: Optional[str] = Field(None, alias="EventType")
+    message: Optional[str] = Field(None, alias="Message")
+    message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
+    message_id: Optional[str] = Field(None, alias="MessageId")
+    message_severity: Optional[str] = Field(None, alias="MessageSeverity")
+    severity: Optional[str] = Field(None, alias="Severity")
+    resolution: Optional[str] = Field(None, alias="Resolution")
+    vendor_code: Optional[str] = Field(None, alias="VendorCode")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+
+class Event(Entity):
+    """A Redfish event payload containing one or more event records."""
+
+    context: Optional[str] = Field(None, alias="Context")
+    events: List[EventRecord] = Field(default_factory=list, alias="Events")
 
 
 class EventService(Entity):

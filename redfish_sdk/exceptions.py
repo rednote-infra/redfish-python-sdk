@@ -91,6 +91,10 @@ class RedfishValidationError(RedfishException):
         super().__init__(400, message)
 
 
+class RegistryResolutionError(RedfishValidationError):
+    """Raised when a MessageId cannot be resolved through advertised registries."""
+
+
 class RedfishAsyncOperationError(RedfishException):
     """Raised when an asynchronous operation cannot be completed safely."""
 

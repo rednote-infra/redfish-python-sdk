@@ -81,7 +81,7 @@ from .models.memory import Memory
 from .models.oem import MainBoard
 from .models.power import Power, PowerSupply
 from .models.processor import Processor
-from .models.registry import Registry
+from .models.registry import Registry, ResolvedMessage
 from .models.resource_key import RedfishResource
 from .models.root import RootService
 from .models.session import Session, SessionService
@@ -2046,6 +2046,32 @@ class RedfishClient:
             Registry resource
         """
         return self._registries.get(registry_id)
+
+    def resolve_message(
+        self,
+        message_id: str,
+        message_args: Optional[List[object]] = None,
+        language: Optional[str] = None,
+    ) -> ResolvedMessage:
+        """Resolve and optionally format a Redfish ``MessageId``.
+
+        RegistryFile resources and their language-specific locations are
+        discovered from the service. References return the source registry's
+        ``MessageId``, as required for event subscription interoperability.
+
+        Args:
+            message_id: ``Prefix.Major.Minor.MessageKey`` identifier.
+            message_args: Optional values for ``%1``, ``%2``, and subsequent
+                placeholders in the registry message.
+            language: Preferred RFC 5646 language tag. The resolver falls back
+                to the primary language, English, then the first advertised
+                location.
+        """
+        return self._registries.resolve(message_id, message_args, language)
+
+    def clear_registry_cache(self) -> None:
+        """Clear cached message-registry documents."""
+        self._registries.clear_cache()
 
     # ==================================================================
     # Component query methods — Tasks

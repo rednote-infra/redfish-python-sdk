@@ -36,10 +36,12 @@ from .exceptions import (
     RedfishNotFoundError,
     RedfishTimeoutError,
     RedfishValidationError,
+    RegistryResolutionError,
 )
+from .models.common import Condition
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
 from .models.drive import Drive
-from .models.event import EventService, Subscription
+from .models.event import Event, EventRecord, EventService, Subscription
 from .models.fabric import (
     CXLLogicalDevice,
     Port,
@@ -62,6 +64,7 @@ from .models.managers import (
     VirtualMedia,
     VncService,
 )
+from .models.registry import MessageRegistry, RegistryMessage, ResolvedMessage
 from .models.resource_key import RedfishResource
 from .models.system_resources import (
     MemoryChunks,
@@ -95,6 +98,7 @@ __all__ = [
     "RedfishConnectionError",
     "RedfishTimeoutError",
     "RedfishValidationError",
+    "RegistryResolutionError",
     "LogCollectFailedError",
     "RedfishAsyncOperationError",
     "TaskRecoveryPolicy",
@@ -102,12 +106,15 @@ __all__ = [
     # Models commonly used at API boundary.
     "BootOption",
     "CompositionService",
+    "Condition",
     "ResourceBlock",
     "ResourceZone",
     "DnsService",
     "Drive",
     "FirmwareUpdateResponse",
     "EventService",
+    "Event",
+    "EventRecord",
     "Port",
     "PortMetrics",
     "CXLLogicalDevice",
@@ -118,6 +125,9 @@ __all__ = [
     "LldpService",
     "Log",
     "LogEntry",
+    "MessageRegistry",
+    "RegistryMessage",
+    "ResolvedMessage",
     "NtpService",
     "SecurityService",
     "SnmpService",

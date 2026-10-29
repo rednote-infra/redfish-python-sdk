@@ -3,7 +3,7 @@ Common base models for Redfish resources.
 """
 from __future__ import annotations
 
-from typing import Generic, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,8 +15,25 @@ class ExtendedInfo(BaseModel):
     message_id: Optional[str] = Field(None, alias="MessageId")
     message: Optional[str] = Field(None, alias="Message")
     message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
+    message_severity: Optional[str] = Field(None, alias="MessageSeverity")
     severity: Optional[str] = Field(None, alias="Severity")
     resolution: Optional[str] = Field(None, alias="Resolution")
+    vendor_code: Optional[str] = Field(None, alias="VendorCode")
+
+
+class Condition(BaseModel):
+    """A Redfish resource condition, including optional 2026.2 metadata."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    message_id: Optional[str] = Field(None, alias="MessageId")
+    message: Optional[str] = Field(None, alias="Message")
+    message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
+    message_severity: Optional[str] = Field(None, alias="MessageSeverity")
+    severity: Optional[str] = Field(None, alias="Severity")
+    resolution: Optional[str] = Field(None, alias="Resolution")
+    vendor_code: Optional[str] = Field(None, alias="VendorCode")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
 
 class Link(BaseModel):

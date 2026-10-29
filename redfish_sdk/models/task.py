@@ -35,8 +35,10 @@ class Message(Entity):
     message: Optional[str] = Field(None, alias="Message")
     message_args: Optional[List[str]] = Field(None, alias="MessageArgs")
     message_id: Optional[str] = Field(None, alias="MessageId")
+    message_severity: Optional[str] = Field(None, alias="MessageSeverity")
     resolution: Optional[str] = Field(None, alias="Resolution")
     severity: Optional[str] = Field(None, alias="Severity")
+    vendor_code: Optional[str] = Field(None, alias="VendorCode")
 
 
 class TaskPayload(BaseModel):

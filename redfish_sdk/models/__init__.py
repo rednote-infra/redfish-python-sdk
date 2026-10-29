@@ -1,10 +1,10 @@
 from .account import Account, AccountService, Role
 from .chassis import Chassis, Drive, Fan, NetworkAdapter, PCIeDevice, Power, PowerSupply, Temperature, Thermal
-from .common import Collection, Entity, Link, RedfishError, RedfishResponse, Status
+from .common import Collection, Condition, Entity, Link, RedfishError, RedfishResponse, Status
 from .composition import CompositionService, ResourceBlock, ResourceZone
 from .cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor, SensorExcerpt, ThermalSubsystem
 from .drive import Location  # noqa: F401
-from .event import EventService, Subscription
+from .event import Event, EventRecord, EventService, Subscription
 from .fabric import (
     ConfiguredNetworkLink,
     CXLLogicalDevice,
@@ -48,7 +48,7 @@ from .power import InputRange, PowerControl, Voltage  # noqa: F401
 
 # Additional component models (also available via individual modules)
 from .processor import ProcessorId  # noqa: F401
-from .registry import Registry
+from .registry import MessageRegistry, Registry, RegistryMessage, ResolvedMessage
 from .root import ProtocolFeaturesSupported, RootService
 from .session import Session, SessionService
 from .storage import CacheSummary, Identifier, StorageController  # noqa: F401
@@ -60,7 +60,7 @@ from .thermal import HistoricalInletTempEntry, InletHistoryTemperature, Redundan
 from .update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
 
 __all__ = [
-    "Link", "Entity", "Collection", "Status", "RedfishResponse", "RedfishError",
+    "Link", "Entity", "Collection", "Condition", "Status", "RedfishResponse", "RedfishError",
     "RootService", "ProtocolFeaturesSupported",
     "TelemetryService", "MetricDefinition", "MetricReportDefinition", "MetricReport", "Triggers",
     "System", "Processor", "Memory", "Storage", "Volume", "Bios", "Boot", "Gpu", "GpuOEM",
@@ -76,10 +76,10 @@ __all__ = [
     "SerialInterface",
     "AccountService", "Account", "Role",
     "SessionService", "Session",
-    "EventService", "Subscription",
+    "Event", "EventRecord", "EventService", "Subscription",
     "UpdateService", "FirmwareInventory", "ClientCertificate",
     "FirmwareUpdateResponse",
-    "Registry",
+    "Registry", "MessageRegistry", "RegistryMessage", "ResolvedMessage",
     "TaskService", "Task", "TaskRecoveryPolicy", "AsyncOperationResult",
     "SecureBoot", "NetworkInterface", "NetworkPort", "MemoryDomain", "MemoryChunks", "MemoryMetrics",
     "Oem", "Bmc", "MainBoard",

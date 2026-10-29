@@ -56,6 +56,7 @@ class LogEntry(Entity):
     sensor_number: Optional[int] = Field(None, alias="SensorNumber")
     sensor_type: Optional[str] = Field(None, alias="SensorType")
     severity: Optional[str] = Field(None, alias="Severity")
+    vendor_code: Optional[str] = Field(None, alias="VendorCode")
     status: Optional[Status] = Field(None, alias="Status")
     # DMTF v1.4 optional fields commonly needed for
     # compliance checks (e.g. bmc_autotest managers_004*_*_log_check.py).
