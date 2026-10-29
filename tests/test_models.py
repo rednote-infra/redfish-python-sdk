@@ -13,6 +13,7 @@ from redfish_sdk.models.managers import (
     HTTPSProtocol,
     NetworkProtocol,
     NTPProtocol,
+    SNMPCommunity,
     SNMPProtocol,
 )
 from redfish_sdk.models.oem import Oem
@@ -239,11 +240,35 @@ class TestNetworkProtocol:
         assert protocol.ntp.ntp_servers == ["ntp.example.com"]
         assert protocol.ntp.network_supplied_servers == ["192.0.2.1"]
         assert isinstance(protocol.snmp, SNMPProtocol)
-        assert protocol.snmp.community_strings == ["public"]
+        assert protocol.snmp.community_strings == [
+            SNMPCommunity(community_string="public")
+        ]
         assert protocol.snmp.enable_snmp_v2c is True
         assert protocol.snmp.trap_port == 162
         assert protocol.rfb.protocol_enabled is True
         assert protocol.rfb.port == 5900
+
+    def test_snmp_community_strings_with_null_entries(self):
+        """``CommunityStrings`` arrays may contain ``null`` entries."""
+        protocol = NetworkProtocol.model_validate(
+            {
+                "SNMP": {
+                    "CommunityStrings": [
+                        None,
+                        "public",
+                        {"Name": "private", "AccessMode": "ReadWrite",
+                         "CommunityString": "private"},
+                    ],
+                },
+            }
+        )
+
+        assert protocol.snmp.community_strings == [
+            None,
+            SNMPCommunity(community_string="public"),
+            SNMPCommunity(name="private", access_mode="ReadWrite",
+                          community_string="private"),
+        ]
 
 
 class TestRedfish2026ModelFields:

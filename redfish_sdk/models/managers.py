@@ -145,15 +145,68 @@ class NTPProtocol(ProtocolConfig):
     )
 
 
+class SNMPCommunity(BaseModel):
+    """SNMP community entry.
+
+    DMTF ``ManagerNetworkProtocol.v1_5_0+`` requires ``CommunityStrings``
+    to be an array of objects (see SNMPCommunity in the official schema);
+    plain-string arrays from some vendors are normalized by a validator.
+
+    """
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    name: Optional[str] = Field(None, alias="Name")
+    community_string: Optional[str] = Field(None, alias="CommunityString")
+    access_mode: Optional[str] = Field(None, alias="AccessMode")
+    restrict_community_to_ipv4_address_range: Optional[bool] = Field(
+        None, alias="RestrictCommunityToIPv4AddressRange"
+    )
+    ipv4_address_range_lower: Optional[str] = Field(
+        None, alias="IPv4AddressRangeLower"
+    )
+    ipv4_address_range_upper: Optional[str] = Field(
+        None, alias="IPv4AddressRangeUpper"
+    )
+
+
 class SNMPProtocol(ProtocolConfig):
     """DMTF-standard SNMP protocol configuration."""
     authentication_protocol: Optional[str] = Field(None, alias="AuthenticationProtocol")
-    community_strings: Optional[List[str]] = Field(None, alias="CommunityStrings")
+    community_strings: Optional[List[Optional[SNMPCommunity]]] = Field(
+        None, alias="CommunityStrings"
+    )
     enable_snmp_v1: Optional[bool] = Field(None, alias="EnableSNMPv1")
     enable_snmp_v2c: Optional[bool] = Field(None, alias="EnableSNMPv2c")
     enable_snmp_v3: Optional[bool] = Field(None, alias="EnableSNMPv3")
     encryption_protocol: Optional[str] = Field(None, alias="EncryptionProtocol")
     trap_port: Optional[int] = Field(None, alias="TrapPort")
+
+    @field_validator("community_strings", mode="before")
+    @classmethod
+    def _normalize_community_strings(cls, value: Any) -> Any:
+        """Normalize vendor variations of ``CommunityStrings``.
+
+        Per DMTF ``ManagerNetworkProtocol.v1_5_0+``, each element shall be an
+        ``SNMPCommunity`` object, e.g.::
+
+            "CommunityStrings": [
+                {"Name": null, "AccessMode": "Limited",
+                 "CommunityString": "public"}
+            ]
+
+        Some vendors return a plain string array instead, and arrays may
+        contain ``null`` entries (Redfish allows patching an element to
+        ``null`` to remove it).  Normalize each string element into
+        ``{"CommunityString": <str>}`` so both forms parse into
+        ``SNMPCommunity`` models; dicts and ``null`` entries pass through
+        unchanged (``null`` maps to ``None`` via ``Optional[SNMPCommunity]``).
+        """
+        if isinstance(value, list):
+            return [
+                {"CommunityString": item} if isinstance(item, str) else item
+                for item in value
+            ]
+        return value
 
 
 class NetworkProtocol(Entity):
