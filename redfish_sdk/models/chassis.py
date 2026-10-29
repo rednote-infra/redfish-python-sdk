@@ -75,6 +75,7 @@ class Chassis(Entity):
     part_number: Optional[str] = Field(None, alias="PartNumber")
     power: Optional[Link] = Field(None, alias="Power")
     power_state: Optional[str] = Field(None, alias="PowerState")
+    production_date: Optional[str] = Field(None, alias="ProductionDate")
     sku: Optional[str] = Field(None, alias="SKU")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     status: Optional[Status] = Field(None, alias="Status")

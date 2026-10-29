@@ -38,6 +38,9 @@ class Processor(Entity):
     model: Optional[str] = Field(None, alias="Model", validate="required,type=str")
     operating_speed_mhz: Optional[int] = Field(None, alias="OperatingSpeedMHz")
     processor_architecture: Optional[str] = Field(None, alias="ProcessorArchitecture")
+    hardware_security_version: Optional[str] = Field(
+        None, alias="HardwareSecurityVersion"
+    )
     processor_id: Optional[ProcessorId] = Field(None, alias="ProcessorId")
     processor_type: Optional[str] = Field(None, alias="ProcessorType", validate="type=str")
     socket: Optional[Any] = Field(None, alias="Socket")

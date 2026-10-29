@@ -4,11 +4,17 @@ Tests data model creation, field mapping, and OEM vendor alias resolution.
 """
 import pytest
 
-from redfish_sdk.models.account import Account
-from redfish_sdk.models.chassis import PCIeDevice, Power
+from redfish_sdk.models.account import Account, AccountService, ExternalAccountProvider
+from redfish_sdk.models.chassis import Chassis, PCIeDevice, Power
 from redfish_sdk.models.common import Collection, Entity, Link
 from redfish_sdk.models.drive import Drive
-from redfish_sdk.models.managers import HTTPSProtocol, NetworkProtocol, NTPProtocol, SNMPProtocol
+from redfish_sdk.models.managers import (
+    HostInterface,
+    HTTPSProtocol,
+    NetworkProtocol,
+    NTPProtocol,
+    SNMPProtocol,
+)
 from redfish_sdk.models.oem import Oem
 from redfish_sdk.models.registry import Registry
 from redfish_sdk.models.session import Session
@@ -238,6 +244,107 @@ class TestNetworkProtocol:
         assert protocol.snmp.trap_port == 162
         assert protocol.rfb.protocol_enabled is True
         assert protocol.rfb.port == 5900
+
+
+class TestRedfish2026ModelFields:
+    def test_ntp_synchronization_diagnostics(self):
+        protocol = NetworkProtocol.model_validate(
+            {
+                "NTP": {
+                    "NTPState": "NotSynchronized",
+                    "UnreachableServers": ["ntp1.example.com"],
+                    "NotSynchronizedServers": ["ntp2.example.com"],
+                }
+            }
+        )
+
+        assert protocol.ntp.ntp_state == "NotSynchronized"
+        assert protocol.ntp.unreachable_servers == ["ntp1.example.com"]
+        assert protocol.ntp.not_synchronized_servers == ["ntp2.example.com"]
+
+    def test_inventory_production_dates_and_processor_security_version(self):
+        chassis = Chassis.model_validate({"ProductionDate": "2026-09-01T12:00:00Z"})
+        system = System.model_validate({"ProductionDate": "2026-09-02T12:00:00Z"})
+        processor = Processor.model_validate({"HardwareSecurityVersion": "3.2"})
+
+        assert chassis.production_date == "2026-09-01T12:00:00Z"
+        assert system.production_date == "2026-09-02T12:00:00Z"
+        assert processor.hardware_security_version == "3.2"
+
+    def test_session_authentication_source(self):
+        session = Session.model_validate(
+            {
+                "UserName": "operator",
+                "UserAuthenticationSource": "https://directory.example.com",
+            }
+        )
+
+        assert session.user_authentication_source == "https://directory.example.com"
+
+    def test_host_interface_credential_expiration(self):
+        interface = HostInterface.model_validate(
+            {
+                "CredentialBootstrapping": {
+                    "Enabled": True,
+                    "EnableAfterReset": False,
+                    "RoleId": "Operator",
+                    "ExpirationWindowEnabled": True,
+                    "ExpirationWindowMinutes": 30,
+                    "OemWindowPolicy": "Preserved",
+                }
+            }
+        )
+
+        bootstrapping = interface.credential_bootstrapping
+        assert bootstrapping.enabled is True
+        assert bootstrapping.enable_after_reset is False
+        assert bootstrapping.role_id == "Operator"
+        assert bootstrapping.expiration_window_enabled is True
+        assert bootstrapping.expiration_window_minutes == 30
+        assert bootstrapping.model_extra["OemWindowPolicy"] == "Preserved"
+
+    def test_account_service_authentication_configured_state(self):
+        service = AccountService.model_validate(
+            {
+                "ActiveDirectory": {
+                    "PasswordSet": True,
+                    "Authentication": {
+                        "AuthenticationType": "UsernameAndPassword",
+                        "Password": None,
+                        "PasswordSet": True,
+                        "TokenSet": False,
+                        "KerberosKeytabSet": True,
+                        "VendorState": "Preserved",
+                    },
+                }
+            }
+        )
+        standalone = ExternalAccountProvider.model_validate(
+            {
+                "Authentication": {
+                    "PasswordSet": False,
+                    "TokenSet": True,
+                    "KerberosKeytabSet": False,
+                }
+            }
+        )
+
+        assert service.active_directory.password_set is True
+        authentication = service.active_directory.authentication
+        assert authentication.password_set is True
+        assert authentication.token_set is False
+        assert authentication.kerberos_keytab_set is True
+        assert authentication.model_extra["Password"] is None
+        assert authentication.model_extra["AuthenticationType"] == "UsernameAndPassword"
+        assert authentication.model_extra["VendorState"] == "Preserved"
+        assert standalone.authentication.token_set is True
+
+    @pytest.mark.parametrize(
+        "model",
+        [Chassis, System, Processor, Session, HostInterface, AccountService],
+    )
+    def test_new_fields_remain_optional(self, model):
+        assert model.model_validate({}) is not None
 
 
 class TestFanModel:

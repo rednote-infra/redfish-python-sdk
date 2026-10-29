@@ -148,6 +148,7 @@ class System(Entity):
     last_reset_time: Optional[str] = Field(None, alias="LastResetTime")
     part_number: Optional[str] = Field(None, alias="PartNumber")
     power_state: Optional[str] = Field(None, alias="PowerState", validate="required,oneof=On Off PoweringOn PoweringOff")
+    production_date: Optional[str] = Field(None, alias="ProductionDate")
     sub_model: Optional[str] = Field(None, alias="SubModel")
     system_type: Optional[str] = Field(None, alias="SystemType", validate="type=str")
     manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="required,type=str")

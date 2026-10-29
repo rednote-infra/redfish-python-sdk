@@ -136,6 +136,13 @@ class NTPProtocol(ProtocolConfig):
     network_supplied_servers: Optional[List[str]] = Field(
         None, alias="NetworkSuppliedServers"
     )
+    ntp_state: Optional[str] = Field(None, alias="NTPState")
+    unreachable_servers: Optional[List[str]] = Field(
+        None, alias="UnreachableServers"
+    )
+    not_synchronized_servers: Optional[List[str]] = Field(
+        None, alias="NotSynchronizedServers"
+    )
 
 
 class SNMPProtocol(ProtocolConfig):
@@ -223,6 +230,22 @@ class EthernetInterface(Entity):
 # HostInterface
 # ---------------------------------------------------------------------------
 
+class CredentialBootstrapping(BaseModel):
+    """Credential bootstrap settings advertised by a host interface."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    enabled: Optional[bool] = Field(None, alias="Enabled")
+    enable_after_reset: Optional[bool] = Field(None, alias="EnableAfterReset")
+    role_id: Optional[str] = Field(None, alias="RoleId")
+    expiration_window_enabled: Optional[bool] = Field(
+        None, alias="ExpirationWindowEnabled"
+    )
+    expiration_window_minutes: Optional[int] = Field(
+        None, alias="ExpirationWindowMinutes"
+    )
+
+
 class HostInterface(Entity):
     """
     Represents a host interface for BMC-to-host communication.
@@ -230,6 +253,9 @@ class HostInterface(Entity):
     """
     host_interface_type: Optional[str] = Field(None, alias="HostInterfaceType")
     interface_enabled: Optional[bool] = Field(None, alias="InterfaceEnabled")
+    credential_bootstrapping: Optional[CredentialBootstrapping] = Field(
+        None, alias="CredentialBootstrapping"
+    )
     network_protocol: Optional[Link] = Field(None, alias="NetworkProtocol")
     status: Optional[Status] = Field(None, alias="Status")
 

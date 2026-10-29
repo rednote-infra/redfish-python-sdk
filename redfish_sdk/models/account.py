@@ -5,10 +5,33 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import Entity, Link, Status
 from .oem import Oem
+
+
+class Authentication(BaseModel):
+    """Configured-state flags for external-provider credentials.
+
+    Secret and vendor-specific properties remain untyped extras so this model
+    does not alter their accepted values or serialization behavior.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    password_set: Optional[bool] = Field(None, alias="PasswordSet")
+    token_set: Optional[bool] = Field(None, alias="TokenSet")
+    kerberos_keytab_set: Optional[bool] = Field(None, alias="KerberosKeytabSet")
+
+
+class ExternalAccountProvider(Entity):
+    """An embedded or standalone external account-provider configuration."""
+
+    authentication: Optional[Authentication] = Field(None, alias="Authentication")
+    # AccountService kept this provider-level indicator before the configured
+    # state fields were added to the nested Authentication object.
+    password_set: Optional[bool] = Field(None, alias="PasswordSet")
 
 
 class AccountService(Entity):
@@ -18,6 +41,15 @@ class AccountService(Entity):
     """
     accounts: Optional[Link] = Field(None, alias="Accounts")
     roles: Optional[Link] = Field(None, alias="Roles")
+    active_directory: Optional[ExternalAccountProvider] = Field(
+        None, alias="ActiveDirectory"
+    )
+    ldap: Optional[ExternalAccountProvider] = Field(None, alias="LDAP")
+    oauth2: Optional[ExternalAccountProvider] = Field(None, alias="OAuth2")
+    tacacsplus: Optional[ExternalAccountProvider] = Field(None, alias="TACACSplus")
+    additional_external_account_providers: Optional[Link] = Field(
+        None, alias="AdditionalExternalAccountProviders"
+    )
     auth_failure_logging_threshold: Optional[int] = Field(
         None, alias="AuthFailureLoggingThreshold"
     )

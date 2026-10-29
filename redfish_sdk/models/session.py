@@ -36,6 +36,9 @@ class Session(Entity):
     password: Optional[str] = Field(None, alias="Password")
     session_type: Optional[str] = Field(None, alias="SessionType")
     user_name: Optional[str] = Field(None, alias="UserName")
+    user_authentication_source: Optional[str] = Field(
+        None, alias="UserAuthenticationSource"
+    )
     oem: Optional[Oem] = Field(None, alias="Oem")
 
     # Populated by the SDK after session creation (from X-Auth-Token response header)
