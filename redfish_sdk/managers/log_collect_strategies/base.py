@@ -547,6 +547,9 @@ def _merge_task_context(source: Task, target: Task) -> Task:
 def _direct_task_artifact_uri(task: Task) -> Optional[str]:
     if task.additional_data_uri:
         return task.additional_data_uri
+    payload_uri = _payload_artifact_uri(task)
+    if payload_uri:
+        return payload_uri
     if (
         task.initial_content_location
         and not _is_task_tracking_uri(task.initial_content_location)
@@ -562,6 +565,23 @@ def _direct_task_artifact_uri(task: Task) -> Optional[str]:
         for value in message.message_args or []:
             if _looks_like_artifact_uri(value):
                 return value
+    return None
+
+
+def _payload_artifact_uri(task: Task) -> Optional[str]:
+    """Read an artifact URI advertised in ``Task.Payload.HttpHeaders``."""
+    if not task.payload or not task.payload.http_headers:
+        return None
+    for header in task.payload.http_headers:
+        name, separator, value = header.partition(":")
+        if not separator or name.strip().lower() not in {
+            "content-location",
+            "location",
+        }:
+            continue
+        uri = value.strip()
+        if _is_uri(uri) and not _is_task_tracking_uri(uri):
+            return uri
     return None
 
 

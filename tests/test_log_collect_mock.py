@@ -603,6 +603,35 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
         self.assertEqual(recorder.last["uri"], "/redfish/v1/download/42.tar.gz")
         client.close()
 
+    def test_from_completed_task_payload_location_header(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task = Task.model_validate({
+            "Id": "3",
+            "TaskState": "Completed",
+            "TaskStatus": "OK",
+            "Payload": {
+                "HttpHeaders": [
+                    "Location: /redfish/v1/Managers/Self/LogServices/"
+                    "BMCDebugLogs/attachment",
+                ],
+            },
+        })
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(
+            recorder.last["uri"],
+            "/redfish/v1/Managers/Self/LogServices/BMCDebugLogs/attachment",
+        )
+        client.close()
+
     def test_from_initial_response_body(self) -> None:
         client = _make_client()
         _force_vendor("generic")
