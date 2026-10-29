@@ -19,6 +19,85 @@ class SensorExcerpt(BaseModel):
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
 
+class FanSpeedExcerpt(SensorExcerpt):
+    """Speed reading embedded in a standalone Redfish Fan resource."""
+
+    speed_rpm: Optional[float] = Field(None, alias="SpeedRPM")
+
+
+class PartLocation(BaseModel):
+    """Service-facing physical location of a replaceable fan."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    location_ordinal_value: Optional[int] = Field(
+        None, alias="LocationOrdinalValue"
+    )
+    location_type: Optional[str] = Field(None, alias="LocationType")
+    orientation: Optional[str] = Field(None, alias="Orientation")
+    reference: Optional[str] = Field(None, alias="Reference")
+    service_label: Optional[str] = Field(None, alias="ServiceLabel")
+
+
+class FanLocation(BaseModel):
+    """Physical location block on a standalone Redfish Fan resource."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    part_location: Optional[PartLocation] = Field(None, alias="PartLocation")
+    part_location_context: Optional[str] = Field(
+        None, alias="PartLocationContext"
+    )
+    placement: Optional[Dict[str, Any]] = Field(None, alias="Placement")
+    postal_address: Optional[Dict[str, Any]] = Field(
+        None, alias="PostalAddress"
+    )
+
+
+class FanLinks(BaseModel):
+    """Resources related to a standalone Redfish Fan."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    cooling_chassis: Optional[List[Link]] = Field(
+        None, alias="CoolingChassis"
+    )
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+
+class Fan(Entity):
+    """Modern standalone Fan resource under ``ThermalSubsystem.Fans``."""
+
+    assembly: Optional[Link] = Field(None, alias="Assembly")
+    fan_diameter_mm: Optional[float] = Field(None, alias="FanDiameterMm")
+    hot_pluggable: Optional[bool] = Field(None, alias="HotPluggable")
+    links: Optional[FanLinks] = Field(None, alias="Links")
+    location: Optional[FanLocation] = Field(None, alias="Location")
+    location_indicator_active: Optional[bool] = Field(
+        None, alias="LocationIndicatorActive"
+    )
+    manufacturer: Optional[str] = Field(None, alias="Manufacturer")
+    model: Optional[str] = Field(None, alias="Model")
+    part_number: Optional[str] = Field(None, alias="PartNumber")
+    physical_context: Optional[str] = Field(None, alias="PhysicalContext")
+    power_watts: Optional[float] = Field(None, alias="PowerWatts")
+    rated_secondary_speed_rpm: Optional[float] = Field(
+        None, alias="RatedSecondarySpeedRPM"
+    )
+    rated_speed_rpm: Optional[float] = Field(None, alias="RatedSpeedRPM")
+    replaceable: Optional[bool] = Field(None, alias="Replaceable")
+    secondary_speed_percent: Optional[FanSpeedExcerpt] = Field(
+        None, alias="SecondarySpeedPercent"
+    )
+    serial_number: Optional[str] = Field(None, alias="SerialNumber")
+    spare_part_number: Optional[str] = Field(None, alias="SparePartNumber")
+    speed_percent: Optional[FanSpeedExcerpt] = Field(
+        None, alias="SpeedPercent"
+    )
+    status: Optional[Status] = Field(None, alias="Status")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+
 class ControlExcerpt(BaseModel):
     """A control reading copied into another Redfish resource."""
 

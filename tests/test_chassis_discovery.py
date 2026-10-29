@@ -5,8 +5,9 @@ from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishNotFoundError
 from redfish_sdk.models.chassis import Chassis, Thermal
 from redfish_sdk.models.common import Link
+from redfish_sdk.models.cooling import Fan as StandaloneFan
+from redfish_sdk.models.cooling import ThermalSubsystem
 from redfish_sdk.models.root import RootService
-from redfish_sdk.models.thermal import Fan
 
 
 def _client_with_self_chassis(monkeypatch):
@@ -17,6 +18,9 @@ def _client_with_self_chassis(monkeypatch):
     chassis = Chassis.model_construct(
         odata_id="/redfish/v1/Chassis/Self",
         thermal=Link.model_construct(odata_id="/redfish/v1/Chassis/Self/Thermal"),
+        thermal_subsystem=Link.model_construct(
+            odata_id="/redfish/v1/Chassis/Self/ThermalSubsystem"
+        ),
     )
     requests = []
 
@@ -36,10 +40,17 @@ def _client_with_self_chassis(monkeypatch):
             return chassis
         if path == "/redfish/v1/Chassis/Self/Thermal":
             return Thermal.model_construct(odata_id=path)
+        if path == "/redfish/v1/Chassis/Self/ThermalSubsystem":
+            return ThermalSubsystem.model_construct(
+                odata_id=path,
+                fans=Link.model_construct(
+                    odata_id=f"{path}/Fans"
+                ),
+            )
         if path == "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans/0":
-            return Fan.model_construct(
-                odata_id=path, name="Fan 1", reading=6000,
-                reading_units="RPM",
+            return StandaloneFan.model_construct(
+                odata_id=path,
+                name="Fan 1",
             )
         raise AssertionError(f"unexpected request: {path}")
 
@@ -77,7 +88,7 @@ def test_get_thermal_uses_the_discovered_chassis_link(monkeypatch):
     client.close()
 
 
-def test_get_fan_derives_its_path_from_the_discovered_chassis(monkeypatch):
+def test_get_fan_follows_advertised_links_from_discovered_chassis(monkeypatch):
     client, requests = _client_with_self_chassis(monkeypatch)
     fan_path = "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans/0"
 
@@ -94,12 +105,13 @@ def test_get_fan_derives_its_path_from_the_discovered_chassis(monkeypatch):
     fans = client.get_fan()
 
     assert len(fans) == 1
-    assert isinstance(fans[0], Fan)
+    assert isinstance(fans[0], StandaloneFan)
     assert fans[0].odata_id == fan_path
     assert requests == [
         "/redfish/v1/Chassis/1",
         "/redfish/v1/Chassis",
         "/redfish/v1/Chassis/Self",
+        "/redfish/v1/Chassis/Self/ThermalSubsystem",
         "/redfish/v1/Chassis/Self/ThermalSubsystem/Fans",
         fan_path,
     ]

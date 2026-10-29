@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ...models.drive import Drive
@@ -51,14 +51,20 @@ class BaseOemExtractor(ABC):
         """
         Return fan speed as a percentage (0-100).
 
-        Default: derived from ``Reading / MaxReadingRange`` — this is the
-        DMTF fallback used by vendors (Lenovo / Nettrix) whose BMC does
-        not publish an OEM ``SpeedRatio``.
+        Standalone Fan resources expose the standard percentage directly as
+        ``SpeedPercent.Reading``. Legacy embedded fans derive it from
+        ``Reading / MaxReadingRange``.
         """
-        if fan.reading is None or not fan.max_reading_range:
+        speed_percent = getattr(fan, "speed_percent", None)
+        if speed_percent is not None and speed_percent.reading is not None:
+            return float(speed_percent.reading)
+
+        reading = getattr(fan, "reading", None)
+        max_reading = getattr(fan, "max_reading_range", None)
+        if reading is None or not max_reading:
             return None
         try:
-            return round(fan.reading / fan.max_reading_range * 100, 1)
+            return round(reading / max_reading * 100, 1)
         except (TypeError, ZeroDivisionError):
             return None
 

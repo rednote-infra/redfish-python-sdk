@@ -11,6 +11,9 @@ from .cooling import (
     SensorExcerpt,
     ThermalSubsystem,
 )
+from .cooling import (
+    Fan as StandaloneFan,
+)
 from .drive import Location  # noqa: F401
 from .event import Event, EventRecord, EventService, Subscription
 from .fabric import (
@@ -101,7 +104,7 @@ __all__ = [
     "Log", "LogEntry",
     "Fru", "FruChassis", "FruProduct",
     "CompositionService", "ResourceBlock", "ResourceZone",
-    "Sensor", "SensorExcerpt", "ControlExcerpt", "EnvironmentMetrics", "CoolingUnit", "CoolantConnector", "ThermalSubsystem",
+    "Sensor", "SensorExcerpt", "ControlExcerpt", "EnvironmentMetrics", "CoolingUnit", "CoolantConnector", "ThermalSubsystem", "StandaloneFan",
     "PowerSubsystem", "PowerSupplyMetrics",
     # Additional component models
     "ProcessorId", "MemoryLocation", "StorageController", "CacheSummary", "Identifier",

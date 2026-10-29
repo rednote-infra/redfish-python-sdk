@@ -19,9 +19,9 @@ from redfish_sdk.managers.oem_extractors import (
     XFusionOemExtractor,
     ZteOemExtractor,
 )
+from redfish_sdk.models.cooling import Fan as StandaloneFan
 from redfish_sdk.models.drive import Drive
 from redfish_sdk.models.thermal import Fan
-
 
 # ----------------------------------------------------------------------
 # Helpers
@@ -80,6 +80,13 @@ class TestOemExtractorRegistry:
 
 
 class TestGenericExtractor:
+    def test_standalone_fan_ratio_from_speed_percent(self):
+        fan = StandaloneFan.model_validate({
+            "Id": "Fan1",
+            "SpeedPercent": {"Reading": 62.5, "SpeedRPM": 7500},
+        })
+        assert GenericOemExtractor().get_fan_speed_ratio(fan) == 62.5
+
     def test_fan_ratio_from_reading_and_max(self):
         fan = _fan(Reading=8000, MaxReadingRange=20000)
         assert GenericOemExtractor().get_fan_speed_ratio(fan) == 40.0

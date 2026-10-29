@@ -8,6 +8,7 @@ from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishValidationError
 from redfish_sdk.models.account import Account
 from redfish_sdk.models.common import Link
+from redfish_sdk.models.cooling import Fan as StandaloneFan
 from redfish_sdk.models.cooling import ThermalSubsystem
 from redfish_sdk.models.event import EventService, Subscription
 from redfish_sdk.models.managers import Manager
@@ -16,7 +17,7 @@ from redfish_sdk.models.session import Session, SessionService
 from redfish_sdk.models.storage import Storage, Volume
 from redfish_sdk.models.systems import Boot, BootOption, Gpu, Memory, Processor, System
 from redfish_sdk.models.task import Task, TaskService
-from redfish_sdk.models.thermal import Fan, Thermal
+from redfish_sdk.models.thermal import Thermal
 
 
 @pytest.mark.parametrize(
@@ -319,7 +320,9 @@ def test_fans_follow_thermal_subsystem_and_fans_links(monkeypatch):
     subsystem = ThermalSubsystem.model_construct(
         fans=Link.model_construct(odata_id="/custom/fan-inventory")
     )
-    fan = Fan.model_construct(id="fan-a", odata_id="/custom/fans/intake")
+    fan = StandaloneFan.model_construct(
+        id="fan-a", odata_id="/custom/fans/intake"
+    )
     requests = []
 
     def get(path, model):
@@ -330,6 +333,7 @@ def test_fans_follow_thermal_subsystem_and_fans_links(monkeypatch):
     def get_collection(path, model):
         requests.append(path)
         assert path == "/custom/fan-inventory"
+        assert model is StandaloneFan
         return [fan]
 
     monkeypatch.setattr(client, "get_chassis", lambda identifier=None: chassis)

@@ -1176,50 +1176,61 @@ class TestNewDelegateMethods:
         client.close()
 
     def test_get_fan_prefers_thermal_subsystem_path(self, monkeypatch):
-        """get_fan() should use ThermalSubsystem/Fans path first, returning Fan models."""
+        """get_fan() follows modern advertised links and returns standalone Fans."""
         from redfish_sdk.models.chassis import Chassis
-        from redfish_sdk.models.thermal import Fan
+        from redfish_sdk.models.common import Link
+        from redfish_sdk.models.cooling import Fan, ThermalSubsystem
 
         client = self._make_client()
         monkeypatch.setattr(
             client,
             "get_chassis",
-            lambda cid=None: Chassis.model_construct(odata_id="/redfish/v1/Chassis/1"),
+            lambda cid=None: Chassis.model_construct(
+                odata_id="/redfish/v1/Chassis/1",
+                thermal_subsystem=Link.model_construct(
+                    odata_id="/vendor/thermal-subsystem"
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            client._http_client,
+            "get",
+            lambda path, model: ThermalSubsystem.model_construct(
+                fans=Link.model_construct(odata_id="/vendor/fans")
+            ),
         )
 
         fan0_raw = {
             "@odata.id": "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/0",
             "Name": "Fan1",
-            "Reading": 8500,
-            "ReadingUnits": "RPM",
+            "SpeedPercent": {"Reading": 70, "SpeedRPM": 8500},
             "Status": {"State": "Enabled", "Health": "OK"},
         }
         fan1_raw = {
             "@odata.id": "/redfish/v1/Chassis/1/ThermalSubsystem/Fans/1",
             "Name": "Fan2",
-            "Reading": 9200,
-            "ReadingUnits": "RPM",
+            "SpeedPercent": {"Reading": 76, "SpeedRPM": 9200},
             "Status": {"State": "Enabled", "Health": "OK"},
         }
         monkeypatch.setattr(
             client,
             "_get_collection",
-            lambda path, model: [
-                Fan.model_validate(fan0_raw),
-                Fan.model_validate(fan1_raw),
-            ],
+            lambda path, model: (
+                [Fan.model_validate(fan0_raw), Fan.model_validate(fan1_raw)]
+                if path == "/vendor/fans" and model is Fan
+                else []
+            ),
         )
         result = client.get_fan()
         assert len(result) == 2
         assert all(isinstance(f, Fan) for f in result)
         assert result[0].name == "Fan1"
-        assert result[0].reading == 8500
+        assert result[0].speed_percent.speed_rpm == 8500
         assert result[1].name == "Fan2"
         client.close()
 
     def test_get_fan_fallback_to_thermal_path(self, monkeypatch):
         """get_fan() should fallback to Thermal resource, returning Fan models."""
-        from redfish_sdk.exceptions import RedfishNotFoundError
         from redfish_sdk.models.chassis import Chassis
         from redfish_sdk.models.thermal import Fan, Thermal
 
@@ -1235,7 +1246,9 @@ class TestNewDelegateMethods:
         monkeypatch.setattr(
             client,
             "_get_collection",
-            lambda path, model: (_ for _ in ()).throw(RedfishNotFoundError(path)),
+            lambda path, model: pytest.fail(
+                "A modern Fans URI must not be inferred without an advertised link"
+            ),
         )
         monkeypatch.setattr(client, "get_thermal", lambda cid=None: thermal)
 

@@ -52,7 +52,15 @@ from .models.account import Account, AccountService, Role
 from .models.chassis import Chassis
 from .models.common import Collection, Entity, Link, RedfishResponse
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
-from .models.cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor
+from .models.cooling import (
+    CoolantConnector,
+    CoolingUnit,
+    EnvironmentMetrics,
+    Sensor,
+)
+from .models.cooling import (
+    Fan as StandaloneFan,
+)
 from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.fabric import CXLLogicalDevice, Port, PortMetrics
@@ -2493,15 +2501,15 @@ class RedfishClient:
     # Component query methods — Extracted sub-resources
     # ------------------------------------------------------------------
 
-    def get_fan(self, chassis_id: Optional[str] = None) -> List[Fan]:
+    def get_fan(
+        self, chassis_id: Optional[str] = None
+    ) -> List[Union[StandaloneFan, Fan]]:
         """
         Get fan information with multi-path fallback.
 
         Fallback order:
         1. Follow the advertised ``Chassis.ThermalSubsystem`` and
-           ``ThermalSubsystem.Fans`` links. If an older BMC omits the first
-           link, retain the conventional ``ThermalSubsystem/Fans`` path as a
-           compatibility fallback.
+           ``ThermalSubsystem.Fans`` links and parse standalone Fan resources.
         2. ``/redfish/v1/Chassis/{id}/Thermal`` — legacy schema,
            extracts the ``Fans`` array from the Thermal resource.
 
@@ -2516,22 +2524,21 @@ class RedfishClient:
             from .models.cooling import ThermalSubsystem
 
             chassis = self.get_chassis(chassis_id)
-            fans_path = None
             if chassis.thermal_subsystem and chassis.thermal_subsystem.odata_id:
                 subsystem = self._http_client.get(
                     chassis.thermal_subsystem.odata_id, ThermalSubsystem
                 )
                 if subsystem.fans and subsystem.fans.odata_id:
-                    fans_path = subsystem.fans.odata_id
-            else:
-                # Compatibility fallback for older BMCs that omit the
-                # ThermalSubsystem link but implement the conventional path.
-                fans_path = f"{chassis.odata_id}/ThermalSubsystem/Fans"
-            if fans_path:
-                fans = self._get_collection(fans_path, Fan)
-                if fans:
-                    logger.debug("Fans found via %s (%d fans)", fans_path, len(fans))
-                    return fans
+                    fans = self._get_collection(
+                        subsystem.fans.odata_id, StandaloneFan
+                    )
+                    if fans:
+                        logger.debug(
+                            "Standalone Fans found via %s (%d fans)",
+                            subsystem.fans.odata_id,
+                            len(fans),
+                        )
+                        return fans
         except RedfishException as exc:
             logger.debug("Failed to get fans via ThermalSubsystem: %s", exc)
 

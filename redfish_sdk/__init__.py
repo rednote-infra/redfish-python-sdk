@@ -40,6 +40,7 @@ from .exceptions import (
 )
 from .models.common import Condition
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
+from .models.cooling import Fan as StandaloneFan
 from .models.drive import Drive
 from .models.event import Event, EventRecord, EventService, Subscription
 from .models.fabric import (
@@ -152,6 +153,7 @@ __all__ = [
     "ResourceZone",
     "DnsService",
     "Drive",
+    "StandaloneFan",
     "Policy",
     "PolicyCondition",
     "PolicyEventResponse",
