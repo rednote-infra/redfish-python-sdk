@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from .actions import ActionDescriptor, ActionMap
 from .common import Entity, Link, Status
@@ -561,6 +561,70 @@ class FirewallRules(Entity):
 # VirtualMedia (standard Redfish resource)
 # ---------------------------------------------------------------------------
 
+
+class VirtualMediaHTTPHeaders(RootModel[Dict[str, str]]):
+    """HTTP headers sent by the BMC when retrieving a remote media image."""
+
+    @field_validator("root")
+    @classmethod
+    def valid_header_names(cls, value: Dict[str, str]) -> Dict[str, str]:
+        for name in value:
+            if not name or ":" in name or any(character.isspace() for character in name):
+                raise ValueError(f"Invalid HTTP header name: {name!r}")
+        return value
+
+
+class VirtualMediaInsertMediaAction(ActionDescriptor):
+    transfer_method_allowable_values: Optional[List[str]] = Field(
+        None, alias="TransferMethod@Redfish.AllowableValues"
+    )
+    transfer_protocol_type_allowable_values: Optional[List[str]] = Field(
+        None, alias="TransferProtocolType@Redfish.AllowableValues"
+    )
+    inserted_allowable_values: Optional[List[bool]] = Field(
+        None, alias="Inserted@Redfish.AllowableValues"
+    )
+    write_protected_allowable_values: Optional[List[bool]] = Field(
+        None, alias="WriteProtected@Redfish.AllowableValues"
+    )
+
+
+class VirtualMediaActions(ActionMap):
+    insert_media: Optional[VirtualMediaInsertMediaAction] = Field(
+        None, alias="#VirtualMedia.InsertMedia"
+    )
+    eject_media: Optional[ActionDescriptor] = Field(
+        None, alias="#VirtualMedia.EjectMedia"
+    )
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+    @field_validator("insert_media", "eject_media", mode="before")
+    @classmethod
+    def valid_descriptor(cls, value: Any) -> Any:
+        return value if isinstance(value, (dict, ActionDescriptor)) else None
+
+
+class VirtualMediaInsertMediaRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    image: str = Field(alias="Image")
+    inserted: Optional[bool] = Field(None, alias="Inserted")
+    write_protected: Optional[bool] = Field(None, alias="WriteProtected")
+    username: Optional[str] = Field(None, alias="UserName", repr=False)
+    password: Optional[str] = Field(None, alias="Password", repr=False)
+    transfer_method: Optional[str] = Field(None, alias="TransferMethod")
+    transfer_protocol_type: Optional[str] = Field(
+        None, alias="TransferProtocolType"
+    )
+    http_headers: Optional[VirtualMediaHTTPHeaders] = Field(
+        None, alias="HTTPHeaders", repr=False
+    )
+
+
+class VirtualMediaEjectMediaRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class VirtualMedia(Entity):
     """
     Virtual media resource for a manager (BMC).
@@ -574,8 +638,22 @@ class VirtualMedia(Entity):
     image_name: Optional[str] = Field(None, alias="ImageName")
     connected_via: Optional[str] = Field(None, alias="ConnectedVia")
     inserted: Optional[bool] = Field(None, alias="Inserted")
+    write_protected: Optional[bool] = Field(None, alias="WriteProtected")
+    username: Optional[str] = Field(None, alias="UserName", repr=False)
+    password: Optional[str] = Field(None, alias="Password", repr=False)
+    transfer_method: Optional[str] = Field(None, alias="TransferMethod")
     transfer_protocol_type: Optional[str] = Field(None, alias="TransferProtocolType")
     verify_certificate: Optional[bool] = Field(None, alias="VerifyCertificate")
+    http_headers: Optional[VirtualMediaHTTPHeaders] = Field(
+        None, alias="HTTPHeaders", repr=False
+    )
+    eject_policy: Optional[str] = Field(None, alias="EjectPolicy")
+    eject_timeout: Optional[str] = Field(None, alias="EjectTimeout")
+    certificates: Optional[Link] = Field(None, alias="Certificates")
+    client_certificates: Optional[Link] = Field(None, alias="ClientCertificates")
+    status: Optional[Status] = Field(None, alias="Status")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+    actions: Optional[VirtualMediaActions] = Field(None, alias="Actions")
 
 
 # ---------------------------------------------------------------------------

@@ -45,8 +45,9 @@ T = TypeVar("T", bound=BaseModel)
 _SUCCESS_CODES = {200, 201, 202, 204, 302}
 _REDACTED = "<redacted>"
 _SENSITIVE_LOG_KEYS = {
-    "password", "consoleurl", "credential", "secret", "token",
-    "accesstoken", "authtoken", "xauthtoken",
+    "password", "username", "consoleurl", "credential", "secret", "token",
+    "accesstoken", "authtoken", "xauthtoken", "httpheaders",
+    "authorization", "proxyauthorization", "cookie", "setcookie",
 }
 
 
@@ -70,14 +71,25 @@ def _redact_for_log(value: Any) -> Any:
             parsed_json = None
         if isinstance(parsed_json, (dict, list)):
             return json.dumps(_redact_for_log(parsed_json))
-        if "?" in value and ("://" in value or value.startswith("/")):
+        if "://" in value or (value.startswith("/") and "?" in value):
             parts = urlsplit(value)
             query = urlencode([
                 (name, _REDACTED) for name, _ in parse_qsl(
                     parts.query, keep_blank_values=True
                 )
             ])
-            return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+            netloc = parts.netloc
+            if parts.username is not None or parts.password is not None:
+                host = parts.hostname or ""
+                if parts.port is not None:
+                    host = f"{host}:{parts.port}"
+                netloc = f"{_REDACTED}@{host}"
+            value = urlunsplit((parts.scheme, netloc, parts.path, query, ""))
+        return re.sub(
+            r"(?i)\b(Bearer|Basic)\s+[^\s,;\"']+",
+            rf"\1 {_REDACTED}",
+            value,
+        )
     return value
 
 

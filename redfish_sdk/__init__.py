@@ -62,6 +62,11 @@ from .models.managers import (
     SolSourceControlInfo,
     SyslogService,
     VirtualMedia,
+    VirtualMediaActions,
+    VirtualMediaEjectMediaRequest,
+    VirtualMediaHTTPHeaders,
+    VirtualMediaInsertMediaAction,
+    VirtualMediaInsertMediaRequest,
     VncService,
 )
 from .models.policy import (
@@ -186,5 +191,10 @@ __all__ = [
     "MemoryMetrics",
     "SyslogService",
     "VirtualMedia",
+    "VirtualMediaActions",
+    "VirtualMediaEjectMediaRequest",
+    "VirtualMediaHTTPHeaders",
+    "VirtualMediaInsertMediaAction",
+    "VirtualMediaInsertMediaRequest",
     "VncService",
 ]

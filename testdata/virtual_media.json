@@ -1,0 +1,101 @@
+{
+  "NewMedia": {
+    "@odata.id": "/redfish/v1/Managers/1/VirtualMedia/CD1",
+    "@odata.type": "#VirtualMedia.v1_7_0.VirtualMedia",
+    "Id": "CD1",
+    "Name": "Virtual CD",
+    "MediaTypes": [
+      "CD",
+      "DVD"
+    ],
+    "ConnectedVia": "URI",
+    "Image": null,
+    "ImageName": null,
+    "Inserted": false,
+    "WriteProtected": true,
+    "TransferMethod": "Stream",
+    "TransferProtocolType": "HTTPS",
+    "VerifyCertificate": true,
+    "HTTPHeaders": {},
+    "EjectPolicy": "OnPowerOff",
+    "EjectTimeout": "PT30M",
+    "Certificates": {
+      "@odata.id": "/redfish/v1/Managers/1/VirtualMedia/CD1/Certificates"
+    },
+    "ClientCertificates": {
+      "@odata.id": "/redfish/v1/Managers/1/VirtualMedia/CD1/ClientCertificates"
+    },
+    "Actions": {
+      "#VirtualMedia.InsertMedia": {
+        "target": "/custom/media/insert",
+        "TransferMethod@Redfish.AllowableValues": [
+          "Stream"
+        ],
+        "TransferProtocolType@Redfish.AllowableValues": [
+          "HTTP",
+          "HTTPS"
+        ]
+      },
+      "#VirtualMedia.EjectMedia": {
+        "target": "/custom/media/eject"
+      },
+      "Oem": {
+        "Example": {
+          "#Example.VirtualMediaAction": {
+            "target": "/custom/media/oem"
+          }
+        }
+      }
+    },
+    "VendorField": "preserved"
+  },
+  "LegacyMedia": {
+    "@odata.id": "/redfish/v1/Managers/1/VirtualMedia/Legacy",
+    "Id": "Legacy",
+    "Name": "Legacy Virtual Media",
+    "MediaTypes": [
+      "CD"
+    ],
+    "Image": "https://images.example/legacy.iso",
+    "Inserted": true,
+    "ConnectedVia": "URI",
+    "LegacyVendorField": true
+  },
+  "ActionInfo": {
+    "Parameters": [
+      {
+        "Name": "Image",
+        "Required": true,
+        "DataType": "String"
+      },
+      {
+        "Name": "TransferMethod",
+        "AllowableValues": [
+          "Stream"
+        ]
+      },
+      {
+        "Name": "TransferProtocolType",
+        "AllowableValues": [
+          "HTTP",
+          "HTTPS"
+        ]
+      },
+      {
+        "Name": "HTTPHeaders",
+        "DataType": "Object"
+      }
+    ]
+  },
+  "AsyncResponse": {
+    "@odata.id": "/redfish/v1/TaskService/Tasks/42",
+    "TaskMonitor": "/redfish/v1/TaskService/TaskMonitors/42",
+    "TaskState": "Running"
+  },
+  "SensitiveError": {
+    "error": {
+      "code": "Base.1.0.GeneralError",
+      "message": "Authorization Bearer response-token was rejected"
+    }
+  }
+}

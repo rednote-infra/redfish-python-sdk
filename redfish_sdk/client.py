@@ -1853,6 +1853,50 @@ class RedfishClient:
         """
         return self._managers.virtual_media(manager_id)
 
+    def get_virtual_media_resource(
+        self,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+    ) -> VirtualMedia:
+        """Get one advertised VirtualMedia resource without modifying it."""
+        return self._managers.virtual_media_resource(media_id, manager_id)
+
+    def insert_virtual_media(
+        self,
+        image: str,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+        *,
+        inserted: Optional[bool] = None,
+        write_protected: Optional[bool] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        transfer_method: Optional[str] = None,
+        transfer_protocol_type: Optional[str] = None,
+        http_headers: Optional[dict[str, str]] = None,
+    ) -> RedfishResponse:
+        """Insert remote media through the advertised standard action."""
+        return self._managers.insert_virtual_media(
+            image,
+            media_id,
+            manager_id,
+            inserted=inserted,
+            write_protected=write_protected,
+            username=username,
+            password=password,
+            transfer_method=transfer_method,
+            transfer_protocol_type=transfer_protocol_type,
+            http_headers=http_headers,
+        )
+
+    def eject_virtual_media(
+        self,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+    ) -> RedfishResponse:
+        """Eject media through the advertised standard action."""
+        return self._managers.eject_virtual_media(media_id, manager_id)
+
     def get_sol_source(self, manager_id: Optional[str] = None) -> SolSourceControlInfo:
         """
         Get SOL source control information for a BMC manager.

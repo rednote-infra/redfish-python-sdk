@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, List, Optional
+from urllib.parse import urlsplit
 
 from .. import models
 from ..exceptions import RedfishNotFoundError, RedfishValidationError
@@ -40,6 +41,8 @@ from ..models.managers import (
     SolSourceControlInfo,
     SyslogService,
     VirtualMedia,
+    VirtualMediaEjectMediaRequest,
+    VirtualMediaInsertMediaRequest,
     VncService,
 )
 from ..models.task import Task
@@ -764,6 +767,115 @@ class ManagersManager:
             vm_odata_id = f"{manager.odata_id}/VirtualMedia"
 
         return self._client._get_collection(vm_odata_id, VirtualMedia)
+
+    def virtual_media_resource(
+        self,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+    ) -> VirtualMedia:
+        """Return one advertised VirtualMedia resource without changing it."""
+        return select_member(self.virtual_media(manager_id), media_id)
+
+    def insert_virtual_media(
+        self,
+        image: str,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+        *,
+        inserted: Optional[bool] = None,
+        write_protected: Optional[bool] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        transfer_method: Optional[str] = None,
+        transfer_protocol_type: Optional[str] = None,
+        http_headers: Optional[dict[str, str]] = None,
+    ) -> RedfishResponse:
+        """Invoke the advertised standard ``InsertMedia`` action."""
+        media = self.virtual_media_resource(media_id, manager_id)
+        action = media.actions and media.actions.insert_media
+        if not action or not action.target:
+            raise RedfishValidationError(
+                f"VirtualMedia {media.id!r} does not advertise "
+                "#VirtualMedia.InsertMedia with an action target"
+            )
+
+        supplied = {
+            "Inserted": inserted,
+            "WriteProtected": write_protected,
+            "TransferMethod": transfer_method,
+            "TransferProtocolType": transfer_protocol_type,
+            "HTTPHeaders": http_headers,
+        }
+        if http_headers is not None:
+            header_protocol = (
+                transfer_protocol_type or urlsplit(image).scheme
+            ).upper()
+            if header_protocol and header_protocol not in {"HTTP", "HTTPS"}:
+                raise RedfishValidationError(
+                    "HTTPHeaders can only be used with HTTP or HTTPS media"
+                )
+        info = (
+            self._http.get(action.action_info, ActionInfo)
+            if action.action_info
+            and any(value is not None for value in supplied.values())
+            else None
+        )
+        inline_values = {
+            "Inserted": action.inserted_allowable_values,
+            "WriteProtected": action.write_protected_allowable_values,
+            "TransferMethod": action.transfer_method_allowable_values,
+            "TransferProtocolType": (
+                action.transfer_protocol_type_allowable_values
+            ),
+        }
+        for name, value in supplied.items():
+            if value is None or name == "HTTPHeaders":
+                continue
+            allowed = inline_values[name]
+            if allowed is None and info:
+                allowed = info.allowable_values(name)
+            if allowed is not None and value not in allowed:
+                raise RedfishValidationError(
+                    f"Unsupported {name} {value!r}; advertised values: {allowed}"
+                )
+
+        if http_headers is not None:
+            action_advertises_headers = bool(
+                info and info.parameter("HTTPHeaders")
+            )
+            if media.http_headers is None and not action_advertises_headers:
+                raise RedfishValidationError(
+                    "VirtualMedia does not advertise HTTPHeaders support"
+                )
+
+        request = VirtualMediaInsertMediaRequest(
+            image=image,
+            inserted=inserted,
+            write_protected=write_protected,
+            username=username,
+            password=password,
+            transfer_method=transfer_method,
+            transfer_protocol_type=transfer_protocol_type,
+            http_headers=http_headers,
+        )
+        return self._http.post(action.target, RedfishResponse, body=request)
+
+    def eject_virtual_media(
+        self,
+        media_id: Optional[str] = None,
+        manager_id: Optional[str] = None,
+    ) -> RedfishResponse:
+        """Invoke the advertised standard ``EjectMedia`` action."""
+        media = self.virtual_media_resource(media_id, manager_id)
+        action = media.actions and media.actions.eject_media
+        if not action or not action.target:
+            raise RedfishValidationError(
+                f"VirtualMedia {media.id!r} does not advertise "
+                "#VirtualMedia.EjectMedia with an action target"
+            )
+        return self._http.post(
+            action.target, RedfishResponse, body=VirtualMediaEjectMediaRequest()
+        )
 
     def serial_interfaces(self, manager_id: Optional[str] = None) -> List[SerialInterface]:
         manager = self.get(manager_id)
