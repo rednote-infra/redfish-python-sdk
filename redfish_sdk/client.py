@@ -79,6 +79,7 @@ from .models.managers import (
 )
 from .models.memory import Memory
 from .models.oem import MainBoard
+from .models.policy import Policy, PolicyCondition, PolicyResponse, PolicyService
 from .models.power import Power, PowerSupply
 from .models.processor import Processor
 from .models.registry import Registry, ResolvedMessage
@@ -543,6 +544,74 @@ class RedfishClient:
     def get_resource_zone(self, identifier: str) -> ResourceZone:
         """Select a resource zone by Id or advertised @odata.id."""
         return self._composition.member(self._composition.zones(), identifier)
+
+    @cached_property
+    def _policy_service(self):
+        from .managers.policy import PolicyServiceManager
+        return PolicyServiceManager(self)
+
+    def get_policy_service(self) -> PolicyService:
+        """Get the optional PolicyService through its advertised root link."""
+        return self._policy_service.service()
+
+    def get_policies(self) -> List[Policy]:
+        """List policies through the advertised Policies collection."""
+        return self._policy_service.policies()
+
+    def get_policy(self, identifier: str) -> Policy:
+        """Select a policy by Id or advertised member URI."""
+        return self._policy_service.policy(identifier)
+
+    def create_policy(
+        self,
+        policy_id: str,
+        name: str,
+        trigger_condition: PolicyCondition,
+        responses: List[PolicyResponse],
+        *,
+        enabled: Optional[bool] = None,
+        oem: Optional[Dict[str, Any]] = None,
+    ) -> Policy:
+        """Create a policy after validating advertised capabilities."""
+        return self._policy_service.create(
+            policy_id,
+            name,
+            trigger_condition,
+            responses,
+            enabled=enabled,
+            oem=oem,
+        )
+
+    def update_policy(
+        self,
+        identifier: str,
+        *,
+        trigger_condition: Optional[PolicyCondition] = None,
+        responses: Optional[List[PolicyResponse]] = None,
+        enabled: Optional[bool] = None,
+        oem: Optional[Dict[str, Any]] = None,
+    ) -> Policy:
+        """Update writable fields on a client-defined policy using its ETag."""
+        return self._policy_service.update(
+            identifier,
+            trigger_condition=trigger_condition,
+            responses=responses,
+            enabled=enabled,
+            oem=oem,
+        )
+
+    def enable_policy(self, identifier: str) -> Policy:
+        """Enable a policy using an ETag-protected PATCH."""
+        return self._policy_service.enable(identifier)
+
+    def disable_policy(self, identifier: str) -> Policy:
+        """Disable a policy using an ETag-protected PATCH."""
+        return self._policy_service.disable(identifier)
+
+    def delete_policy(self, identifier: str) -> str:
+        """Delete a client-defined policy using its advertised URI and ETag."""
+        return self._policy_service.delete(identifier)
+
     @cached_property
     def _telemetry(self):
         from .managers.telemetry import TelemetryServiceManager

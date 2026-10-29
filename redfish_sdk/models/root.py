@@ -57,6 +57,7 @@ class RootService(Entity):
     systems: Optional[Link] = Field(None, alias="Systems")
     update_service: Optional[Link] = Field(None, alias="UpdateService")
     key_service: Optional[Link] = Field(None, alias="KeyService")
+    policy_service: Optional[Link] = Field(None, alias="PolicyService")
     managers: Optional[Link] = Field(None, alias="Managers")
     registries: Optional[Link] = Field(None, alias="Registries")
     json_schemas: Optional[Link] = Field(None, alias="JsonSchemas")

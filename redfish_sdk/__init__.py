@@ -64,6 +64,14 @@ from .models.managers import (
     VirtualMedia,
     VncService,
 )
+from .models.policy import (
+    Policy,
+    PolicyCondition,
+    PolicyEventResponse,
+    PolicyHTTPResponse,
+    PolicyResponse,
+    PolicyService,
+)
 from .models.registry import MessageRegistry, RegistryMessage, ResolvedMessage
 from .models.resource_key import RedfishResource
 from .models.system_resources import (
@@ -116,6 +124,12 @@ __all__ = [
     "ResourceZone",
     "DnsService",
     "Drive",
+    "Policy",
+    "PolicyCondition",
+    "PolicyEventResponse",
+    "PolicyHTTPResponse",
+    "PolicyResponse",
+    "PolicyService",
     "FirmwareUpdateResponse",
     "SoftwareInventory",
     "UpdateParameters",
