@@ -9,7 +9,13 @@ import requests
 
 from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishException, RedfishValidationError
-from redfish_sdk.models.update import UpdateService
+from redfish_sdk.models.common import Link
+from redfish_sdk.models.update import (
+    SoftwareInventory,
+    UpdateParameters,
+    UpdateService,
+    UpdateServiceCapabilities,
+)
 
 
 def response(status=204, body=None, location=None, retry_after=None):
@@ -265,3 +271,265 @@ def test_ambiguous_or_missing_action_targets_are_rejected(firmware_client):
     service.actions = {"#UpdateService.UploadSignKey": {"title": "Unsupported"}}
     with pytest.raises(RedfishValidationError, match="target"):
         client.upload_sign_key("not-opened.pem")
+
+def test_capabilities_and_software_inventory_follow_advertised_links(firmware_client, monkeypatch):
+    client, service = firmware_client
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    service.software_inventory = Link(odata_id="/custom/software")
+    capabilities = UpdateServiceCapabilities.model_validate(
+        {
+            "AllowableTargets": ["/custom/software/BMC"],
+            "TargetsParameterSupported": True,
+        }
+    )
+    inventory = [
+        SoftwareInventory.model_validate(
+            {
+                "@odata.id": "/custom/software/BMC",
+                "ImageState": "Armed",
+                "OEMImageState": "AwaitingReset",
+                "Active": False,
+                "Staged": True,
+                "Armed": True,
+                "Links": {
+                    "StagedTargets": [{"@odata.id": "/redfish/v1/Managers/1"}],
+                    "ArmedTargets": [{"@odata.id": "/redfish/v1/Managers/1"}],
+                },
+            }
+        )
+    ]
+    get = Mock(return_value=capabilities)
+    collection = Mock(return_value=inventory)
+    monkeypatch.setattr(client._http_client, "get", get)
+    monkeypatch.setattr(client, "_get_collection", collection)
+
+    assert client.get_update_service_capabilities() is capabilities
+    assert client.get_software_inventory() == inventory
+    get.assert_called_once_with("/custom/capabilities", UpdateServiceCapabilities)
+    collection.assert_called_once_with("/custom/software", SoftwareInventory)
+    assert inventory[0].image_state == "Armed"
+    assert inventory[0].oem_image_state == "AwaitingReset"
+    assert inventory[0].armed is True
+    assert inventory[0].links.armed_targets[0].odata_id == "/redfish/v1/Managers/1"
+
+
+@pytest.mark.parametrize(
+    "argument,value,capability",
+    [
+        ("targets", ["/custom/software/BMC"], "Targets"),
+        ("exclude_targets", ["/custom/software/Backup"], "ExcludeTargets"),
+        ("force_update", False, "ForceUpdate"),
+        ("stage", False, "Stage"),
+        ("local_image", False, "LocalImage"),
+    ],
+)
+def test_update_parameters_reject_requested_unsupported_options(
+    firmware_client, monkeypatch, argument, value, capability
+):
+    client, service = firmware_client
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    monkeypatch.setattr(
+        client._http_client,
+        "get",
+        lambda *_: UpdateServiceCapabilities.model_validate(
+            {
+                "TargetsParameterSupported": False,
+                "ExcludeTargetsParameterSupported": False,
+                "ForceUpdateParameterSupported": False,
+                "StageParameterSupported": False,
+                "LocalImageParameterSupported": False,
+            }
+        ),
+    )
+
+    with pytest.raises(RedfishValidationError, match=capability):
+        client.build_update_parameters(**{argument: value})
+
+
+def test_update_parameters_validate_targets_and_preserve_false_values(firmware_client, monkeypatch):
+    client, service = firmware_client
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    monkeypatch.setattr(
+        client._http_client,
+        "get",
+        lambda *_: UpdateServiceCapabilities.model_validate(
+            {
+                "AllowableTargets": ["/custom/software/BMC"],
+                "AllowableStaging": ["/custom/software/BMC"],
+                "TargetsParameterSupported": True,
+                "ExcludeTargetsParameterSupported": True,
+                "ForceUpdateParameterSupported": True,
+                "StageParameterSupported": True,
+                "LocalImageParameterSupported": True,
+            }
+        ),
+    )
+
+    parameters = client.build_update_parameters(
+        targets=["/custom/software/BMC"],
+        exclude_targets=["/custom/software/Backup"],
+        force_update=False,
+        stage=True,
+        local_image=False,
+    )
+
+    assert parameters.model_dump(by_alias=True, exclude_none=True) == {
+        "Targets": ["/custom/software/BMC"],
+        "ExcludeTargets": ["/custom/software/Backup"],
+        "ForceUpdate": False,
+        "Stage": True,
+        "LocalImage": False,
+    }
+    with pytest.raises(RedfishValidationError, match="AllowableStaging"):
+        client.build_update_parameters(targets=["/custom/software/Backup"], stage=True)
+
+
+def test_update_parameters_accept_advertised_standard_target_reference(firmware_client, monkeypatch):
+    client, service = firmware_client
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    monkeypatch.setattr(
+        client._http_client,
+        "get",
+        lambda *_: UpdateServiceCapabilities.model_validate(
+            {
+                "AllowableTargetReferenceTypes": ["ComputerSystem"],
+                "TargetsParameterSupported": True,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        client._http_client,
+        "get_raw",
+        lambda target: {
+            "@odata.id": target,
+            "@odata.type": "#ComputerSystem.v1_25_0.ComputerSystem",
+        },
+    )
+
+    parameters = client.build_update_parameters(targets=["/redfish/v1/Systems/1"])
+    assert parameters.targets == ["/redfish/v1/Systems/1"]
+
+    monkeypatch.setattr(
+        client._http_client,
+        "get_raw",
+        lambda target: {
+            "@odata.id": target,
+            "@odata.type": "#Manager.v1_22_0.Manager",
+        },
+    )
+    with pytest.raises(RedfishValidationError, match="target reference"):
+        client.build_update_parameters(targets=["/redfish/v1/Managers/1"])
+
+
+def test_optional_capabilities_are_only_required_for_gated_parameters(
+    firmware_client, monkeypatch
+):
+    client, service = firmware_client
+    service.update_service_capabilities = None
+    service.actions["#UpdateService.SimpleUpdate"] = {
+        "target": "/custom/simple-update"
+    }
+    request = Mock(return_value=response())
+    monkeypatch.setattr(client._http_client, "post_raw", request)
+
+    assert client.build_update_parameters() == UpdateParameters()
+    client.standard_simple_update("https://images.example/fw.bin", "HTTPS")
+    request.assert_called_once_with(
+        "/custom/simple-update",
+        {
+            "ImageURI": "https://images.example/fw.bin",
+            "TransferProtocol": "HTTPS",
+        },
+    )
+    with pytest.raises(RedfishValidationError, match="UpdateServiceCapabilities"):
+        client.build_update_parameters(force_update=True)
+    with pytest.raises(RedfishValidationError, match="UpdateServiceCapabilities"):
+        client.get_update_service_capabilities()
+
+    service.software_inventory = None
+    with pytest.raises(RedfishValidationError, match="SoftwareInventory"):
+        client.get_software_inventory()
+
+
+def test_typed_multipart_parameters_are_validated_and_serialized(
+    firmware_client, monkeypatch, tmp_path
+):
+    client, service = firmware_client
+    service.multi_part_http_push_uri = "/custom/multipart"
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    monkeypatch.setattr(
+        client._http_client,
+        "get",
+        lambda *_: UpdateServiceCapabilities.model_validate({
+            "AllowableTargets": ["/custom/software/BMC"],
+            "TargetsParameterSupported": True,
+            "ForceUpdateParameterSupported": True,
+        }),
+    )
+    request = Mock(return_value=response())
+    monkeypatch.setattr(client._http_client, "_request", request)
+    image = tmp_path / "fw.bin"
+    image.write_bytes(b"firmware")
+
+    client.upload_firmware_file(
+        image,
+        update_parameters=UpdateParameters(
+            targets=["/custom/software/BMC"], force_update=False
+        ),
+    )
+
+    parameters = multipart_parts(request.call_args.kwargs)[0]
+    assert json.loads(parameters[2]) == {
+        "Targets": ["/custom/software/BMC"],
+        "ForceUpdate": False,
+    }
+
+
+def test_standard_stage_and_activate_use_advertised_actions(firmware_client, monkeypatch):
+    client, service = firmware_client
+    service.update_service_capabilities = Link(odata_id="/custom/capabilities")
+    service.actions.update(
+        {
+            "#UpdateService.SimpleUpdate": {"target": "/custom/simple-update"},
+            "#UpdateService.Activate": {"target": "/custom/activate"},
+        }
+    )
+    monkeypatch.setattr(
+        client._http_client,
+        "get",
+        lambda *_: UpdateServiceCapabilities.model_validate(
+            {
+                "AllowableTargets": ["/custom/software/BMC"],
+                "AllowableStaging": ["/custom/software/BMC"],
+                "TargetsParameterSupported": True,
+                "StageParameterSupported": True,
+            }
+        ),
+    )
+    request = Mock(
+        return_value=response(
+            202,
+            {"@odata.id": "/custom/task/12", "TaskState": "Running"},
+            "/custom/monitor/12",
+            "10",
+        )
+    )
+    monkeypatch.setattr(client._http_client, "post_raw", request)
+
+    staged = client.stage_update("https://images.example/fw.bin", ["/custom/software/BMC"])
+    assert staged.task_monitor == "/custom/monitor/12"
+    request.assert_called_with(
+        "/custom/simple-update",
+        {
+            "ImageURI": "https://images.example/fw.bin",
+            "TransferProtocol": "HTTPS",
+            "Targets": ["/custom/software/BMC"],
+            "Stage": True,
+        },
+    )
+
+    client.activate_software(["/custom/software/BMC"])
+    request.assert_called_with(
+        "/custom/activate",
+        {"Targets": [{"@odata.id": "/custom/software/BMC"}]},
+    )

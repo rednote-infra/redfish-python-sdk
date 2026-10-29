@@ -97,7 +97,15 @@ from .models.systems import Bios, BootOption, System, SystemPatchSetting
 from .models.task import AsyncOperationResult, Task, TaskRecoveryPolicy, TaskService
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
 from .models.thermal import Fan, InletHistoryTemperature, Thermal
-from .models.update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
+from .models.update import (
+    ClientCertificate,
+    FirmwareInventory,
+    FirmwareUpdateResponse,
+    SoftwareInventory,
+    UpdateParameters,
+    UpdateService,
+    UpdateServiceCapabilities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -419,7 +427,7 @@ class RedfishClient:
 
     def upload_firmware_file(
         self, file_path: Union[str, Path], *, field_name: str = "UpdateFile",
-        update_parameters: Optional[Dict[str, Any]] = None,
+        update_parameters: Optional[Union[UpdateParameters, Dict[str, Any]]] = None,
         oem_parameters: Optional[Dict[str, Any]] = None,
     ) -> FirmwareUpdateResponse:
         """Upload through the advertised push URI; HttpPushUri file names may vary by vendor."""
@@ -433,6 +441,68 @@ class RedfishClient:
     ) -> FirmwareUpdateResponse:
         """Start an advertised AMI BMC firmware action; completion may restart the BMC."""
         return self._updates.bmc_firmware_update(flash_type, upload_selector)
+
+    def build_update_parameters(
+        self,
+        *,
+        targets: Optional[List[str]] = None,
+        exclude_targets: Optional[List[str]] = None,
+        force_update: Optional[bool] = None,
+        stage: Optional[bool] = None,
+        local_image: Optional[bool] = None,
+        oem: Optional[Dict[str, Any]] = None,
+    ) -> UpdateParameters:
+        """Build typed parameters validated against advertised capabilities."""
+        return self._updates.build_update_parameters(
+            targets=targets,
+            exclude_targets=exclude_targets,
+            force_update=force_update,
+            stage=stage,
+            local_image=local_image,
+            oem=oem,
+        )
+
+    def standard_simple_update(
+        self,
+        image_uri: str,
+        transfer_protocol: str = "HTTP",
+        *,
+        parameters: Optional[UpdateParameters] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> FirmwareUpdateResponse:
+        """Invoke the advertised standard SimpleUpdate action."""
+        return self._updates.standard_simple_update(
+            image_uri,
+            transfer_protocol,
+            parameters=parameters,
+            username=username,
+            password=password,
+        )
+
+    def stage_update(
+        self,
+        image_uri: str,
+        targets: List[str],
+        transfer_protocol: Optional[str] = None,
+        *,
+        force_update: Optional[bool] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> FirmwareUpdateResponse:
+        """Stage an image on advertised targets for later activation."""
+        return self._updates.stage_update(
+            image_uri,
+            targets,
+            transfer_protocol,
+            force_update=force_update,
+            username=username,
+            password=password,
+        )
+
+    def activate_software(self, targets: List[Union[str, Link]]) -> FirmwareUpdateResponse:
+        """Activate staged software images through UpdateService."""
+        return self._updates.activate_software(targets)
 
     @cached_property
     def _registries(self):
@@ -1982,6 +2052,14 @@ class RedfishClient:
             List of FirmwareInventory objects
         """
         return self._updates.firmware_inventory()
+
+    def get_software_inventory(self) -> List[SoftwareInventory]:
+        """Get software images and their active, staged, or armed state."""
+        return self._updates.software_inventory()
+
+    def get_update_service_capabilities(self) -> UpdateServiceCapabilities:
+        """Get the optional capabilities resource advertised by UpdateService."""
+        return self._updates.capabilities()
 
     def get_client_certificates(self) -> List[ClientCertificate]:
         """

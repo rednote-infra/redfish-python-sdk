@@ -77,7 +77,12 @@ from .models.system_resources import (
 from .models.systems import BootOption
 from .models.task import AsyncOperationResult, TaskRecoveryPolicy
 from .models.telemetry import MetricDefinition, MetricReport, MetricReportDefinition, TelemetryService, Triggers
-from .models.update import FirmwareUpdateResponse
+from .models.update import (
+    FirmwareUpdateResponse,
+    SoftwareInventory,
+    UpdateParameters,
+    UpdateServiceCapabilities,
+)
 
 __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
@@ -112,6 +117,9 @@ __all__ = [
     "DnsService",
     "Drive",
     "FirmwareUpdateResponse",
+    "SoftwareInventory",
+    "UpdateParameters",
+    "UpdateServiceCapabilities",
     "EventService",
     "Event",
     "EventRecord",
