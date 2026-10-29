@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Link, Status
-from .gpu import Gpu, GpuOEM  # noqa: F401
+from .gpu import AccelerationFunction, Gpu, GpuOEM, PCIeFunction  # noqa: F401
 from .memory import Memory, MemoryLocation  # noqa: F401
 from .oem import Oem
 

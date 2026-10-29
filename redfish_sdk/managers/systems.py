@@ -32,7 +32,6 @@ from ..models.systems import (
     BootOption,
     BootSetting,
     Gpu,
-    GpuOEM,
     GraphicalConsoleAction,
     GraphicalConsoleGetOneTimeURLRequest,
     GraphicalConsoleGetOneTimeURLResponse,
@@ -435,85 +434,16 @@ class SystemsManager:
 
     def gpus(self, system_id: Optional[str] = None) -> List[Gpu]:
         """
-        Get GPU information for a system.
+        Discover GPUs through advertised standard Redfish topology links.
 
-        This method uses a multi-step fallback strategy to handle different vendor
-        implementations:
-
-        1. Try /redfish/v1/Systems/{id}/GraphicsControllers (standard path)
-        2. If empty, use the PCIeDevices link of the default advertised Chassis
-           and filter by name containing "GPU"
-        3. If Chassis PCIeDevices is empty, try System.Links.PCIeDevices
-
-
+        GraphicsControllers remains compatible while Processor,
+        AccelerationFunction, PCIeDevice, and PCIeFunction resources can
+        supplement it.
         """
         system = self.get(system_id or "1")
-        gpu_members: List[Gpu] = []
+        from .gpu_discovery import discover_gpus
 
-        # Step 1: Try GraphicsControllers (standard Redfish path)
-        if system.graphics_controllers is not None:
-            try:
-                gpu_members = self._client._get_collection(
-                    system.graphics_controllers.odata_id, Gpu
-                )
-            except RedfishException as exc:
-                logger.warning("GraphicsControllers fetch failed: %s", exc)
-
-        if gpu_members:
-            return gpu_members
-
-        # Step 2: Try Chassis PCIeDevices (华为 xFusion, H3C etc.)
-        from .chassis import ChassisManager
-        chassis_mgr = ChassisManager(self._client)
-
-        pcie_devices: List[PCIeDevice] = []
-        try:
-            chassis = chassis_mgr.get()
-            if chassis.pcie_devices is not None:
-                pcie_devices = self._client._get_collection(
-                    chassis.pcie_devices.odata_id, PCIeDevice
-                )
-        except RedfishException as exc:
-            logger.warning("Chassis PCIeDevices fetch failed: %s", exc)
-
-        # Step 3: Fall back to System.Links.PCIeDevices
-        if not pcie_devices and system.links and system.links.pcie_devices:
-            for link in system.links.pcie_devices:
-                try:
-                    device = self._http.get(link.odata_id, PCIeDevice)
-                    if device:
-                        pcie_devices.append(device)
-                except RedfishException as exc:
-                    logger.warning("PCIeDevice fetch failed for %s: %s", link.odata_id, exc)
-
-        # Filter GPU devices by name and convert to Gpu model
-        for device in pcie_devices:
-            if device.name and "GPU" in device.name:
-                gpu = Gpu.model_construct(
-                    odata_id=device.odata_id,
-                    name=device.name,
-                    manufacturer=device.manufacturer,
-                    model=device.model,
-                    power_watts="0",
-                    version=device.part_number,
-                )
-
-                # Extract power watts from OEM if available
-                if (device.oem and device.oem.gpu_oem_public and
-                        device.oem.gpu_oem_public.power_watts > 0):
-                    gpu.power_watts = str(device.oem.gpu_oem_public.power_watts)
-
-                # Prefer card_model over part_number for version
-                if device.card_model:
-                    gpu.version = device.card_model
-
-                # Set serial number from device
-                if device.serial_number:
-                    gpu.oem = GpuOEM.model_construct(serial_number=device.serial_number)
-
-                gpu_members.append(gpu)
-
-        return gpu_members
+        return discover_gpus(self._client, system)
 
     def pcie_device(self, odata_id: str) -> PCIeDevice:
         """

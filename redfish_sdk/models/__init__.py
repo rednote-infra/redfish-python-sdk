@@ -41,6 +41,7 @@ from .fabric import (
     ResetTransceiversRequest,
 )
 from .fru import Fru, FruChassis, FruProduct
+from .gpu import AccelerationFunction, PCIeFunction  # noqa: F401
 from .logs import Log, LogEntry
 from .managers import (
     CredentialBootstrapping,

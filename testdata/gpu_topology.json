@@ -1,0 +1,142 @@
+{
+  "graphics_controllers_only": {
+    "system": {
+      "@odata.id": "/redfish/v1/Systems/Self",
+      "GraphicsControllers": {"@odata.id": "/topology/graphics"}
+    },
+    "collections": {
+      "/topology/graphics": [
+        {
+          "@odata.id": "/topology/graphics/0",
+          "Id": "graphics-0",
+          "Name": "Graphics controller",
+          "Manufacturer": "Example",
+          "Model": "G100"
+        }
+      ]
+    },
+    "resources": {}
+  },
+  "processor_accelerator": {
+    "system": {
+      "@odata.id": "/redfish/v1/Systems/Self",
+      "Processors": {"@odata.id": "/topology/processors"}
+    },
+    "collections": {
+      "/topology/processors": [
+        {
+          "@odata.id": "/topology/processors/accelerator-0",
+          "Id": "accelerator-0",
+          "Name": "Compute accelerator",
+          "ProcessorType": "GPU",
+          "AccelerationFunctions": {"@odata.id": "/topology/acceleration-functions"}
+        }
+      ],
+      "/topology/acceleration-functions": [
+        {
+          "@odata.id": "/topology/acceleration-functions/video-0",
+          "Id": "video-0",
+          "AccelerationFunctionType": "Video",
+          "Version": "2.0",
+          "PowerWatts": 300,
+          "Links": {
+            "PCIeFunctions": [{"@odata.id": "/topology/pcie-functions/0"}]
+          }
+        }
+      ]
+    },
+    "resources": {}
+  },
+  "pcie_only": {
+    "system": {
+      "@odata.id": "/redfish/v1/Systems/Self",
+      "PCIeDevices": [{"@odata.id": "/topology/pcie-devices/0"}]
+    },
+    "collections": {
+      "/topology/pcie-functions": [
+        {
+          "@odata.id": "/topology/pcie-functions/0",
+          "Id": "function-0",
+          "DeviceClass": "DisplayController"
+        }
+      ]
+    },
+    "resources": {
+      "/topology/pcie-devices/0": {
+        "@odata.id": "/topology/pcie-devices/0",
+        "Id": "device-0",
+        "Name": "Accelerator card",
+        "Manufacturer": "Example",
+        "Model": "G200",
+        "FirmwareVersion": "3.0",
+        "PCIeFunctions": {"@odata.id": "/topology/pcie-functions"}
+      }
+    }
+  },
+  "mixed_duplicate": {
+    "system": {
+      "@odata.id": "/redfish/v1/Systems/Self",
+      "GraphicsControllers": {"@odata.id": "/topology/graphics"},
+      "PCIeDevices": [{"@odata.id": "/topology/pcie-devices/0"}]
+    },
+    "collections": {
+      "/topology/graphics": [
+        {
+          "@odata.id": "/topology/graphics/0",
+          "Id": "graphics-0",
+          "Name": "Logical GPU",
+          "Manufacturer": "Example",
+          "Links": {"PCIeDevice": {"@odata.id": "/topology/pcie-devices/0"}}
+        }
+      ],
+      "/topology/pcie-functions": [
+        {
+          "@odata.id": "/topology/pcie-functions/0",
+          "Id": "function-0",
+          "DeviceClass": "ProcessingAccelerators"
+        }
+      ]
+    },
+    "resources": {
+      "/topology/pcie-devices/0": {
+        "@odata.id": "/topology/pcie-devices/0",
+        "Id": "device-0",
+        "Name": "Compute device",
+        "Model": "G250",
+        "PCIeFunctions": {"@odata.id": "/topology/pcie-functions"}
+      }
+    }
+  },
+  "no_gpu": {
+    "system": {
+      "@odata.id": "/redfish/v1/Systems/Self",
+      "Processors": {"@odata.id": "/topology/non-gpu-processors"},
+      "PCIeDevices": [{"@odata.id": "/topology/pcie-devices/network-0"}]
+    },
+    "collections": {
+      "/topology/non-gpu-processors": [
+        {
+          "@odata.id": "/topology/non-gpu-processors/0",
+          "Id": "accelerator-0",
+          "Name": "Compression accelerator",
+          "ProcessorType": "Accelerator"
+        }
+      ],
+      "/topology/network-functions": [
+        {
+          "@odata.id": "/topology/network-functions/0",
+          "Id": "network-function-0",
+          "DeviceClass": "NetworkController"
+        }
+      ]
+    },
+    "resources": {
+      "/topology/pcie-devices/network-0": {
+        "@odata.id": "/topology/pcie-devices/network-0",
+        "Id": "network-0",
+        "Name": "Network adapter",
+        "PCIeFunctions": {"@odata.id": "/topology/network-functions"}
+      }
+    }
+  }
+}
