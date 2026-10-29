@@ -80,7 +80,7 @@ from .models.managers import (
 from .models.memory import Memory
 from .models.oem import MainBoard
 from .models.policy import Policy, PolicyCondition, PolicyResponse, PolicyService
-from .models.power import Power, PowerSupply
+from .models.power import Power, PowerSubsystem, PowerSupply, PowerSupplyMetrics
 from .models.processor import Processor
 from .models.registry import Registry, ResolvedMessage
 from .models.resource_key import RedfishResource
@@ -1400,6 +1400,28 @@ class RedfishClient:
         """
         return self._chassis.power(chassis_id)
 
+    def get_power_subsystem(
+        self, chassis_id: Optional[str] = None
+    ) -> PowerSubsystem:
+        """Get the modern PowerSubsystem through its advertised link."""
+        return self._chassis.power_subsystem(chassis_id)
+
+    def get_power_supply(
+        self,
+        identifier: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> PowerSupply:
+        """Select a modern or legacy power supply by Id or URI."""
+        return self._chassis.power_supply(identifier, chassis_id)
+
+    def get_power_supply_metrics(
+        self,
+        identifier: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> PowerSupplyMetrics:
+        """Get metrics advertised by a selected modern power supply."""
+        return self._chassis.power_supply_metrics(identifier, chassis_id)
+
     def get_thermal(self, chassis_id: Optional[str] = None) -> Thermal:
         """
         Get thermal information (fans, temperatures) for a chassis.
@@ -2537,8 +2559,7 @@ class RedfishClient:
         Returns:
             List of PowerSupply objects (empty list if no PSUs found)
         """
-        power = self.get_power(chassis_id)
-        return power.power_supplies or []
+        return self._chassis.power_supplies(chassis_id)
 
     # ------------------------------------------------------------------
     # Component query methods — System-level convenience

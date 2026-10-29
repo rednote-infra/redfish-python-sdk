@@ -31,7 +31,9 @@ from .power import (  # noqa: F401
     InputRange,
     Power,
     PowerControl,
+    PowerSubsystem,
     PowerSupply,
+    PowerSupplyMetrics,
     Voltage,
 )
 
@@ -74,6 +76,7 @@ class Chassis(Entity):
     drives: Optional[Link] = Field(None, alias="Drives")
     part_number: Optional[str] = Field(None, alias="PartNumber")
     power: Optional[Link] = Field(None, alias="Power")
+    power_subsystem: Optional[Link] = Field(None, alias="PowerSubsystem")
     power_state: Optional[str] = Field(None, alias="PowerState")
     production_date: Optional[str] = Field(None, alias="ProductionDate")
     sku: Optional[str] = Field(None, alias="SKU")

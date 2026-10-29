@@ -2,7 +2,15 @@ from .account import Account, AccountService, Authentication, ExternalAccountPro
 from .chassis import Chassis, Drive, Fan, NetworkAdapter, PCIeDevice, Power, PowerSupply, Temperature, Thermal
 from .common import Collection, Condition, Entity, Link, RedfishError, RedfishResponse, Status
 from .composition import CompositionService, ResourceBlock, ResourceZone
-from .cooling import CoolantConnector, CoolingUnit, EnvironmentMetrics, Sensor, SensorExcerpt, ThermalSubsystem
+from .cooling import (
+    ControlExcerpt,
+    CoolantConnector,
+    CoolingUnit,
+    EnvironmentMetrics,
+    Sensor,
+    SensorExcerpt,
+    ThermalSubsystem,
+)
 from .drive import Location  # noqa: F401
 from .event import Event, EventRecord, EventService, Subscription
 from .fabric import (
@@ -51,7 +59,7 @@ from .pcie_device import (  # noqa: F401
     PCIeDeviceOEMPublic,
     PCIeInterface,
 )
-from .power import InputRange, PowerControl, Voltage  # noqa: F401
+from .power import InputRange, PowerControl, PowerSubsystem, PowerSupplyMetrics, Voltage  # noqa: F401
 
 # Additional component models (also available via individual modules)
 from .processor import ProcessorId  # noqa: F401
@@ -93,7 +101,8 @@ __all__ = [
     "Log", "LogEntry",
     "Fru", "FruChassis", "FruProduct",
     "CompositionService", "ResourceBlock", "ResourceZone",
-    "Sensor", "SensorExcerpt", "EnvironmentMetrics", "CoolingUnit", "CoolantConnector", "ThermalSubsystem",
+    "Sensor", "SensorExcerpt", "ControlExcerpt", "EnvironmentMetrics", "CoolingUnit", "CoolantConnector", "ThermalSubsystem",
+    "PowerSubsystem", "PowerSupplyMetrics",
     # Additional component models
     "ProcessorId", "MemoryLocation", "StorageController", "CacheSummary", "Identifier",
     "Location", "Controller", "ControllerCapabilities",

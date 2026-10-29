@@ -1,0 +1,192 @@
+{
+  "ModernChassis": {
+    "@odata.id": "/redfish/v1/Chassis/Rack-1",
+    "Id": "Rack-1",
+    "Name": "Rack Chassis",
+    "PowerSubsystem": {
+      "@odata.id": "/vendor/power-domain"
+    },
+    "Power": {
+      "@odata.id": "/legacy/power"
+    },
+    "EnvironmentMetrics": {
+      "@odata.id": "/vendor/environment"
+    },
+    "Sensors": {
+      "@odata.id": "/vendor/sensor-index"
+    }
+  },
+  "LegacyChassis": {
+    "@odata.id": "/redfish/v1/Chassis/Legacy",
+    "Id": "Legacy",
+    "Name": "Legacy Chassis",
+    "Power": {
+      "@odata.id": "/legacy/power"
+    }
+  },
+  "AbsentChassis": {
+    "@odata.id": "/redfish/v1/Chassis/Absent",
+    "Id": "Absent",
+    "Name": "Chassis Without Power Resources"
+  },
+  "PowerSubsystem": {
+    "@odata.id": "/vendor/power-domain",
+    "@odata.type": "#PowerSubsystem.v1_2_0.PowerSubsystem",
+    "Id": "Power",
+    "Name": "Power Subsystem",
+    "CapacityWatts": 3200,
+    "Allocation": {
+      "AllocatedWatts": 1800,
+      "RequestedWatts": 2000
+    },
+    "MaxRampRateWattsPerSecond": {
+      "Reading": 450,
+      "DataSourceUri": "/vendor/controls/ramp-rate"
+    },
+    "PowerBrake": {
+      "Applied": true,
+      "Enabled": true,
+      "LoadPercentThreshold": "UpperCaution",
+      "TemperatureThreshold": "UpperCritical"
+    },
+    "PowerSupplies": {
+      "@odata.id": "/vendor/psu-index"
+    },
+    "Links": {
+      "PowerBrakeLoadPercentSensor": {
+        "@odata.id": "/vendor/sensors/brake-load"
+      },
+      "PowerBrakeTemperatureSensor": {
+        "@odata.id": "/vendor/sensors/brake-temperature"
+      }
+    },
+    "Oem": {
+      "Example": {
+        "BrakeProfile": "rack"
+      }
+    }
+  },
+  "ModernPowerSupply": {
+    "@odata.id": "/vendor/psu-A",
+    "@odata.type": "#PowerSupply.v1_7_0.PowerSupply",
+    "Id": "PSU-A",
+    "Name": "Power Supply A",
+    "PowerSupplyType": "DCRegulator",
+    "PowerCapacityWatts": 1600,
+    "InputNominalVoltageType": "AC240V",
+    "OutputNominalVoltageType": "DC12V",
+    "Metrics": {
+      "@odata.id": "/vendor/psu-A/telemetry"
+    },
+    "Status": {
+      "State": "Enabled",
+      "Health": "OK"
+    },
+    "Oem": {
+      "Example": {
+        "Bay": 1
+      }
+    }
+  },
+  "PowerSupplyMetrics": {
+    "@odata.id": "/vendor/psu-A/telemetry",
+    "@odata.type": "#PowerSupplyMetrics.v1_3_0.PowerSupplyMetrics",
+    "Id": "PSU-A-Metrics",
+    "Name": "Power Supply A Metrics",
+    "ChargePercent": {
+      "Reading": 88,
+      "DataSourceUri": "/vendor/sensors/charge"
+    },
+    "PowerLoadPercent": {
+      "Reading": 62.5,
+      "DataSourceUri": "/vendor/sensors/load"
+    },
+    "InputPowerWatts": {
+      "Reading": 1250
+    },
+    "OutputPowerWatts": {
+      "Reading": 1180
+    },
+    "InputCurrentAmps": {
+      "Reading": 5.2
+    },
+    "InputVoltage": {
+      "Reading": 240
+    },
+    "EnergykWh": {
+      "Reading": 420.5
+    },
+    "TemperatureCelsius": {
+      "Reading": 38
+    },
+    "FutureMetric": {
+      "Reading": 1
+    }
+  },
+  "EnvironmentMetrics": {
+    "@odata.id": "/vendor/environment",
+    "Id": "Environment",
+    "Name": "Chassis Environment",
+    "CurrentAmps": {
+      "Reading": 5.2
+    },
+    "EnergykWh": {
+      "Reading": 123.4
+    },
+    "PowerWatts": {
+      "Reading": 1180
+    },
+    "Voltage": {
+      "Reading": 240
+    },
+    "PowerLimitWatts": {
+      "SetPoint": 1500,
+      "Reading": 1180,
+      "DataSourceUri": "/vendor/controls/power-limit"
+    }
+  },
+  "BrakeLoadSensor": {
+    "@odata.id": "/vendor/sensors/brake-load",
+    "Id": "BrakeLoad",
+    "Name": "Power Brake Load",
+    "Reading": 62.5,
+    "ReadingType": "Percent",
+    "ReadingUnits": "%",
+    "LoadPercent": 62.5
+  },
+  "BrakeTemperatureSensor": {
+    "@odata.id": "/vendor/sensors/brake-temperature",
+    "Id": "BrakeTemperature",
+    "Name": "Power Brake Temperature",
+    "Reading": 37,
+    "AverageReading": 36.5,
+    "ReadingType": "Temperature",
+    "ReadingUnits": "Cel",
+    "FutureSensorField": "preserved"
+  },
+  "LegacyPower": {
+    "@odata.id": "/legacy/power",
+    "Id": "Power",
+    "Name": "Legacy Power",
+    "PowerSupplies": [
+      {
+        "MemberId": "LegacyPSU1",
+        "Name": "Legacy PSU 1",
+        "PowerSupplyType": "ACorDC",
+        "PowerCapacityWatts": 1200,
+        "PowerInputWatts": 700,
+        "PowerOutputWatts": 650,
+        "Oem": {
+          "Example": {
+            "Bay": 1
+          }
+        }
+      }
+    ]
+  },
+  "LegacyPowerSupply": {
+    "MemberId": "LegacyPSU",
+    "Name": "Legacy PSU",
+    "PowerCapacityWatts": 1000
+  }
+}

@@ -27,6 +27,9 @@ from ..models.chassis import (
     NetworkAdapter,
     PCIeDevice,
     Power,
+    PowerSubsystem,
+    PowerSupply,
+    PowerSupplyMetrics,
     Thermal,
 )
 from ..models.thermal import InletHistoryTemperature
@@ -184,7 +187,74 @@ class ChassisManager:
 
         """
         chassis = self.get(chassis_id)
+        if not chassis.power or not chassis.power.odata_id:
+            raise RedfishNotFoundError("Chassis does not advertise legacy Power")
         return self._http.get(chassis.power.odata_id, Power)
+
+    def power_subsystem(
+        self, chassis_id: Optional[str] = None
+    ) -> PowerSubsystem:
+        """Get the modern PowerSubsystem through its advertised chassis link."""
+        chassis = self.get(chassis_id)
+        link = chassis.power_subsystem
+        if not link or not link.odata_id:
+            raise RedfishNotFoundError("Chassis does not advertise PowerSubsystem")
+        return self._http.get(link.odata_id, PowerSubsystem)
+
+    def power_supplies(
+        self, chassis_id: Optional[str] = None
+    ) -> List[PowerSupply]:
+        """Prefer modern PowerSupply resources and fall back to legacy Power."""
+        chassis = self.get(chassis_id)
+        if chassis.power_subsystem and chassis.power_subsystem.odata_id:
+            try:
+                subsystem = self._http.get(
+                    chassis.power_subsystem.odata_id, PowerSubsystem
+                )
+                if subsystem.power_supplies and subsystem.power_supplies.odata_id:
+                    return self._client._get_collection(
+                        subsystem.power_supplies.odata_id, PowerSupply
+                    )
+            except RedfishNotFoundError:
+                logger.debug(
+                    "Modern PowerSubsystem is unavailable; trying legacy Power"
+                )
+
+        if not chassis.power or not chassis.power.odata_id:
+            return []
+        legacy_power = self._http.get(chassis.power.odata_id, Power)
+        return legacy_power.power_supplies or []
+
+    def power_supply(
+        self,
+        identifier: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> PowerSupply:
+        """Select an advertised modern or legacy power supply."""
+        return select_member(
+            self.power_supplies(chassis_id),
+            identifier,
+            aliases=("member_id",),
+        )
+
+    def power_supply_metrics(
+        self,
+        identifier: Optional[str] = None,
+        chassis_id: Optional[str] = None,
+    ) -> PowerSupplyMetrics:
+        """Get read-only metrics through a selected PowerSupply Metrics link."""
+        supplies = self.power_supplies(chassis_id)
+        if not supplies:
+            raise RedfishNotFoundError(
+                "Chassis does not advertise PowerSupplyMetrics"
+            )
+        supply = select_member(supplies, identifier, aliases=("member_id",))
+        if not supply.metrics or not supply.metrics.odata_id:
+            raise RedfishNotFoundError(
+                f"PowerSupply {supply.id or supply.member_id!r} does not "
+                "advertise PowerSupplyMetrics"
+            )
+        return self._http.get(supply.metrics.odata_id, PowerSupplyMetrics)
 
     def drives(self, chassis_id: Optional[str] = None) -> List[Drive]:
         """

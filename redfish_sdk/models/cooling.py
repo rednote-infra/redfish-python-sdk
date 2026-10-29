@@ -19,10 +19,31 @@ class SensorExcerpt(BaseModel):
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
 
+class ControlExcerpt(BaseModel):
+    """A control reading copied into another Redfish resource."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    allowable_max: Optional[float] = Field(None, alias="AllowableMax")
+    allowable_min: Optional[float] = Field(None, alias="AllowableMin")
+    control_mode: Optional[str] = Field(None, alias="ControlMode")
+    data_source_uri: Optional[str] = Field(None, alias="DataSourceUri")
+    default_set_point: Optional[float] = Field(None, alias="DefaultSetPoint")
+    reading: Optional[float] = Field(None, alias="Reading")
+    set_point: Optional[float] = Field(None, alias="SetPoint")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+
 class Sensor(Entity):
     """A generic Redfish Sensor resource."""
 
     reading: Optional[float] = Field(None, alias="Reading")
+    average_reading: Optional[float] = Field(None, alias="AverageReading")
+    electrical_context: Optional[str] = Field(None, alias="ElectricalContext")
+    lifetime_reading: Optional[float] = Field(None, alias="LifetimeReading")
+    load_percent: Optional[float] = Field(None, alias="LoadPercent")
+    power_factor: Optional[float] = Field(None, alias="PowerFactor")
+    precision: Optional[float] = Field(None, alias="Precision")
     reading_type: Optional[str] = Field(None, alias="ReadingType")
     reading_units: Optional[str] = Field(None, alias="ReadingUnits")
     reading_time: Optional[str] = Field(None, alias="ReadingTime")
@@ -35,6 +56,10 @@ class Sensor(Entity):
     speed_rpm: Optional[float] = Field(None, alias="SpeedRPM")
     enabled: Optional[bool] = Field(None, alias="Enabled")
     physical_context: Optional[str] = Field(None, alias="PhysicalContext")
+    physical_subcontext: Optional[str] = Field(None, alias="PhysicalSubContext")
+    sensor_group: Optional[str] = Field(None, alias="SensorGroup")
+    thresholds: Optional[Dict[str, Any]] = Field(None, alias="Thresholds")
+    related_item: Optional[List[Link]] = Field(None, alias="RelatedItem")
     spare_part_number: Optional[str] = Field(None, alias="SparePartNumber")
     status: Optional[Status] = Field(None, alias="Status")
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
@@ -47,13 +72,24 @@ class EnvironmentMetrics(Entity):
     ambient_temperature_celsius: Optional[SensorExcerpt] = Field(
         None, alias="AmbientTemperatureCelsius"
     )
+    current_amps: Optional[SensorExcerpt] = Field(None, alias="CurrentAmps")
     dew_point_celsius: Optional[SensorExcerpt] = Field(None, alias="DewPointCelsius")
     dew_point_proximity_celsius: Optional[SensorExcerpt] = Field(
         None, alias="DewPointProximityCelsius"
     )
     humidity_percent: Optional[SensorExcerpt] = Field(None, alias="HumidityPercent")
+    energy_joules: Optional[SensorExcerpt] = Field(None, alias="EnergyJoules")
+    energy_kwh: Optional[SensorExcerpt] = Field(None, alias="EnergykWh")
+    fan_speeds_percent: Optional[List[SensorExcerpt]] = Field(
+        None, alias="FanSpeedsPercent"
+    )
+    power_limit_watts: Optional[ControlExcerpt] = Field(
+        None, alias="PowerLimitWatts"
+    )
     power_load_percent: Optional[SensorExcerpt] = Field(None, alias="PowerLoadPercent")
+    power_watts: Optional[SensorExcerpt] = Field(None, alias="PowerWatts")
     temperature_celsius: Optional[SensorExcerpt] = Field(None, alias="TemperatureCelsius")
+    voltage: Optional[SensorExcerpt] = Field(None, alias="Voltage")
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
 

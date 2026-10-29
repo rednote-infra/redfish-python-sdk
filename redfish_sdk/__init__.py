@@ -77,6 +77,7 @@ from .models.policy import (
     PolicyResponse,
     PolicyService,
 )
+from .models.power import PowerSubsystem, PowerSupply, PowerSupplyMetrics
 from .models.registry import MessageRegistry, RegistryMessage, ResolvedMessage
 from .models.resource_key import RedfishResource
 from .models.system_resources import (
@@ -157,6 +158,9 @@ __all__ = [
     "PolicyHTTPResponse",
     "PolicyResponse",
     "PolicyService",
+    "PowerSubsystem",
+    "PowerSupply",
+    "PowerSupplyMetrics",
     "FirmwareUpdateResponse",
     "SoftwareInventory",
     "UpdateParameters",

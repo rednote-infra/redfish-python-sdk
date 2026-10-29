@@ -4,12 +4,13 @@ Power component models (PSU, voltage, power control).
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Link, Status
+from .cooling import ControlExcerpt, SensorExcerpt
 from .oem import Oem
 from .thermal import Redundancy
 
@@ -22,6 +23,17 @@ class InputRange(BaseModel):
     maximum_voltage: Optional[int] = Field(None, alias="MaximumVoltage")
     minimum_voltage: Optional[int] = Field(None, alias="MinimumVoltage")
     output_wattage: Optional[int] = Field(None, alias="OutputWattage")
+    capacity_watts: Optional[float] = Field(None, alias="CapacityWatts")
+    nominal_voltage_type: Optional[str] = Field(None, alias="NominalVoltageType")
+
+
+class OutputRail(BaseModel):
+    """Nominal output rail information for a modern PowerSupply resource."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    nominal_voltage: Optional[float] = Field(None, alias="NominalVoltage")
+    physical_context: Optional[str] = Field(None, alias="PhysicalContext")
 
 
 class PowerSupply(Entity):
@@ -32,6 +44,14 @@ class PowerSupply(Entity):
     """
     firmware_version: Optional[str] = Field(None, alias="FirmwareVersion")
     input_ranges: Optional[List[InputRange]] = Field(None, alias="InputRanges")
+    input_nominal_voltage_type: Optional[str] = Field(
+        None, alias="InputNominalVoltageType"
+    )
+    output_nominal_voltage_type: Optional[str] = Field(
+        None, alias="OutputNominalVoltageType"
+    )
+    output_rails: Optional[List[OutputRail]] = Field(None, alias="OutputRails")
+    metrics: Optional[Link] = Field(None, alias="Metrics")
     power_output_watts: Optional[int] = Field(None, alias="PowerOutputWatts", validate="type=int")
     # LineInputVoltage is defined as Number in DMTF Redfish PowerSupply schema,
     # which allows fractional values (e.g. 220.5). Use float to match the spec.
@@ -50,6 +70,98 @@ class PowerSupply(Entity):
     power_input_watts: Optional[int] = Field(None, alias="PowerInputWatts", validate="type=int")
     redundancy: Optional[List[Redundancy]] = Field(None, alias="Redundancy")
     status: Optional[Status] = Field(None, alias="Status", validate="status")
+    oem: Optional[Oem] = Field(None, alias="Oem")
+
+
+class PowerAllocation(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    allocated_watts: Optional[float] = Field(None, alias="AllocatedWatts")
+    requested_watts: Optional[float] = Field(None, alias="RequestedWatts")
+
+
+class PowerBrake(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    applied: Optional[bool] = Field(None, alias="Applied")
+    enabled: Optional[bool] = Field(None, alias="Enabled")
+    load_percent_threshold: Optional[str] = Field(
+        None, alias="LoadPercentThreshold"
+    )
+    temperature_threshold: Optional[str] = Field(
+        None, alias="TemperatureThreshold"
+    )
+
+
+class PowerSubsystemLinks(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    power_brake_load_percent_sensor: Optional[Link] = Field(
+        None, alias="PowerBrakeLoadPercentSensor"
+    )
+    power_brake_temperature_sensor: Optional[Link] = Field(
+        None, alias="PowerBrakeTemperatureSensor"
+    )
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+
+class PowerSubsystem(Entity):
+    """Modern chassis power subsystem and its advertised resource links."""
+
+    allocation: Optional[PowerAllocation] = Field(None, alias="Allocation")
+    batteries: Optional[Link] = Field(None, alias="Batteries")
+    capacity_watts: Optional[float] = Field(None, alias="CapacityWatts")
+    max_ramp_rate_watts_per_second: Optional[ControlExcerpt] = Field(
+        None, alias="MaxRampRateWattsPerSecond"
+    )
+    power_brake: Optional[PowerBrake] = Field(None, alias="PowerBrake")
+    power_supplies: Optional[Link] = Field(None, alias="PowerSupplies")
+    power_supply_redundancy: Optional[List[Dict[str, Any]]] = Field(
+        None, alias="PowerSupplyRedundancy"
+    )
+    links: Optional[PowerSubsystemLinks] = Field(None, alias="Links")
+    status: Optional[Status] = Field(None, alias="Status")
+    oem: Optional[Oem] = Field(None, alias="Oem")
+
+
+class PowerSupplyMetrics(Entity):
+    """Read-only measurements advertised by a modern PowerSupply resource."""
+
+    charge_percent: Optional[SensorExcerpt] = Field(None, alias="ChargePercent")
+    energy_kwh: Optional[SensorExcerpt] = Field(None, alias="EnergykWh")
+    fan_speed_percent: Optional[SensorExcerpt] = Field(
+        None, alias="FanSpeedPercent"
+    )
+    fan_speeds_percent: Optional[List[SensorExcerpt]] = Field(
+        None, alias="FanSpeedsPercent"
+    )
+    frequency_hz: Optional[SensorExcerpt] = Field(None, alias="FrequencyHz")
+    input_current_amps: Optional[SensorExcerpt] = Field(
+        None, alias="InputCurrentAmps"
+    )
+    input_power_watts: Optional[SensorExcerpt] = Field(
+        None, alias="InputPowerWatts"
+    )
+    input_voltage: Optional[SensorExcerpt] = Field(None, alias="InputVoltage")
+    output_power_watts: Optional[SensorExcerpt] = Field(
+        None, alias="OutputPowerWatts"
+    )
+    power_load_percent: Optional[SensorExcerpt] = Field(
+        None, alias="PowerLoadPercent"
+    )
+    rail_current_amps: Optional[List[SensorExcerpt]] = Field(
+        None, alias="RailCurrentAmps"
+    )
+    rail_power_watts: Optional[List[SensorExcerpt]] = Field(
+        None, alias="RailPowerWatts"
+    )
+    rail_voltage: Optional[List[SensorExcerpt]] = Field(
+        None, alias="RailVoltage"
+    )
+    temperature_celsius: Optional[SensorExcerpt] = Field(
+        None, alias="TemperatureCelsius"
+    )
+    status: Optional[Status] = Field(None, alias="Status")
     oem: Optional[Oem] = Field(None, alias="Oem")
 
 
