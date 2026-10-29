@@ -1367,10 +1367,18 @@ class RedfishClient:
 
     def set_drive_indicator_led(self, drive_odata_id: str, state: str) -> str:
         """
-        Set ``Drive.IndicatorLED`` on a specific drive. ``state`` must be one
-        of ``Lit`` / ``Blinking`` / ``Off``.
+        Set drive identification through the deprecated string API.
+
+        Legacy ``IndicatorLED`` drives remain supported. Modern-only drives
+        translate ``Lit`` and ``Off`` to ``LocationIndicatorActive``.
         """
         return self._chassis.set_drive_indicator_led(drive_odata_id, state)
+
+    def set_drive_location_indicator(
+        self, drive_odata_id: str, active: bool
+    ) -> bool:
+        """Set drive identification using its advertised Redfish property."""
+        return self._chassis.set_drive_location_indicator(drive_odata_id, active)
 
     def get_network_adapters(self, chassis_id: Optional[str] = None) -> List:
         """

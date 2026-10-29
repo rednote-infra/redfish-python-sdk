@@ -1,0 +1,52 @@
+{
+  "ModernOnlyOff": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "LocationIndicatorActive": false
+  },
+  "ModernOnlyOn": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "LocationIndicatorActive": true
+  },
+  "LegacyOnlyOff": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "IndicatorLED": "Off"
+  },
+  "LegacyOnlyOn": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "IndicatorLED": "Lit"
+  },
+  "BothOff": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "LocationIndicatorActive": false,
+    "IndicatorLED": "Off"
+  },
+  "BothModernOn": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD",
+    "LocationIndicatorActive": true,
+    "IndicatorLED": "Off"
+  },
+  "Unsupported": {
+    "@odata.id": "/redfish/v1/Chassis/Self/Drives/NVMe0",
+    "Id": "NVMe0",
+    "Protocol": "NVMe",
+    "MediaType": "SSD"
+  }
+}

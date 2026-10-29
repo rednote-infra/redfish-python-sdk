@@ -436,7 +436,12 @@ class ChassisManager:
 
     def set_drive_indicator_led(self, drive_odata_id: str, state: str) -> str:
         """
-        Set a Drive IndicatorLED state via PATCH on the drive resource.
+        Set a drive identification state using the deprecated string API.
+
+        ``IndicatorLED`` is preserved when the drive advertises it. For a
+        modern-only drive, ``Lit`` and ``Off`` are translated to
+        ``LocationIndicatorActive``. ``Blinking`` cannot be represented by
+        the modern boolean property.
 
         Args:
             drive_odata_id: Full ``@odata.id`` of the drive resource.
@@ -451,10 +456,60 @@ class ChassisManager:
         _validate_indicator_led_state(state)
         # Refresh ETag before PATCH.
         drive_before = self._http.get(drive_odata_id, Drive)
-        logger.info("PATCH IndicatorLED=%s on %s", state, drive_before.odata_id)
-        self._http.patch_raw(drive_odata_id, {"IndicatorLED": state})
+        advertised = drive_before.model_fields_set
+        if "indicator_led" in advertised:
+            property_name = "IndicatorLED"
+            value = state
+        elif "location_indicator_active" in advertised:
+            if state == "Blinking":
+                raise RedfishValidationError(
+                    "Drive advertises LocationIndicatorActive only; "
+                    "Blinking cannot be represented by this boolean property"
+                )
+            property_name = "LocationIndicatorActive"
+            value = state == "Lit"
+        else:
+            _raise_drive_indicator_unsupported(drive_odata_id)
+
+        logger.info("PATCH %s=%s on %s", property_name, value, drive_before.odata_id)
+        self._http.patch_raw(drive_odata_id, {property_name: value})
         drive_after = self._http.get(drive_odata_id, Drive)
-        return drive_after.indicator_led
+        if property_name == "IndicatorLED":
+            return drive_after.indicator_led
+        return "Lit" if drive_after.location_indicator_active else "Off"
+
+    def set_drive_location_indicator(
+        self, drive_odata_id: str, active: bool
+    ) -> bool:
+        """Set drive identification using the best advertised property.
+
+        The standard ``LocationIndicatorActive`` property is preferred. The
+        deprecated ``IndicatorLED`` property is used only as a fallback.
+        Reading the drive before PATCH refreshes its cached ETag and prevents
+        sending a property that the resource did not advertise.
+        """
+        if not isinstance(active, bool):
+            raise RedfishValidationError(
+                "Drive location indicator state must be a boolean"
+            )
+
+        drive_before = self._http.get(drive_odata_id, Drive)
+        advertised = drive_before.model_fields_set
+        if "location_indicator_active" in advertised:
+            property_name = "LocationIndicatorActive"
+            value = active
+        elif "indicator_led" in advertised:
+            property_name = "IndicatorLED"
+            value = "Lit" if active else "Off"
+        else:
+            _raise_drive_indicator_unsupported(drive_odata_id)
+
+        logger.info("PATCH %s=%s on %s", property_name, value, drive_before.odata_id)
+        self._http.patch_raw(drive_odata_id, {property_name: value})
+        drive_after = self._http.get(drive_odata_id, Drive)
+        if property_name == "LocationIndicatorActive":
+            return drive_after.location_indicator_active
+        return drive_after.indicator_led != "Off"
 
 
 def _validate_indicator_led_state(state: str) -> None:
@@ -463,3 +518,10 @@ def _validate_indicator_led_state(state: str) -> None:
             f"Invalid IndicatorLED state '{state}'. "
             f"Allowed values: {list(_INDICATOR_LED_STATES)}"
         )
+
+
+def _raise_drive_indicator_unsupported(drive_odata_id: str) -> None:
+    raise RedfishValidationError(
+        f"Drive {drive_odata_id} does not advertise "
+        "LocationIndicatorActive or IndicatorLED"
+    )

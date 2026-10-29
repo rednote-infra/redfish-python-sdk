@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from .check import Field
 from .common import Entity, Status
@@ -29,6 +29,9 @@ class Drive(Entity):
 
     """
     indicator_led: Optional[str] = Field(None, alias="IndicatorLED")
+    location_indicator_active: Optional[bool] = Field(
+        None, alias="LocationIndicatorActive"
+    )
     model: Optional[str] = Field(None, alias="Model", validate="type=str")
     revision: Optional[str] = Field(None, alias="Revision")
     capacity_bytes: Optional[int] = Field(None, alias="CapacityBytes", validate="required,type=int,gt=0")
@@ -65,3 +68,18 @@ class Drive(Entity):
         if isinstance(v, dict):
             return [v]
         return v
+
+    @model_validator(mode="after")
+    def _provide_legacy_indicator_view(self):
+        """Expose modern on/off state to callers of the deprecated field."""
+        if (
+            "location_indicator_active" in self.model_fields_set
+            and "indicator_led" not in self.model_fields_set
+            and self.location_indicator_active is not None
+        ):
+            object.__setattr__(
+                self,
+                "indicator_led",
+                "Lit" if self.location_indicator_active else "Off",
+            )
+        return self
