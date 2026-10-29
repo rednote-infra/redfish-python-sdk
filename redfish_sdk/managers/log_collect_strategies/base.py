@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ...models.common import Link
@@ -96,10 +97,10 @@ class BaseLogCollectStrategy(ABC):
         and return its action target. Vendors that publish a collection-level
         OEM action override this.
         """
+        from ...exceptions import RedfishException, RedfishValidationError
+        from ...models.logs import Log
         from .._log_helpers import _describe_services, resolve_log_service
         from ..systems import _extract_action_target
-        from ...exceptions import RedfishValidationError, RedfishException
-        from ...models.logs import Log
 
         if log_id is not None:
             log = resolve_log_service(client, log_services_odata_id, log_id)
@@ -170,7 +171,10 @@ class BaseLogCollectStrategy(ABC):
             )
         body = self.build_collect_body(diagnostic_data_type, oem_params)
         logger.info("Collect trigger POST %s body=%s", target, body)
-        return client._http_client.post(target, Task, raw_body=body)
+        task = client._http_client.post(target, Task, raw_body=body)
+        if COLLECT_ACTION.removeprefix("#") in target and "/Actions/" in target:
+            task.source_log_service_uri = target.split("/Actions/", 1)[0]
+        return task
 
     def resolve_diagnostic_data_type(
         self, diagnostic_data_type: Optional[str]
@@ -216,12 +220,32 @@ class BaseLogCollectStrategy(ABC):
         """
         Locate the diagnostic-data artifact URI from a finished task.
 
-        Standard behaviour reads the log entry referenced by the task and
-        returns its ``AdditionalDataURI``. Returns ``None`` when unresolved.
+        Standard behaviour checks every URI source advertised by the
+        operation: the initial response, completed Task, task monitor,
+        Task messages, linked resources, and the resulting LogEntry.
+        Returns ``None`` when unresolved.
         """
-        entry = _resolve_task_log_entry(client, task)
-        if entry is not None and entry.additional_data_uri:
-            return entry.additional_data_uri
+        task_versions = _task_versions(client, task)
+
+        for candidate in task_versions:
+            uri = _direct_task_artifact_uri(candidate)
+            if uri:
+                return uri
+
+        for candidate in task_versions:
+            uri = _task_monitor_artifact_uri(client, candidate)
+            if uri:
+                return uri
+
+        for candidate in task_versions:
+            entry = _resolve_task_log_entry(client, candidate)
+            if entry is not None and entry.additional_data_uri:
+                return entry.additional_data_uri
+
+        for candidate in task_versions:
+            entry = _latest_resulting_log_entry(client, candidate)
+            if entry is not None and entry.additional_data_uri:
+                return entry.additional_data_uri
         return None
 
     def wait_until_ready(
@@ -276,7 +300,7 @@ class BaseLogCollectStrategy(ABC):
                 task_status=status,
                 messages=_serialise_messages(finished.messages),
             )
-        return finished
+        return _merge_task_context(task, finished)
 
     # ------------------------------------------------------------------
     # Existing-task discovery (for reusing a previous collection artifact)
@@ -354,7 +378,8 @@ class BaseLogCollectStrategy(ABC):
         if not uri:
             raise RedfishValidationError(
                 "Could not resolve a diagnostic-data download URI "
-                "(no AdditionalDataURI on the task or log entry)"
+                "from the initial response, task monitor, completed task, "
+                "task messages, or resulting LogEntry"
             )
         logger.info("Downloading diagnostic data from %s", uri)
         return client._http_client.download(uri, output_path)
@@ -456,33 +481,18 @@ def _resolve_task_log_entry(
     Returns ``None`` when nothing can be resolved; callers then raise a
     descriptive error.
     """
-    if not task.odata_id:
-        return None
-
     from ...exceptions import RedfishException
 
-    # Re-fetch the task as a typed Task so any additional fields that were
-    # dropped by the caller (e.g. collection listing) are populated.
-    try:
-        full = client._http_client.get(task.odata_id, Task)
-    except RedfishException:
-        return None
-
-    # 1. Some BMCs put AdditionalDataURI directly on the task body.
-    if full.additional_data_uri:
-        return LogEntry.model_construct(
-            id=full.id,
-            odata_id=full.odata_id,
-            additional_data_uri=full.additional_data_uri,
-        )
-
-    # 2. Follow a linked log entry when advertised via Links.CreatedResources
-    #    or (some BMCs) via Payload.TargetUri.
+    # Follow a linked log entry when advertised via Links.CreatedResources
+    # or a URI-valued task message argument. Payload.TargetUri describes the
+    # mutation target and must not be mistaken for a produced resource.
     candidate_links: List[Link] = []
-    if full.links and full.links.created_resources:
-        candidate_links.extend(full.links.created_resources)
-    if full.payload and full.payload.target_uri:
-        candidate_links.append(Link(**{"@odata.id": full.payload.target_uri}))
+    if task.links and task.links.created_resources:
+        candidate_links.extend(task.links.created_resources)
+    for message in task.messages or []:
+        for value in message.message_args or []:
+            if _is_uri(value) and "/Entries/" in value:
+                candidate_links.append(Link(**{"@odata.id": value}))
 
     for link in candidate_links:
         if not link.odata_id:
@@ -492,3 +502,184 @@ def _resolve_task_log_entry(
         except RedfishException:
             continue
     return None
+
+
+_ARTIFACT_KEYS = {
+    "additionaldatauri",
+    "downloaduri",
+    "diagnosticdatauri",
+}
+_ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz", ".gz", ".zip", ".7z")
+
+
+def _task_versions(client: "RedfishClient", task: Task) -> List[Task]:
+    """Return the caller's Task plus a fresh Task resource when available."""
+    versions = [task]
+    if not task.odata_id:
+        return versions
+    try:
+        full = client._http_client.get(task.odata_id, Task)
+    except Exception as exc:  # noqa: BLE001 - artifact discovery is best-effort
+        logger.debug("Could not refresh diagnostic Task %s: %s", task.odata_id, exc)
+        return versions
+    versions.append(_merge_task_context(task, full))
+    return versions
+
+
+def _merge_task_context(source: Task, target: Task) -> Task:
+    """Carry initial-response and artifact context into a polled Task."""
+    for field in (
+        "additional_data_uri",
+        "task_monitor",
+        "payload",
+        "links",
+        "initial_http_status",
+        "initial_location",
+        "initial_content_location",
+        "initial_retry_after",
+        "source_log_service_uri",
+    ):
+        if getattr(target, field, None) is None:
+            setattr(target, field, getattr(source, field, None))
+    return target
+
+
+def _direct_task_artifact_uri(task: Task) -> Optional[str]:
+    if task.additional_data_uri:
+        return task.additional_data_uri
+    if (
+        task.initial_content_location
+        and not _is_task_tracking_uri(task.initial_content_location)
+    ):
+        return task.initial_content_location
+    if (
+        task.initial_location
+        and not _is_task_tracking_uri(task.initial_location)
+        and task.initial_http_status != 202
+    ):
+        return task.initial_location
+    for message in task.messages or []:
+        for value in message.message_args or []:
+            if _looks_like_artifact_uri(value):
+                return value
+    return None
+
+
+def _task_monitor_artifact_uri(
+    client: "RedfishClient", task: Task
+) -> Optional[str]:
+    monitor = task.task_monitor
+    if not monitor or (
+        task.odata_id and monitor.rstrip("/") == task.odata_id.rstrip("/")
+    ):
+        return None
+    try:
+        response = client._http_client._request("GET", monitor)
+    except Exception as exc:  # noqa: BLE001 - monitor may expire after completion
+        logger.debug("Could not inspect diagnostic task monitor %s: %s", monitor, exc)
+        return None
+    if not 200 <= response.status_code < 300:
+        return None
+    content_location = response.headers.get("Content-Location")
+    if content_location:
+        return content_location
+    location = response.headers.get("Location")
+    if location and not _is_task_tracking_uri(location):
+        return location
+    try:
+        return _find_named_artifact_uri(response.json())
+    except (TypeError, ValueError):
+        return None
+
+
+def _find_named_artifact_uri(value: Any) -> Optional[str]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = "".join(ch for ch in str(key).lower() if ch.isalnum())
+            if normalized in _ARTIFACT_KEYS and _is_uri(item):
+                return item
+        for item in value.values():
+            found = _find_named_artifact_uri(item)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_named_artifact_uri(item)
+            if found:
+                return found
+    return None
+
+
+def _latest_resulting_log_entry(
+    client: "RedfishClient", task: Task
+) -> Optional[LogEntry]:
+    """Find the newest downloadable entry under the task's source LogService."""
+    from ...exceptions import RedfishException
+    from ...models.logs import Log
+
+    log_service_uri = task.source_log_service_uri
+    if not log_service_uri:
+        target = task.payload and task.payload.target_uri
+        if (
+            not target
+            or "CollectDiagnosticData" not in target
+            or "/Actions/" not in target
+        ):
+            return None
+        log_service_uri = target.split("/Actions/", 1)[0]
+    try:
+        log_service = client._http_client.get(log_service_uri, Log)
+    except RedfishException:
+        return None
+    if not log_service.entries or not log_service.entries.odata_id:
+        return None
+    try:
+        entries = client._get_collection(log_service.entries.odata_id, LogEntry)
+    except RedfishException:
+        return None
+    downloadable = [entry for entry in entries if entry.additional_data_uri]
+    task_started = _parse_redfish_timestamp(task.start_time)
+    if task_started is not None:
+        downloadable = [
+            entry for entry in downloadable
+            if (
+                (created := _parse_redfish_timestamp(entry.created)) is not None
+                and created >= task_started
+            )
+        ]
+    if not downloadable:
+        return None
+    downloadable.sort(key=lambda entry: entry.created or "", reverse=True)
+    return downloadable[0]
+
+
+def _is_uri(value: Any) -> bool:
+    return isinstance(value, str) and (
+        value.startswith("/")
+        or value.startswith("http://")
+        or value.startswith("https://")
+    )
+
+
+def _looks_like_artifact_uri(value: Any) -> bool:
+    if not _is_uri(value):
+        return False
+    path = str(value).split("?", 1)[0].lower()
+    return path.endswith(_ARCHIVE_SUFFIXES)
+
+
+def _is_task_tracking_uri(uri: str) -> bool:
+    path = uri.split("?", 1)[0]
+    return "/TaskService/Tasks/" in path or "/TaskService/TaskMonitors/" in path
+
+
+def _parse_redfish_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed

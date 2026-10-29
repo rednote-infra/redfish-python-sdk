@@ -20,11 +20,14 @@ These tests never hit a real BMC; HTTP calls are stubbed on the client.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from unittest.mock import patch
+
+import requests
 
 from redfish_sdk import (
     LogCollectFailedError,
@@ -33,11 +36,6 @@ from redfish_sdk import (
     RedfishValidationError,
 )
 from redfish_sdk.exceptions import RedfishException
-from redfish_sdk.models.common import Link
-from redfish_sdk.models.logs import Log
-from redfish_sdk.models.managers import Manager
-from redfish_sdk.models.systems import System
-from redfish_sdk.models.task import Message, Task
 from redfish_sdk.managers.log_collect_strategies import (
     EnginetechLogCollectStrategy,
     GenericLogCollectStrategy,
@@ -51,6 +49,11 @@ from redfish_sdk.managers.log_collect_strategies import (
     XFusionLogCollectStrategy,
     ZteLogCollectStrategy,
 )
+from redfish_sdk.models.common import Link
+from redfish_sdk.models.logs import Log
+from redfish_sdk.models.managers import Manager
+from redfish_sdk.models.systems import System
+from redfish_sdk.models.task import Message, Task
 
 # Fixed dummy credentials — these tests are fully offline (all HTTP calls are
 # stubbed), so they must never depend on env vars or reach a real BMC.
@@ -353,6 +356,10 @@ class TestCollectDiagnosticData(VendorRestoreMixin):
         self.assertEqual(recorder.last["path"], COLLECT_TARGET)
         self.assertEqual(recorder.last["raw_body"], {"DiagnosticDataType": "Manager"})
         self.assertEqual(task.id, "42")
+        self.assertEqual(
+            task.source_log_service_uri,
+            "/redfish/v1/Managers/1/LogServices/Log1",
+        )
         client.close()
 
     def test_explicit_type_overrides_default(self) -> None:
@@ -594,6 +601,162 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
         path = client.download_diagnostic_data(task, output_path="/tmp/42.tar.gz")
         self.assertEqual(path, "/tmp/42.tar.gz")
         self.assertEqual(recorder.last["uri"], "/redfish/v1/download/42.tar.gz")
+        client.close()
+
+    def test_from_initial_response_body(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task = Task.model_construct(
+            id="42",
+            additional_data_uri="/redfish/v1/download/initial-body.tar.gz",
+        )
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(
+            recorder.last["uri"], "/redfish/v1/download/initial-body.tar.gz"
+        )
+        client.close()
+
+    def test_from_initial_response_content_location(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task = Task.model_construct(
+            id="42",
+            initial_http_status=200,
+            initial_content_location="/redfish/v1/download/initial.tar.gz",
+        )
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri, output_path=output_path) or b"BUNDLE"
+            )
+        )
+
+        data = client.download_diagnostic_data(task)
+
+        self.assertEqual(data, b"BUNDLE")
+        self.assertEqual(
+            recorder.last["uri"], "/redfish/v1/download/initial.tar.gz"
+        )
+        client.close()
+
+    def test_from_completed_task_message_argument(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task = Task.model_construct(
+            id="42", odata_id="/redfish/v1/TaskService/Tasks/42"
+        )
+        _install_get_dispatch(client, lambda path: {
+            "@odata.id": "/redfish/v1/TaskService/Tasks/42",
+            "Id": "42",
+            "TaskState": "Completed",
+            "Messages": [{
+                "MessageId": "LogService.1.0.DiagnosticDataReady",
+                "MessageArgs": ["/redfish/v1/download/message.tar.gz"],
+            }],
+        })
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(
+            recorder.last["uri"], "/redfish/v1/download/message.tar.gz"
+        )
+        client.close()
+
+    def test_from_task_monitor_response(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task = Task.model_construct(
+            id="42",
+            task_monitor="/redfish/v1/TaskService/TaskMonitors/42",
+        )
+        monitor_response = requests.Response()
+        monitor_response.status_code = 200
+        monitor_response._content = json.dumps({
+            "AdditionalDataURI": "/redfish/v1/download/monitor.tar.gz",
+        }).encode()
+        monitor_response.headers["Content-Type"] = "application/json"
+        client._http_client._request = (  # type: ignore[assignment]
+            lambda method, path, **kwargs: monitor_response
+        )
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(
+            recorder.last["uri"], "/redfish/v1/download/monitor.tar.gz"
+        )
+        client.close()
+
+    def test_from_latest_resulting_log_entry(self) -> None:
+        client = _make_client()
+        _force_vendor("generic")
+        task_uri = "/redfish/v1/TaskService/Tasks/42"
+        log_uri = "/redfish/v1/Managers/Self/LogServices/BMCDebugLogs"
+        entries_uri = f"{log_uri}/Entries"
+        action_uri = f"{log_uri}/Actions/LogService.CollectDiagnosticData"
+        task = Task.model_construct(id="42", odata_id=task_uri)
+
+        def fetch(path):
+            if path == task_uri:
+                return {
+                    "@odata.id": task_uri,
+                    "Id": "42",
+                    "TaskState": "Completed",
+                    "StartTime": "2026-10-27T06:20:00Z",
+                    "Payload": {"TargetUri": action_uri},
+                }
+            if path == log_uri:
+                return {
+                    "@odata.id": log_uri,
+                    "Id": "BMCDebugLogs",
+                    "Entries": {"@odata.id": entries_uri},
+                }
+            raise AssertionError(f"Unexpected GET {path}")
+
+        _install_get_dispatch(client, fetch)
+        client._get_collection = (  # type: ignore[assignment]
+            lambda path, model: [
+                LogEntry.model_construct(
+                    id="old",
+                    created="2026-10-27T06:00:00Z",
+                    additional_data_uri="/redfish/v1/download/old.tar.gz",
+                ),
+                LogEntry.model_construct(
+                    id="new",
+                    created="2026-10-27T06:20:44Z",
+                    additional_data_uri="/redfish/v1/download/new.tar.gz",
+                ),
+            ] if path == entries_uri and model is LogEntry else []
+        )
+        recorder = _CallRecorder()
+        client._http_client.download = (  # type: ignore[assignment]
+            lambda uri, output_path=None, chunk_size=65536: (
+                recorder.record(uri=uri) or b"BUNDLE"
+            )
+        )
+
+        client.download_diagnostic_data(task)
+
+        self.assertEqual(recorder.last["uri"], "/redfish/v1/download/new.tar.gz")
         client.close()
 
     def test_missing_uri_raises(self) -> None:

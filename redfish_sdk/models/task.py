@@ -86,6 +86,14 @@ class Task(Entity):
     #: Some BMCs inline the produced artifact URI directly on the task body
     #: (non-standard but observed in the wild).
     additional_data_uri: Optional[str] = Field(None, alias="AdditionalDataURI")
+    # Transport metadata retained from the response that created this task.
+    # These fields are SDK context, not Redfish payload properties, so they
+    # are excluded from model serialisation.
+    initial_http_status: Optional[int] = Field(None, exclude=True)
+    initial_location: Optional[str] = Field(None, exclude=True)
+    initial_content_location: Optional[str] = Field(None, exclude=True)
+    initial_retry_after: Optional[str] = Field(None, exclude=True)
+    source_log_service_uri: Optional[str] = Field(None, exclude=True)
     #: Vendor-specific ``Oem`` block (opaque; strategies read it as needed).
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 

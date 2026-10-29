@@ -497,6 +497,28 @@ class RedfishHttpClient:
             result.http_status = response.status_code
             result.task_uri = result.odata_id or result.task_uri
             result.retry_after = response.headers.get("Retry-After") or result.retry_after
+        else:
+            # Preserve response metadata needed by the standard diagnostic-log
+            # flow. Import lazily to keep the transport module independent of
+            # higher-level service managers.
+            from .models.task import Task
+
+            if isinstance(result, Task):
+                location = response.headers.get("Location")
+                result.initial_http_status = response.status_code
+                result.initial_location = location
+                result.initial_content_location = response.headers.get(
+                    "Content-Location"
+                )
+                result.initial_retry_after = response.headers.get("Retry-After")
+                result.task_monitor = result.task_monitor or location
+                if (
+                    not result.odata_id
+                    and location
+                    and "/TaskService/Tasks/" in location
+                    and "/TaskMonitors/" not in location
+                ):
+                    result.odata_id = location
         return result
 
     def post_raw(self, path: str, body: Optional[Dict] = None) -> requests.Response:

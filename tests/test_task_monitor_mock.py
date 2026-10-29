@@ -250,6 +250,29 @@ def test_generic_mutation_response_retains_async_monitor_metadata(client, monkey
     assert result.retry_after == "12"
 
 
+def test_task_response_retains_artifact_header_metadata(client, monkeypatch):
+    initial = response(
+        202,
+        {"@odata.id": "/redfish/v1/TaskService/Tasks/8", "TaskState": "Running"},
+        {
+            "Location": "/redfish/v1/TaskService/TaskMonitors/8",
+            "Content-Location": "/redfish/v1/download/diagnostic.tar.gz",
+            "Retry-After": "12",
+        },
+    )
+    monkeypatch.setattr(client._http_client, "_request", lambda *args, **kwargs: initial)
+
+    result = client._http_client.post(
+        "/redfish/v1/Actions/LogService.CollectDiagnosticData", Task, raw_body={}
+    )
+
+    assert result.initial_http_status == 202
+    assert result.task_monitor == "/redfish/v1/TaskService/TaskMonitors/8"
+    assert result.initial_location == "/redfish/v1/TaskService/TaskMonitors/8"
+    assert result.initial_content_location == "/redfish/v1/download/diagnostic.tar.gz"
+    assert result.initial_retry_after == "12"
+
+
 def test_wait_for_operation_supports_legacy_task_uri_location(client, monkeypatch):
     task_uri = "/redfish/v1/TaskService/Tasks/9"
     scripted = iter([
