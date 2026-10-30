@@ -1627,7 +1627,7 @@ class RedfishClient:
 
     def collect_and_download_diagnostic_data(
         self,
-        output_path: str,
+        output_path: Optional[str] = None,
         diagnostic_data_type: Optional[str] = None,
         log_id: Optional[str] = None,
         manager_id: Optional[str] = None,
