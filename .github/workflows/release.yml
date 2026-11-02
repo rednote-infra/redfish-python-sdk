@@ -11,7 +11,8 @@ permissions:
 jobs:
   validate:
     name: Validate Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    # Keep the release gate aligned with CI and the Python 3.9 support floor.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

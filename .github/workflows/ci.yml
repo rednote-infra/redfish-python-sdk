@@ -12,7 +12,9 @@ permissions:
 jobs:
   validate:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    # Python 3.9 is not published for the Ubuntu 26.04 image currently used
+    # by ubuntu-latest. Pin the supported image so the declared minimum can run.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
