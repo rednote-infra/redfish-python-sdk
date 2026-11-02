@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, List, Optional
 from urllib.parse import urlsplit
 
 from .. import models
-from ..exceptions import RedfishNotFoundError, RedfishValidationError
+from ..exceptions import RedfishException, RedfishNotFoundError, RedfishValidationError
 from ..models.actions import ActionInfo
 from ..models.common import Collection, Link, RedfishResponse
 from ..models.logs import Log, LogActions, LogEntry
@@ -135,7 +135,13 @@ class ManagersManager:
         action = LogActions.model_validate(log.actions or {}).clear_log
         if not action or not action.target:
             raise RedfishValidationError(f"Manager log {log.id!r} does not advertise #LogService.ClearLog")
-        self._http.post(action.target, RedfishResponse, raw_body={})
+        try:
+            self._http.post(action.target, RedfishResponse, raw_body={})
+        except RedfishException as e:
+            if getattr(e, "status_code", None) != 400:
+                raise
+            logger.warning("ClearLog with JSON body rejected (HTTP 400) on %s: %s; retrying without body", action.target, e)
+            self._http.post(action.target, RedfishResponse)
 
     def log_entries(
         self,
