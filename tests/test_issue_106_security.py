@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from unittest.mock import Mock
@@ -11,7 +12,11 @@ import requests
 
 from redfish_sdk import RedfishClient
 from redfish_sdk.exceptions import RedfishValidationError
-from redfish_sdk.http_client import RedfishHttpClient, _redact_for_log
+from redfish_sdk.http_client import (
+    _DEPRECATION_WARNINGS_EMITTED,
+    RedfishHttpClient,
+    _redact_for_log,
+)
 from redfish_sdk.models.account import Account
 from redfish_sdk.models.chassis import Chassis
 from redfish_sdk.models.managers import SNMPCommunity, SnmpService
@@ -38,26 +43,31 @@ def _response(
     return response
 
 
-def test_tls_verification_is_enabled_by_default() -> None:
-    client = RedfishClient("bmc.example", "admin", "password")
+def test_legacy_tls_default_is_preserved_with_a_deprecation_warning() -> None:
+    _DEPRECATION_WARNINGS_EMITTED.discard("verify_ssl")
+    with pytest.warns(DeprecationWarning, match="verify_ssl=False"):
+        client = RedfishClient("bmc.example", "admin", "password")
     try:
-        assert client._http_client.verify_ssl is True
-        assert client._http_client._session.verify is True
+        assert client._http_client.verify_ssl is False
+        assert client._http_client._session.verify is False
     finally:
         client.close()
+
+
+def test_public_tls_default_remains_signature_compatible() -> None:
+    parameter = inspect.signature(RedfishClient).parameters["verify_ssl"]
+    assert parameter.default is False
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"scheme": "http"}, "require HTTPS"),
         ({"scheme": "ftp"}, "scheme"),
         ({"host": "user:pass@bmc.example"}, "hostname or IP"),
         ({"host": "bmc.example/redfish/v1"}, "hostname or IP"),
         ({"host": "bmc.example?token=value"}, "hostname or IP"),
         ({"host": "bmc.example:invalid"}, "host or port"),
         ({"host": " bmc.example"}, "non-empty string"),
-        ({"username": "domain:admin"}, "cannot contain ':'"),
     ],
 )
 def test_authenticated_endpoint_validation(kwargs: dict, message: str) -> None:
@@ -67,18 +77,32 @@ def test_authenticated_endpoint_validation(kwargs: dict, message: str) -> None:
         RedfishClient(**arguments)
 
 
-def test_plain_http_requires_an_explicit_compatibility_override() -> None:
-    client = RedfishClient(
-        "bmc.example",
-        "admin",
-        "password",
-        scheme="http",
-        allow_insecure_http_auth=True,
-    )
+def test_plain_http_legacy_default_is_preserved_with_a_warning() -> None:
+    _DEPRECATION_WARNINGS_EMITTED.discard("insecure_http")
+    with pytest.warns(DeprecationWarning, match="authenticated HTTP"):
+        client = RedfishClient("bmc.example", "admin", "password", scheme="http")
     try:
         assert client._http_client.scheme == "http"
     finally:
         client.close()
+
+
+def test_plain_http_can_be_rejected_explicitly() -> None:
+    with pytest.raises(RedfishValidationError, match="require HTTPS"):
+        RedfishClient(
+            "bmc.example",
+            "admin",
+            "password",
+            scheme="http",
+            allow_insecure_http_auth=False,
+        )
+
+
+def test_colon_in_basic_username_is_temporarily_supported_with_a_warning() -> None:
+    _DEPRECATION_WARNINGS_EMITTED.discard("colon_username")
+    with pytest.warns(DeprecationWarning, match="username containing ':'"):
+        client = RedfishClient("bmc.example", "domain:admin", "password")
+    client.close()
 
 
 @pytest.mark.parametrize("host", ["192.0.2.10", "bmc.example:8443", "[2001:db8::10]:8443"])
@@ -90,23 +114,46 @@ def test_supported_endpoint_forms(host: str) -> None:
         client.close()
 
 
-def test_absolute_cross_origin_target_is_rejected_before_network_access() -> None:
+def test_cross_origin_download_uses_a_credential_free_session() -> None:
     client = RedfishHttpClient("bmc.example", "admin", "password")
+    client.set_auth_token("session-secret")
     client._session.get = Mock()
+    client._external_session.get = Mock(return_value=_response())
 
-    with pytest.raises(RedfishValidationError, match="different origin"):
-        client.download("https://files.example/artifact.bin")
+    assert client.download("https://files.example/artifact.bin") == b"payload"
 
     client._session.get.assert_not_called()
+    client._external_session.get.assert_called_once()
+    assert "Authorization" not in client._external_session.headers
+    assert "X-Auth-Token" not in client._external_session.headers
 
 
-def test_requests_do_not_follow_redirects_implicitly() -> None:
+def test_requests_continue_to_follow_redirects() -> None:
     client = RedfishHttpClient("bmc.example", "admin", "password")
     client._session.get = Mock(return_value=_response())
 
     client._send("GET", "/redfish/v1/")
 
-    assert client._session.get.call_args.kwargs["allow_redirects"] is False
+    assert client._session.get.call_args.kwargs.get("allow_redirects", True) is True
+
+
+def test_cross_origin_redirect_removes_bmc_credentials() -> None:
+    client = RedfishHttpClient("bmc.example", "admin", "password")
+    client.set_auth_token("session-secret")
+    response = _response()
+    redirected = requests.Request(
+        "GET",
+        "https://files.example/artifact.bin",
+        headers={
+            **client._session.headers,
+            "Authorization": "Basic session-secret",
+        },
+    ).prepare()
+
+    client._session.rebuild_auth(redirected, response)
+
+    assert "Authorization" not in redirected.headers
+    assert "X-Auth-Token" not in redirected.headers
 
 
 @pytest.mark.parametrize(

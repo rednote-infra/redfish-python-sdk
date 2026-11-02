@@ -165,7 +165,7 @@ class RedfishClient:
         host: str,
         username: str,
         password: str,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
         proxy: Optional[str] = None,
         connect_timeout: int = 10,
         read_timeout: int = 30,
@@ -174,7 +174,7 @@ class RedfishClient:
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
         strict_collection_errors: bool = False,
-        allow_insecure_http_auth: bool = False,
+        allow_insecure_http_auth: Optional[bool] = None,
     ):
         """
         Initialize the Redfish Client.
@@ -183,7 +183,8 @@ class RedfishClient:
             host: BMC IP address or hostname (e.g., ``os.environ["BMC_IP"]``)
             username: BMC username (e.g., ``os.environ["BMC_USERNAME"]``)
             password: BMC password (e.g., ``os.environ["BMC_PASSWORD"]``)
-            verify_ssl: Whether to verify SSL certificates. Default True.
+            verify_ssl: Whether to verify SSL certificates. The legacy False
+                default is preserved for compatibility but deprecated.
             proxy: Optional HTTP/HTTPS proxy URL.
                    Example: "http://127.0.0.1:8080" (matches Java's proxy config)
             connect_timeout: TCP connection timeout in seconds (default 10)
@@ -202,8 +203,9 @@ class RedfishClient:
                 collection member or continuation page fails. The default is
                 best-effort expansion with failures attached to the returned
                 list-compatible ``CollectionResult``.
-            allow_insecure_http_auth: Explicitly allow credentials over HTTP.
-                Disabled by default.
+            allow_insecure_http_auth: Control credentials over HTTP. Omitting
+                this preserves the legacy behavior with a deprecation warning;
+                False enforces HTTPS.
         """
         self._http_client = RedfishHttpClient(
             host=host,

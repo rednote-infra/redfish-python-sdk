@@ -5,7 +5,7 @@ Provides low-level GET/POST/PATCH/DELETE operations against a Redfish BMC endpoi
 
 Design notes:
 - Uses Basic Auth (base64-encoded "username:password") in Authorization header
-- Verifies TLS certificates by default; callers must explicitly opt out
+- Preserves the legacy TLS default with a deprecation path toward verification
 - Supports HTTP proxy
 - Extracts ETag from GET responses and sends If-Match on PATCH requests
 - Raises RedfishException for non-2xx responses
@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import warnings
 from typing import Any, Dict, Optional, Type, TypeVar
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
@@ -58,6 +59,15 @@ _SENSITIVE_LOG_SUFFIXES = (
     "secret",
     "token",
 )
+_DEPRECATION_WARNINGS_EMITTED: set[str] = set()
+
+
+def _warn_deprecated_once(key: str, message: str, stacklevel: int) -> None:
+    """Emit a migration warning once per process without changing filters."""
+    if key in _DEPRECATION_WARNINGS_EMITTED:
+        return
+    _DEPRECATION_WARNINGS_EMITTED.add(key)
+    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
 
 
 def _redact_for_log(value: Any) -> Any:
@@ -135,6 +145,38 @@ def _validate_download_filename(filename: str) -> str:
     return filename
 
 
+def _effective_port(parts) -> int:
+    """Return the explicit or scheme-default port for parsed URL parts."""
+    if parts.port is not None:
+        return parts.port
+    return 443 if parts.scheme.lower() == "https" else 80
+
+
+def _same_origin(first_url: str, second_url: str) -> bool:
+    """Return whether two HTTP(S) URLs use the same scheme, host, and port."""
+    first = urlsplit(first_url)
+    second = urlsplit(second_url)
+    return (
+        first.scheme.lower() == second.scheme.lower()
+        and (first.hostname or "").lower() == (second.hostname or "").lower()
+        and _effective_port(first) == _effective_port(second)
+    )
+
+
+class _CredentialSafeSession(requests.Session):
+    """Requests session that removes Redfish credentials across origins."""
+
+    def rebuild_auth(
+        self,
+        prepared_request: requests.PreparedRequest,
+        response: requests.Response,
+    ) -> None:
+        if not _same_origin(response.request.url, prepared_request.url):
+            prepared_request.headers.pop("Authorization", None)
+            prepared_request.headers.pop("X-Auth-Token", None)
+        super().rebuild_auth(prepared_request, response)
+
+
 class RedfishHttpClient:
     """
     Low-level HTTP client for Redfish API calls.
@@ -155,7 +197,7 @@ class RedfishHttpClient:
         host: str,
         username: str,
         password: str,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
         proxy: Optional[str] = None,
         connect_timeout: int = 10,
         read_timeout: int = 30,
@@ -163,7 +205,7 @@ class RedfishHttpClient:
         retry_5xx: int = 0,
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
-        allow_insecure_http_auth: bool = False,
+        allow_insecure_http_auth: Optional[bool] = None,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -172,7 +214,8 @@ class RedfishHttpClient:
             host: BMC IP address or hostname (e.g., "192.0.2.10")
             username: BMC username
             password: BMC password
-            verify_ssl: Whether to verify SSL certificates. Default True.
+            verify_ssl: Whether to verify SSL certificates. The legacy False
+                default is preserved for compatibility but deprecated.
             proxy: Optional HTTP/HTTPS proxy URL (e.g., "http://127.0.0.1:8080")
             connect_timeout: Connection timeout in seconds
             read_timeout: Read timeout in seconds
@@ -190,10 +233,18 @@ class RedfishHttpClient:
                 for non-idempotent operations).
             retry_backoff: Base sleep in seconds between retries; each retry
                 sleeps ``retry_backoff * attempt`` (linear back-off).
-            allow_insecure_http_auth: Explicitly allow credentials over HTTP.
-                Disabled by default because Basic and session credentials are
-                otherwise exposed in plaintext.
+            allow_insecure_http_auth: Control credentials over HTTP. Omitting
+                this preserves the legacy allow behavior with a deprecation
+                warning; False enforces HTTPS.
         """
+        if not verify_ssl:
+            _warn_deprecated_once(
+                "verify_ssl",
+                "The legacy verify_ssl=False default is deprecated; pass "
+                "verify_ssl=False explicitly for a self-signed BMC or "
+                "verify_ssl=True to enable certificate verification.",
+                stacklevel=3,
+            )
         self._validate_endpoint(host, scheme, username, allow_insecure_http_auth)
         self.host = host
         self.scheme = scheme.lower()
@@ -209,7 +260,7 @@ class RedfishHttpClient:
         self._basic_auth = "Basic " + base64.b64encode(credentials.encode()).decode()
 
         # Session with proxy and default headers
-        self._session = requests.Session()
+        self._session = _CredentialSafeSession()
         self._session.verify = verify_ssl
         self._session.headers.update({
             "Authorization": self._basic_auth,
@@ -217,8 +268,13 @@ class RedfishHttpClient:
             "Accept": "application/json",
         })
 
+        self._external_session = _CredentialSafeSession()
+        self._external_session.verify = verify_ssl
+        self._external_session.headers.update({"Accept": "*/*"})
+
         if proxy:
             self._session.proxies = {"http": proxy, "https": proxy}
+            self._external_session.proxies = {"http": proxy, "https": proxy}
 
         # Track the last ETag received for use in subsequent PATCH requests
         self._last_etag: Dict[str, str] = {}
@@ -228,7 +284,7 @@ class RedfishHttpClient:
         host: str,
         scheme: str,
         username: str,
-        allow_insecure_http_auth: bool,
+        allow_insecure_http_auth: Optional[bool],
     ) -> None:
         """Validate the configured authenticated Redfish origin."""
         if (
@@ -243,14 +299,26 @@ class RedfishHttpClient:
         if not isinstance(username, str):
             raise RedfishValidationError("Redfish username must be a string")
         if ":" in username:
-            raise RedfishValidationError(
-                "Basic authentication username cannot contain ':'"
+            _warn_deprecated_once(
+                "colon_username",
+                "A Basic authentication username containing ':' is ambiguous "
+                "and will be rejected in the next major release.",
+                stacklevel=5,
             )
-        if scheme.lower() == "http" and not allow_insecure_http_auth:
-            raise RedfishValidationError(
-                "Authenticated Redfish connections require HTTPS; "
-                "set allow_insecure_http_auth=True only for isolated compatibility testing"
-            )
+        if scheme.lower() == "http":
+            if allow_insecure_http_auth is False:
+                raise RedfishValidationError(
+                    "Authenticated Redfish connections require HTTPS when "
+                    "allow_insecure_http_auth=False"
+                )
+            if allow_insecure_http_auth is None:
+                _warn_deprecated_once(
+                    "insecure_http",
+                    "The legacy authenticated HTTP default is deprecated; pass "
+                    "allow_insecure_http_auth=True to retain it explicitly or "
+                    "False to require HTTPS.",
+                    stacklevel=5,
+                )
 
         try:
             endpoint = urlsplit(f"{scheme.lower()}://{host}")
@@ -270,12 +338,6 @@ class RedfishHttpClient:
                 "Redfish host must contain only a hostname or IP address and optional port"
             )
 
-    @staticmethod
-    def _effective_port(parts) -> int:
-        if parts.port is not None:
-            return parts.port
-        return 443 if parts.scheme.lower() == "https" else 80
-
     def _resolve_url(self, path: str) -> str:
         """Resolve a request target and require the configured BMC origin."""
         base = urlsplit(f"{self.scheme}://{self.host}")
@@ -288,7 +350,7 @@ class RedfishHttpClient:
             same_origin = (
                 target.scheme.lower() == base.scheme.lower()
                 and (target.hostname or "").lower() == (base.hostname or "").lower()
-                and self._effective_port(target) == self._effective_port(base)
+                and _effective_port(target) == _effective_port(base)
                 and target.username is None
                 and target.password is None
             )
@@ -297,6 +359,35 @@ class RedfishHttpClient:
         if not same_origin:
             raise RedfishValidationError(
                 "Refusing to send BMC credentials to a different origin"
+            )
+        return urlunsplit(target)
+
+    def _is_same_origin_target(self, path: str) -> bool:
+        """Return whether a request target belongs to the configured BMC."""
+        if not path.startswith(("http://", "https://")):
+            return True
+        try:
+            return _same_origin(f"{self.scheme}://{self.host}", path)
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _validate_external_url(path: str) -> str:
+        """Validate a credential-free cross-origin download URL."""
+        try:
+            target = urlsplit(path)
+            _ = target.port
+        except ValueError as exc:
+            raise RedfishValidationError("Invalid artifact download URL") from exc
+        if (
+            target.scheme.lower() not in {"http", "https"}
+            or target.hostname is None
+            or target.username is not None
+            or target.password is not None
+        ):
+            raise RedfishValidationError(
+                "Cross-origin artifact URLs must be absolute HTTP(S) URLs "
+                "without user information"
             )
         return urlunsplit(target)
 
@@ -348,6 +439,8 @@ class RedfishHttpClient:
         self,
         method: str,
         path: str,
+        *,
+        authenticated: bool = True,
         **kwargs: Any,
     ) -> requests.Response:
         """
@@ -374,14 +467,17 @@ class RedfishHttpClient:
         kwargs.setdefault(
             "timeout", (self.connect_timeout, self.read_timeout)
         )
-        url = self._resolve_url(path)
-        kwargs.setdefault("allow_redirects", False)
-
+        url = (
+            self._resolve_url(path)
+            if authenticated
+            else self._validate_external_url(path)
+        )
         # Dispatch through the method-specific session attribute
         # (self._session.get / .post / ...). This keeps behaviour identical
         # to the pre-refactor client and preserves compatibility with unit
         # tests that stub the individual verbs.
-        session_call = getattr(self._session, method_u.lower())
+        session = self._session if authenticated else self._external_session
+        session_call = getattr(session, method_u.lower())
         for attempt in range(1, attempts + 1):
             try:
                 response = session_call(url, **kwargs)
@@ -423,6 +519,8 @@ class RedfishHttpClient:
         self,
         method: str,
         path: str,
+        *,
+        authenticated: bool = True,
         **kwargs: Any,
     ) -> requests.Response:
         """
@@ -434,7 +532,12 @@ class RedfishHttpClient:
         ``self._request("GET", path)`` call is behaviour-preserving.
         """
         try:
-            return self._send(method, path, **kwargs)
+            return self._send(
+                method,
+                path,
+                authenticated=authenticated,
+                **kwargs,
+            )
         except requests.exceptions.Timeout as exc:
             raise RedfishTimeoutError(self.host) from exc
         except requests.exceptions.ConnectionError as exc:
@@ -762,16 +865,17 @@ class RedfishHttpClient:
         """
         Download a binary artifact (e.g. a diagnostic-data bundle).
 
-        Reuses the session's authentication (Basic/Token), ``verify_ssl`` and
-        proxy configuration, so it works with BMCs whose artifact URIs require
-        the same credentials as the Redfish API.
+        Same-origin downloads reuse the session's authentication (Basic/Token),
+        ``verify_ssl`` and proxy configuration. Cross-origin absolute URLs use
+        a credential-free session with the same transport configuration.
 
         A relative ``uri`` is resolved against the BMC ``scheme://host``.
-        Absolute URIs are accepted only when they have the same origin, so the
-        authenticated session cannot disclose credentials to another server.
+        Redirects remain enabled for backward compatibility, while the session
+        strips Redfish credentials before following a redirect to another
+        origin.
 
         Args:
-            uri: Same-origin absolute URL or Redfish-relative artifact path.
+            uri: Absolute HTTP(S) URL or Redfish-relative artifact path.
             output_path: When provided, stream the body to this path (creating
                 parent directories) and return the absolute file path. When
                 ``None``, return the full content as ``bytes``.
@@ -786,7 +890,12 @@ class RedfishHttpClient:
             RedfishConnectionError / RedfishTimeoutError: On transport errors.
         """
         logger.info("DOWNLOAD %s", _redact_for_log(uri))
-        response = self._request("GET", uri, stream=True)
+        response = self._request(
+            "GET",
+            uri,
+            authenticated=self._is_same_origin_target(uri),
+            stream=True,
+        )
 
         logger.info("DOWNLOAD %s -> HTTP %d", _redact_for_log(uri), response.status_code)
         self._raise_for_status(response, uri)
@@ -889,6 +998,7 @@ class RedfishHttpClient:
     def close(self) -> None:
         """Close the underlying HTTP session."""
         self._session.close()
+        self._external_session.close()
 
     def __enter__(self) -> RedfishHttpClient:
         return self

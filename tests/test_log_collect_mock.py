@@ -2424,10 +2424,9 @@ class TestHttpDownload(unittest.TestCase):
         http = client._http_client
         captured: Dict[str, Any] = {}
 
-        def fake_get(url, stream=False, timeout=None, allow_redirects=False):
+        def fake_get(url, stream=False, timeout=None):
             captured["url"] = url
             captured["stream"] = stream
-            captured["allow_redirects"] = allow_redirects
             return _FakeResponse(b"DATA")
 
         http._session.get = fake_get  # type: ignore[assignment]
@@ -2438,22 +2437,22 @@ class TestHttpDownload(unittest.TestCase):
             captured["url"], f"https://{http.host}/redfish/v1/download/x.bin"
         )
         self.assertTrue(captured["stream"])
-        self.assertFalse(captured["allow_redirects"])
         client.close()
 
-    def test_cross_origin_absolute_uri_is_rejected(self) -> None:
+    def test_cross_origin_absolute_uri_uses_credential_free_session(self) -> None:
         client = _make_client()
         http = client._http_client
 
-        http._session.get = (  # type: ignore[assignment]
-            lambda url, stream=False, timeout=None, allow_redirects=False: _FakeResponse(b"HELLO")
+        http._external_session.get = (  # type: ignore[assignment]
+            lambda url, stream=False, timeout=None: _FakeResponse(b"HELLO")
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "sub", "bundle.bin")
-            with self.assertRaises(RedfishValidationError):
-                http.download("https://files.example.com/bundle.bin", out)
-            self.assertFalse(os.path.exists(out))
+            result = http.download("https://files.example.com/bundle.bin", out)
+            self.assertEqual(result, os.path.abspath(out))
+            with open(out, "rb") as fh:
+                self.assertEqual(fh.read(), b"HELLO")
         client.close()
 
     def test_non_2xx_raises(self) -> None:
@@ -2461,7 +2460,7 @@ class TestHttpDownload(unittest.TestCase):
         http = client._http_client
 
         http._session.get = (  # type: ignore[assignment]
-            lambda url, stream=False, timeout=None, allow_redirects=False: _FakeResponse(b"", status=500)
+            lambda url, stream=False, timeout=None: _FakeResponse(b"", status=500)
         )
 
         with self.assertRaises(RedfishException):
@@ -2477,7 +2476,7 @@ class TestHttpDownload(unittest.TestCase):
             "Content-Disposition": 'attachment; filename="dump_ABC_20260902.tar.gz"'
         }
         http._session.post = (  # type: ignore[assignment]
-            lambda url, json=None, stream=False, timeout=None, allow_redirects=False: resp
+            lambda url, json=None, stream=False, timeout=None: resp
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -2496,7 +2495,7 @@ class TestHttpDownload(unittest.TestCase):
         client = _make_client()
         http = client._http_client
         http._session.post = (  # type: ignore[assignment]
-            lambda url, json=None, stream=False, timeout=None, allow_redirects=False: _FakeResponse(b"BIN")
+            lambda url, json=None, stream=False, timeout=None: _FakeResponse(b"BIN")
         )
         data = http.download_via_post("/x/Download", output_path=None)
         self.assertEqual(data, b"BIN")
