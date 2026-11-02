@@ -7,19 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deprecated
-- The legacy `verify_ssl=False` default remains in place for backward compatibility but will change in the next major release; callers should pass an explicit TLS policy.
-- Implicit authenticated HTTP and colon-containing Basic Auth usernames remain temporarily supported with one-time migration warnings.
-
-### Security
-- Cross-origin artifact downloads use a credential-free session, and redirects strip Redfish credentials before crossing origins.
-- Server-provided download filenames are validated to prevent directory traversal.
-- Sensitive password, token, community, and one-time credential fields are redacted from logs and model representations.
-
-### Fixed
-- `Chassis.PCIeDevices` accepts both link objects and link arrays, and registry messages expose the optional `Example` field.
-- Offline model tests use tracked sanitized fixtures, and release publication is gated by the supported Python matrix.
-
 ## [1.3.0] - 2026-10-12
 
 ### Added
