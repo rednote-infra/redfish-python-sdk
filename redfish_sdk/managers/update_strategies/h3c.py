@@ -1,11 +1,11 @@
 """
-H3C (新华三) firmware update strategy.
+H3C firmware update strategy.
 
 H3C BMCs do NOT send a separate TransferProtocol field; the protocol is
 embedded in the ImageURI. For SFTP/CIFS, credentials are also embedded
 in the URI (e.g., sftp://user:pwd@host/path).
 
-Reference: UpdateService固件刷新接口 — 新华三
+Reference: H3C UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class H3cUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for H3C (新华三) servers.
+    Firmware update strategy for H3C servers.
 
     Supported kwargs:
         username (str): File server username -> embedded in ImageURI

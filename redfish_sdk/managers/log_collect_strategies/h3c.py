@@ -1,4 +1,4 @@
-"""H3C (新华三) SDS diagnostic-log collection strategy.
+"""H3C SDS diagnostic-log collection strategy.
 
 H3C HDM does not expose the standard per-LogService
 ``#LogService.CollectDiagnosticData`` action.  The Manager instead publishes

@@ -1,5 +1,5 @@
 """
-Nettrix (宁畅 / Suma) OEM extractor.
+Nettrix (Suma) OEM extractor.
 
 Nettrix BMCs publish drive temperature as a *top-level* field on the
 Drive resource (not under ``Oem``); fan speed prefers the standard
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class NettrixOemExtractor(BaseOemExtractor):
-    """OEM field extractor for Nettrix (宁畅) servers."""
+    """OEM field extractor for Nettrix servers."""
 
     def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         public_ratio = to_float(read_public_field(fan.oem, "SpeedRatio"))

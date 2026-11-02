@@ -9,19 +9,19 @@ request body and artifact resolution while keeping a single entry point in
 Architecture:
     BaseLogCollectStrategy (ABC)
       ├── GenericLogCollectStrategy       — standard Redfish (DMTF) default
-      ├── XFusionLogCollectStrategy       — xFusion (超聚变), OEM diagnostic body
-      ├── H3cLogCollectStrategy           — H3C (新华三), Manager.Dump +
+      ├── XFusionLogCollectStrategy       — xFusion, OEM diagnostic body
+      ├── H3cLogCollectStrategy           — H3C, Manager.Dump +
                                             Manager.GeneralDownload SDS flow
-      ├── InspurLogCollectStrategy        — Inspur (浪潮), collection-level
+      ├── InspurLogCollectStrategy        — Inspur, collection-level
                                             CollectAllLog / DownloadAllLog pair
       │   └── IeitLogCollectStrategy  — IEIT SYSTEMS, member actions +
                                             in-flight Task reuse
-      ├── LenovoLogCollectStrategy        — Lenovo (联想, AMI-based),
+      ├── LenovoLogCollectStrategy        — Lenovo (AMI-based),
                                             CollectAllLog + private
                                             CollectProgress + DownloadAllLog
-      ├── ZteLogCollectStrategy           — ZTE (中兴), Dump + Dump/Progress +
+      ├── ZteLogCollectStrategy           — ZTE, Dump + Dump/Progress +
                                             ExportLogs
-      └── SmoothcomputeLogCollectStrategy — smoothcompute (顺算), OEM
+      └── SmoothcomputeLogCollectStrategy — smoothcompute, OEM
                                             DiagnosticService.CollectBlackBox /
                                             ExportBlackBox (trigger returns a
                                             standard Task, so waiting reuses

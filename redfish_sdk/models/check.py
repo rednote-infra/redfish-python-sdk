@@ -1,18 +1,18 @@
 """
-模型层注解式校验引擎。
+Annotation-based validation engine for the model layer.
 
-提供自定义 Field() 包装和 validate_model() 通用校验函数，
-实现 Go playground/validator 风格的 struct tag 声明式校验。
+Provides a custom Field() wrapper and a generic validate_model() function,
+using declarative struct-tag-style rules similar to Go playground/validator.
 
-用法:
-    # 模型定义（替换 from pydantic import Field）
+Usage:
+    # Model definition (replaces from pydantic import Field)
     from redfish_sdk.models.check import Field
 
     class Processor(Entity):
         manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="required,type=str")
         total_cores:  Optional[int] = Field(None, alias="TotalCores",   validate="required,type=int,gt=0")
 
-    # 校验（测试代码中调用）
+    # Validation (called from tests)
     from redfish_sdk.models.check import validate_model
     validate_model(processor_instance)
 """
@@ -25,18 +25,18 @@ from pydantic import BaseModel
 from pydantic import Field as _PydanticField
 
 # ---------------------------------------------------------------------------
-# 自定义 Field() 包装
+# Custom Field() wrapper
 # ---------------------------------------------------------------------------
 
 def Field(default=None, *, alias=None, validate=None, **kwargs):
     """
-    Pydantic Field 的增强包装，新增 validate 参数。
+    Enhanced Pydantic Field wrapper with a validate parameter.
 
-    用法与原生 Field 完全一致，额外支持 validate 标签:
+    Uses the same interface as Field and additionally supports validation tags:
         Field(None, alias="Manufacturer", validate="required,type=str")
 
-    内部实现: 将 validate 字符串存入 json_schema_extra，
-    供 validate_model() 在运行时读取。
+    The validation string is stored in json_schema_extra and read by
+    validate_model() at runtime.
     """
     if validate is not None:
         extra = kwargs.get("json_schema_extra") or {}
@@ -46,7 +46,7 @@ def Field(default=None, *, alias=None, validate=None, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# 标签解析器
+# Tag parser
 # ---------------------------------------------------------------------------
 
 _TYPE_MAP = {
@@ -59,9 +59,9 @@ _TYPE_MAP = {
 
 def _parse_validate_tag(tag: str) -> dict:
     """
-    解析 validate 标签字符串为规则字典。
+    Parse a validation tag string into a rule dictionary.
 
-    示例:
+    Examples:
         "required,type=str"              → {"required": True, "type": str}
         "required,type=int,gt=0"         → {"required": True, "type": int, "gt": 0}
         "oneof=On Off PoweringOn"        → {"oneof": ("On", "Off", "PoweringOn")}
@@ -84,30 +84,30 @@ def _parse_validate_tag(tag: str) -> dict:
             elif key == "oneof":
                 rules["oneof"] = tuple(val.split())
             elif key.endswith("_field"):
-                rules[key] = val  # 跨字段引用，存字段名
+                rules[key] = val  # Cross-field reference; store the field name
             else:
                 rules[key] = val
         else:
-            # 无值标签：required, status, list
+            # Valueless tags: required, status, list
             rules[part] = True
     return rules
 
 
 # ---------------------------------------------------------------------------
-# 通用校验引擎
+# Generic validation engine
 # ---------------------------------------------------------------------------
 
 def validate_model(obj: BaseModel) -> None:
     """
-    根据模型字段上的 validate 标签自动执行校验。
+    Validate a model using the validation tags declared on its fields.
 
-    行为:
-        - required 且值为 None/空字符串 → warnings.warn（WARN，不失败）
-        - 类型不匹配 → AssertionError（FAIL）
-        - 值域不满足 → AssertionError（FAIL）
-        - 枚举不匹配 → AssertionError（FAIL）
+    Behavior:
+        - A required None or empty string emits a warning without failing.
+        - A type mismatch raises AssertionError.
+        - An out-of-range value raises AssertionError.
+        - An invalid enumeration value raises AssertionError.
 
-    用法:
+    Usage:
         validate_model(processor_instance)
     """
     resource_id = getattr(obj, "odata_id", "unknown")
@@ -122,7 +122,7 @@ def validate_model(obj: BaseModel) -> None:
         rules = _parse_validate_tag(tag)
         value = getattr(obj, field_name, None)
 
-        # --- status 特殊处理 ---
+        # Special handling for status
         if rules.get("status"):
             if value is not None:
                 _check_status(value, cls_name, resource_id)
@@ -130,102 +130,102 @@ def validate_model(obj: BaseModel) -> None:
 
         required = rules.get("required", False)
 
-        # --- None 检查 ---
+        # None check
         if value is None:
             if required:
                 warnings.warn(
-                    f"{cls_name}.{field_name} 为 None (resource={resource_id})",
+                    f"{cls_name}.{field_name} is None (resource={resource_id})",
                     stacklevel=2,
                 )
             continue
 
-        # --- 空字符串检查 ---
+        # Empty-string check
         if isinstance(value, str) and value == "":
             if required:
                 warnings.warn(
-                    f"{cls_name}.{field_name} 为空字符串 (resource={resource_id})",
+                    f"{cls_name}.{field_name} is empty (resource={resource_id})",
                     stacklevel=2,
                 )
             continue
 
-        # --- list 标签 ---
+        # List tag
         if rules.get("list"):
             assert isinstance(value, list), (
-                f"{cls_name}.{field_name} 类型错误: 期望 list, "
-                f"实际 {type(value).__name__} (resource={resource_id})"
+                f"{cls_name}.{field_name} has invalid type: expected list, "
+                f"got {type(value).__name__} (resource={resource_id})"
             )
             continue
 
-        # --- type 类型检查 ---
+        # Type check
         expected = rules.get("type")
         if expected is not None:
             if expected is float:
                 assert isinstance(value, (int, float)), (
-                    f"{cls_name}.{field_name} 类型错误: 期望 数字, "
-                    f"实际 {type(value).__name__} (值={value!r}, resource={resource_id})"
+                    f"{cls_name}.{field_name} has invalid type: expected number, "
+                    f"got {type(value).__name__} (value={value!r}, resource={resource_id})"
                 )
             else:
                 assert isinstance(value, expected), (
-                    f"{cls_name}.{field_name} 类型错误: 期望 {expected.__name__}, "
-                    f"实际 {type(value).__name__} (值={value!r}, resource={resource_id})"
+                    f"{cls_name}.{field_name} has invalid type: expected {expected.__name__}, "
+                    f"got {type(value).__name__} (value={value!r}, resource={resource_id})"
                 )
 
-        # --- gt / ge / lt / le 值域检查 ---
+        # gt / ge / lt / le range checks
         if isinstance(value, (int, float)):
             if "gt" in rules:
                 assert value > rules["gt"], (
-                    f"{cls_name}.{field_name} 应 > {rules['gt']}, "
-                    f"实际={value} (resource={resource_id})"
+                    f"{cls_name}.{field_name} should be > {rules['gt']}, "
+                    f"got {value} (resource={resource_id})"
                 )
             if "ge" in rules:
                 assert value >= rules["ge"], (
-                    f"{cls_name}.{field_name} 应 >= {rules['ge']}, "
-                    f"实际={value} (resource={resource_id})"
+                    f"{cls_name}.{field_name} should be >= {rules['ge']}, "
+                    f"got {value} (resource={resource_id})"
                 )
             if "lt" in rules:
                 assert value < rules["lt"], (
-                    f"{cls_name}.{field_name} 应 < {rules['lt']}, "
-                    f"实际={value} (resource={resource_id})"
+                    f"{cls_name}.{field_name} should be < {rules['lt']}, "
+                    f"got {value} (resource={resource_id})"
                 )
             if "le" in rules:
                 assert value <= rules["le"], (
-                    f"{cls_name}.{field_name} 应 <= {rules['le']}, "
-                    f"实际={value} (resource={resource_id})"
+                    f"{cls_name}.{field_name} should be <= {rules['le']}, "
+                    f"got {value} (resource={resource_id})"
                 )
 
-        # --- oneof 枚举检查 ---
+        # oneof enumeration check
         if "oneof" in rules and isinstance(value, str):
             assert value in rules["oneof"], (
-                f"{cls_name}.{field_name} 值不在允许范围: "
-                f"实际={value!r}, 允许={rules['oneof']} (resource={resource_id})"
+                f"{cls_name}.{field_name} is outside the allowed values: "
+                f"got {value!r}, allowed={rules['oneof']} (resource={resource_id})"
             )
 
-        # --- gte_field 跨字段检查 ---
+        # gte_field cross-field check
         if "gte_field" in rules and isinstance(value, (int, float)):
             other_name = rules["gte_field"]
             other_val = getattr(obj, other_name, None)
             if other_val is not None and isinstance(other_val, (int, float)):
                 assert value >= other_val, (
-                    f"{cls_name}.{field_name} ({value}) 应 >= "
+                    f"{cls_name}.{field_name} ({value}) should be >= "
                     f"{other_name} ({other_val}) (resource={resource_id})"
                 )
 
 
 def _check_status(status: Any, parent_cls: str, resource_id: str) -> None:
-    """校验 Status 子对象。"""
+    """Validate a nested Status object."""
     from redfish_sdk.models.common import Status
 
     assert isinstance(status, Status), (
-        f"{parent_cls}.status 类型错误: 期望 Status, "
-        f"实际 {type(status).__name__} (resource={resource_id})"
+        f"{parent_cls}.status has invalid type: expected Status, "
+        f"got {type(status).__name__} (resource={resource_id})"
     )
     if status.state is not None:
         assert isinstance(status.state, str), (
-            f"{parent_cls}.status.state 类型错误: "
-            f"期望 str, 实际 {type(status.state).__name__} (resource={resource_id})"
+            f"{parent_cls}.status.state has invalid type: expected str, "
+            f"got {type(status.state).__name__} (resource={resource_id})"
         )
     if status.health is not None:
         assert isinstance(status.health, str), (
-            f"{parent_cls}.status.health 类型错误: "
-            f"期望 str, 实际 {type(status.health).__name__} (resource={resource_id})"
+            f"{parent_cls}.status.health has invalid type: expected str, "
+            f"got {type(status.health).__name__} (resource={resource_id})"
         )

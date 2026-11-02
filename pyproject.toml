@@ -71,12 +71,12 @@ select = [
     "SIM",  # flake8-simplify
 ]
 ignore = [
-    "E501",   # 行长由 formatter 控制
-    "UP006",  # Use `list` instead of `List` — 保持 typing.List 以兼容 Python 3.9 运行时
-    "UP007",  # Use `X | Y` instead of `Union[X, Y]` — 同上
-    "UP035",  # `typing.List` is deprecated — 同上
-    "UP045",  # Use `X | None` instead of `Optional[X]` — 同上，pydantic v2 在 3.9 运行时需要 Optional
-    "SIM105", # Use contextlib.suppress — 可读性偏好
+    "E501",   # Line length is handled by the formatter
+    "UP006",  # Keep typing.List for Python 3.9 runtime compatibility
+    "UP007",  # Keep typing.Union for Python 3.9 runtime compatibility
+    "UP035",  # Keep typing.List for Python 3.9 runtime compatibility
+    "UP045",  # Pydantic v2 on Python 3.9 requires Optional
+    "SIM105", # Prefer the current form for readability
 ]
 
 [tool.ruff.lint.isort]

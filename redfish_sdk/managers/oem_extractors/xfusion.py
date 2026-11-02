@@ -1,5 +1,5 @@
 """
-xFusion (超聚变) OEM extractor.
+xFusion OEM extractor.
 
 xFusion iBMC exposes fan speed and drive temperature under the
 ``xFusion`` OEM sub-key:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class XFusionOemExtractor(BaseOemExtractor):
-    """OEM field extractor for xFusion (超聚变) servers."""
+    """OEM field extractor for xFusion servers."""
 
     def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         return to_float(read_vendor_field(fan.oem, "xFusion", "SpeedRatio"))

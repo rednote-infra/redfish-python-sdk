@@ -3,7 +3,7 @@ OEM (vendor-specific) data models.
 
 Redfish allows vendors to extend standard resources with OEM fields.
 This module models the common OEM fields used across Dell, HPE, xFusion,
-Lenovo, Inspur (浪潮), Ningchang (宁畅), etc.
+Lenovo, Inspur, Nettrix, and others.
 
 """
 from __future__ import annotations
@@ -80,8 +80,8 @@ class Bmc(BaseModel):
     Due to the wide variety of vendor implementations, most fields are optional.
 
     Key fields:
-    - fru: Link to FRU data (华为 xFusion, 联想 etc.)
-    - mainboard: Mainboard info (华为 iBMC)
+    - fru: Link to FRU data (xFusion, Lenovo, and others)
+    - mainboard: Mainboard information (Huawei iBMC)
     - bmc_version, cpld_version: Firmware version info
     """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
@@ -93,7 +93,7 @@ class Bmc(BaseModel):
     # Memory OEM (H3C)
     technology: Optional[str] = Field(None, alias="Technology")
 
-    # Memory OEM (Ningchang 宁畅)
+    # Memory OEM (Nettrix)
     mem_type: Optional[str] = Field(None, alias="Type")
     rank: Optional[str] = Field(None, alias="Rank")
 
@@ -113,7 +113,7 @@ class Bmc(BaseModel):
     device_max_num: Optional[DeviceMaxNum] = Field(None, alias="DeviceMaxNum")
     power_button_enabled: Optional[bool] = Field(None, alias="PowerButtonEnabled")
 
-    # 浪潮 (Inspur) specific
+    # Inspur-specific fields
     threshold_sensors: Optional[Link] = Field(None, alias="ThresholdSensors")
     discrete_sensors: Optional[Link] = Field(None, alias="DiscreteSensors")
     boards: Optional[Link] = Field(None, alias="Boards")

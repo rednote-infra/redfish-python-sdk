@@ -107,12 +107,12 @@ def _testdata_exists(filename: str) -> bool:
 
 
 # ============================================================================
-# 1. Systems 模块
+# 1. Systems module
 # ============================================================================
 
 
 class TestSystem:
-    """测试 System 模型反序列化"""
+    """Test System model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -130,9 +130,9 @@ class TestSystem:
         assert self.system.system_type == "Physical"
 
     def test_power_state(self):
-        # PowerState 在 JSON 最外层没有直接字段，但 PowerSummary 里有
-        # 实际看数据，System JSON 没有顶级 PowerState 字段
-        # 模型定义允许 None
+        # PowerState is absent at the JSON top level but present in PowerSummary.
+        # The System JSON has no top-level PowerState field.
+        # The model permits None.
         pass
 
     def test_status(self):
@@ -175,7 +175,7 @@ class TestSystem:
 
 
 class TestBoot:
-    """测试 Boot 模型（从 System JSON 内嵌提取）"""
+    """Test the Boot model extracted from embedded System JSON."""
 
     def test_boot_from_system_json(self):
         data = load_json("redfish_v1_Systems_1.json")
@@ -189,7 +189,7 @@ class TestBoot:
 
 
 class TestProcessor:
-    """测试 Processor 模型反序列化"""
+    """Test Processor model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -216,10 +216,10 @@ class TestProcessor:
         assert self.proc.max_speed_mhz == 3100
 
     def test_socket(self):
-        # 注意：JSON 中 Socket 值为 int (0)，但模型定义为 Optional[str]
-        # Pydantic v2 的 strict 模式未启用，int 会被自动转为 str
-        # 不过在 extra="allow" 模式下可能直接接受
-        # 实际验证它不会抛异常即可
+        # The JSON Socket value is an int (0), while the model uses Optional[str].
+        # Pydantic v2 strict mode is disabled, so an int is converted to a string.
+        # It may also be accepted directly with extra="allow".
+        # This test only needs to verify that no exception is raised.
         assert self.proc.socket is not None
 
     def test_processor_id_nested(self):
@@ -240,7 +240,7 @@ class TestProcessor:
 
 
 class TestMemory:
-    """测试 Memory 模型反序列化"""
+    """Test Memory model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -280,7 +280,7 @@ class TestMemory:
 
 
 class TestStorage:
-    """测试 Storage 模型 - Collection 解析"""
+    """Test Storage model collection parsing."""
 
     def test_storage_collection(self):
         data = load_json("redfish_v1_Systems_1_Storages.json")
@@ -291,7 +291,7 @@ class TestStorage:
 
 
 class TestBios:
-    """测试 Bios 模型反序列化"""
+    """Test BIOS model deserialization."""
 
     def test_bios_basic(self):
         data = load_json("redfish_v1_Systems_1_Bios.json")
@@ -303,12 +303,12 @@ class TestBios:
 
 
 # ============================================================================
-# 2. Chassis 模块
+# 2. Chassis module
 # ============================================================================
 
 
 class TestChassis:
-    """测试 Chassis 模型反序列化"""
+    """Test Chassis model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -366,7 +366,7 @@ class TestChassis:
 
 
 class TestDrive:
-    """测试 Drive 模型反序列化"""
+    """Test Drive model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -405,12 +405,12 @@ class TestDrive:
         assert isinstance(self.drive.predicted_media_life_left_percent, int)
 
     def test_null_field_tolerance(self):
-        # StatusIndicator 在 JSON 中为 null
+        # StatusIndicator is null in the JSON.
         assert self.drive.status_indicator is None
 
 
 class TestPower:
-    """测试 Power 模型反序列化"""
+    """Test Power model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -442,7 +442,7 @@ class TestPower:
 
 
 class TestPowerSupply:
-    """测试 PowerSupply 模型（从 Power JSON 内嵌提取）"""
+    """Test the PowerSupply model extracted from embedded Power JSON."""
 
     def test_power_supply_fields(self):
         data = load_json("redfish_v1_Chassis_1_Power.json")
@@ -472,27 +472,28 @@ class TestPowerSupply:
 
 class TestPowerSupplyLineInputVoltage:
     """
-    回归测试：PowerSupply.LineInputVoltage 必须接受 float / int / null。
+    Regression test: PowerSupply.LineInputVoltage must accept float, int, and null.
 
-    背景：DMTF Redfish PowerSupply.LineInputVoltage 在 schema 中类型为 Number，
-    允许返回浮点电压（如 220.5）。SDK 早期实现误用 int，导致真机巡检失败。
-    本测试不依赖外部 testdata 文件，使用内联 dict 直接覆盖三种关键输入。
+    The DMTF Redfish schema defines PowerSupply.LineInputVoltage as Number and
+    permits decimal voltage values such as 220.5. An earlier SDK implementation
+    used int and failed against real devices. This test uses inline dictionaries
+    to cover all three important inputs without external test data.
     """
 
     def test_accepts_float_value(self):
-        """AC-1: 真机返回浮点电压 → 保留为 float，不截断。"""
+        """AC-1: Preserve a decimal voltage from a real device as a float."""
         psu = PowerSupply(**{"LineInputVoltage": 220.5})
         assert psu.line_input_voltage == 220.5
         assert isinstance(psu.line_input_voltage, float)
 
     def test_accepts_int_value_as_float(self):
-        """AC-2: 真机返回整数电压 → 自动转 float（pydantic 默认行为）。"""
+        """AC-2: Convert an integer voltage to float using Pydantic defaults."""
         psu = PowerSupply(**{"LineInputVoltage": 220})
         assert psu.line_input_voltage == 220.0
         assert isinstance(psu.line_input_voltage, float)
 
     def test_accepts_null_value(self):
-        """AC-3: 字段缺失或为 null → 不抛异常，值为 None。"""
+        """AC-3: Accept a missing or null field as None without raising."""
         psu_missing = PowerSupply(**{})
         assert psu_missing.line_input_voltage is None
 
@@ -501,7 +502,7 @@ class TestPowerSupplyLineInputVoltage:
 
 
 class TestNetworkAdapter:
-    """测试 NetworkAdapter 模型反序列化"""
+    """Test NetworkAdapter model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -534,7 +535,7 @@ class TestNetworkAdapter:
 
 
 class TestPCIeDevice:
-    """测试 PCIeDevice 模型反序列化"""
+    """Test PCIeDevice model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -568,12 +569,12 @@ class TestPCIeDevice:
 
 
 # ============================================================================
-# 3. Managers 模块
+# 3. Managers module
 # ============================================================================
 
 
 class TestManager:
-    """测试 Manager 模型反序列化"""
+    """Test Manager model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -588,9 +589,9 @@ class TestManager:
         assert self.mgr.firmware_version == "2.38"
 
     def test_manufacturer_model(self):
-        # Manager JSON 中有 Manufacturer 和 Model 字段
-        # 但 Manager 模型继承自 Entity，这些不是 Entity 字段
-        # 检查它们是否正确映射
+        # Manager JSON contains Manufacturer and Model fields.
+        # Manager inherits from Entity, which does not define these fields.
+        # Check that they are mapped correctly.
         assert isinstance(self.mgr.manufacturer, str) if hasattr(self.mgr, 'manufacturer') else True
 
     def test_power_state(self):
@@ -621,7 +622,7 @@ class TestManager:
 
 
 class TestNetworkProtocol:
-    """测试 NetworkProtocol 模型反序列化"""
+    """Test NetworkProtocol model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -664,7 +665,7 @@ class TestNetworkProtocol:
 
 
 class TestEthernetInterface:
-    """测试 EthernetInterface 模型反序列化"""
+    """Test EthernetInterface model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -721,15 +722,15 @@ class TestEthernetInterface:
 
 
 # ============================================================================
-# 4. OEM 模块
+# 4. OEM module
 # ============================================================================
 
 
 class TestOem:
-    """测试 Oem 模型及厂商别名解析"""
+    """Test the OEM model and vendor alias parsing."""
 
     def test_oem_from_chassis(self):
-        """验证 Public key 被正确解析为 bmc 字段"""
+        """Verify that the Public key is parsed into the bmc field."""
         data = load_json("redfish_v1_Chassis_1.json")
         oem = Oem(**data["Oem"])
         assert oem.bmc is not None
@@ -749,7 +750,7 @@ class TestOem:
 
 
 class TestMainBoard:
-    """测试 MainBoard 模型（从 Chassis OEM 内嵌提取）"""
+    """Test the MainBoard model extracted from embedded Chassis OEM data."""
 
     def test_mainboard_from_chassis_oem(self):
         data = load_json("redfish_v1_Chassis_1.json")
@@ -757,32 +758,32 @@ class TestMainBoard:
         mb = oem.bmc.mainboard
         assert mb is not None
         assert isinstance(mb, MainBoard)
-        # Chassis JSON 中 Mainboard 字段名为 BoardName 而非 PrettyName
-        # 但模型使用 PrettyName alias，所以 pretty_name 可能为 None
-        # 关键字段验证
+        # Chassis JSON names the Mainboard field BoardName, not PrettyName.
+        # The model uses the PrettyName alias, so pretty_name may be None.
+        # Verify the key fields.
         assert isinstance(mb.serial_number, str) if mb.serial_number else True
         assert isinstance(mb.part_number, str) if mb.part_number else True
         assert isinstance(mb.manufacturer, str) if mb.manufacturer else True
 
     def test_mainboard_from_fru(self):
-        """FRU JSON 中的 MainBoard 字段"""
+        """Test the MainBoard field in FRU JSON."""
         data = load_json("redfish_v1_Systems_1_FruInfo.json")
         mb = MainBoard(**data["MainBoard"])
         assert isinstance(mb.manufacturer, str)
         assert isinstance(mb.part_number, str)
         assert isinstance(mb.serial_number, str)
-        # FRU JSON 使用 PrettyName
+        # FRU JSON uses PrettyName.
         assert isinstance(mb.pretty_name, str)
         assert isinstance(mb.build_date, str)
 
 
 # ============================================================================
-# 5. FRU 模块
+# 5. FRU module
 # ============================================================================
 
 
 class TestFru:
-    """测试 Fru 模型反序列化"""
+    """Test FRU model deserialization."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -816,19 +817,19 @@ class TestFru:
 
 
 class TestFruChassis:
-    """测试 FruChassis 模型"""
+    """Test the FruChassis model."""
 
     def test_fru_chassis(self):
         data = load_json("redfish_v1_Systems_1_FruInfo.json")
         fc = FruChassis(**data["Chassis"])
-        # JSON 使用 "Type"，但模型使用 alias "ChassisType"
-        # extra="allow" 会允许 Type 进入 extra 字段
-        # 确保不抛异常即可
+        # JSON uses "Type", while the model alias is "ChassisType".
+        # extra="allow" permits Type as an extra field.
+        # Only verify that no exception is raised.
         assert fc is not None
 
 
 class TestFruProduct:
-    """测试 FruProduct 模型"""
+    """Test the FruProduct model."""
 
     def test_fru_product(self):
         data = load_json("redfish_v1_Systems_1_FruInfo.json")
@@ -837,20 +838,20 @@ class TestFruProduct:
         assert isinstance(fp.serial_number, str)
         assert isinstance(fp.part_number, str)
         assert isinstance(fp.version, str)
-        # PrettyName -> name 映射（Product JSON 中没有 Name 但有 PrettyName）
-        # FruProduct 使用 alias "Name"，但 JSON 中是 "PrettyName"
-        # 所以 name 可能来自 Product.Name (不存在) -> None
-        # 实际 JSON 中 Product 没有 "Name" 字段但有 "PrettyName"
-        # FruProduct.name alias 是 "Name"，不是 "PrettyName"
+        # PrettyName-to-name mapping: Product JSON has PrettyName but no Name.
+        # FruProduct uses the "Name" alias, while the JSON uses "PrettyName".
+        # Therefore name may resolve from missing Product.Name to None.
+        # The actual Product JSON has "PrettyName" but no "Name" field.
+        # FruProduct.name uses "Name", not "PrettyName", as its alias.
 
 
 # ============================================================================
-# 6. Logs 模块
+# 6. Logs module
 # ============================================================================
 
 
 class TestLog:
-    """测试 Log 模型反序列化"""
+    """Test Log model deserialization."""
 
     def test_log_basic(self):
         data = load_json("redfish_v1_Systems_1_LogServices_SEL.json")
@@ -872,7 +873,7 @@ class TestLog:
 
 
 class TestLogEntry:
-    """测试 LogEntry 模型反序列化"""
+    """Test LogEntry model deserialization."""
 
     def test_log_entry_basic(self):
         data = load_json("redfish_v1_Systems_1_LogServices_SEL_Entries_1.json")
@@ -894,12 +895,12 @@ class TestLogEntry:
 
 
 # ============================================================================
-# 7. Collection 解析
+# 7. Collection parsing
 # ============================================================================
 
 
 class TestCollections:
-    """测试 Collection 模型解析各种资源集合"""
+    """Test Collection model parsing for multiple resource collections."""
 
     def test_processor_collection(self):
         data = load_json("redfish_v1_Systems_1_Processors.json")
@@ -937,21 +938,22 @@ class TestCollections:
 
 
 # ============================================================================
-# 8. 无 testdata 的 Model 覆盖测试
-#    需求第 4 条：必须覆盖所有的 model 定义，若测试数据当中没有 model 对应的
-#    json 文件，则认为测试不通过。
-#    以下对于缺乏直接 testdata 的 Model，采用两种策略：
-#    a) 从已有 JSON 中提取内嵌数据（如 Fan、Temperature 从 Thermal JSON）
-#    b) 对于确实没有任何 testdata 的 Model，使用 pytest.fail 标记
+# 8. Model coverage tests without dedicated test data
+#    Requirement 4: every model definition must be covered. A model without a
+#    corresponding JSON test-data file would otherwise be considered untested.
+#    Use two strategies for models without dedicated test data:
+#    a) Extract embedded data from existing JSON, such as Fan and Temperature
+#       from Thermal JSON.
+#    b) Mark models with no usable test data through pytest.fail.
 # ============================================================================
 
 
 class TestCommonModels:
-    """测试 common 模块中的基础 Model"""
+    """Test base models in the common module."""
 
     def test_link(self):
         data = load_json("redfish_v1_Systems_1.json")
-        # Processors 字段就是一个 Link
+        # The Processors field is a Link.
         link = Link(**data["Processors"])
         assert isinstance(link.odata_id, str)
         assert link.odata_id == "/redfish/v1/Systems/1/Processors"
@@ -970,13 +972,13 @@ class TestCommonModels:
         assert status.state == "Enabled"
 
     def test_redfish_response_minimal(self):
-        """RedfishResponse 可以用空数据构造"""
+        """RedfishResponse can be constructed with empty data."""
         resp = RedfishResponse()
         assert resp.error is None
         assert resp.message is None
 
     def test_redfish_error_minimal(self):
-        """RedfishError 可以用空数据构造"""
+        """RedfishError can be constructed with empty data."""
         err = RedfishError()
         assert err.code is None
         assert err.message is None
@@ -984,17 +986,16 @@ class TestCommonModels:
 
 class TestModelsWithoutDirectTestdata:
     """
-    验证所有 __init__.py 中导出的 Model 类都能被测试覆盖。
+    Verify test coverage for every model class exported by __init__.py.
 
-    对于确实没有独立 testdata JSON 的 Model，使用以下策略：
-    - 从已有 JSON 内嵌数据中提取并验证
-    - 或验证 Model 能用最小数据构造（不抛异常）
+    For models without dedicated test-data JSON, use these strategies:
+    - Extract and validate embedded data from existing JSON.
+    - Verify that the model can be constructed from minimal data without raising.
     """
 
     # ---- RootService ----
     def test_root_service(self):
-        """RootService - 虽然 testdata 目录中没有 redfish_v1.json，
-        但可以用最小构造验证模型"""
+        """Validate RootService minimally because redfish_v1.json is absent."""
         root = RootService(
             **{
                 "@odata.id": "/redfish/v1/",
@@ -1292,9 +1293,9 @@ class TestModelsWithoutDirectTestdata:
         )
         assert hi.host_interface_type == "NetworkHostInterface"
 
-    # ---- Bmc (OEM 内部模型) ----
+    # ---- Bmc (internal OEM model) ----
     def test_bmc(self):
-        """Bmc 可从已有 testdata 中的 Oem.Public 提取"""
+        """Extract Bmc from Oem.Public in existing test data."""
         data = load_json("redfish_v1_Chassis_1.json")
         bmc = Bmc(**data["Oem"]["Public"])
         assert bmc is not None
@@ -1303,14 +1304,14 @@ class TestModelsWithoutDirectTestdata:
 
 
 # ============================================================================
-# 9. 模型覆盖率检查
+# 9. Model coverage check
 # ============================================================================
 
 
 class TestModelCoverage:
-    """验证所有导出的 Model 都已在本测试文件中被覆盖"""
+    """Verify that this test file covers every exported model."""
 
-    # __init__.py 中导出的所有 Model 类
+    # All model classes exported by __init__.py.
     ALL_EXPORTED_MODELS = {
         "Link", "Entity", "Collection", "Status", "RedfishResponse", "RedfishError",
         "RootService",
@@ -1329,16 +1330,16 @@ class TestModelCoverage:
         "Fru", "FruChassis", "FruProduct",
     }
 
-    # 每个 Model 对应的 testdata 文件映射
-    # 值为 None 表示没有独立的 testdata 文件
+    # Mapping from each model to its test-data file.
+    # None means that there is no dedicated test-data file.
     MODEL_TESTDATA_MAP = {
-        # common - 基础模型，从其他 JSON 中提取
+        # common: base models extracted from other JSON files
         "Link": "redfish_v1_Systems_1.json",
         "Entity": "redfish_v1_Systems_1.json",
         "Collection": "redfish_v1_Systems_1_Processors.json",
         "Status": "redfish_v1_Systems_1.json",
-        "RedfishResponse": None,  # 操作响应类，无独立 JSON
-        "RedfishError": None,  # 错误响应类，无独立 JSON
+        "RedfishResponse": None,  # Operation response class; no dedicated JSON
+        "RedfishError": None,  # Error response class; no dedicated JSON
         # root
         "RootService": None,
         # systems
@@ -1348,7 +1349,7 @@ class TestModelCoverage:
         "Storage": "redfish_v1_Systems_1_Storages.json",
         "Volume": None,
         "Bios": "redfish_v1_Systems_1_Bios.json",
-        "Boot": "redfish_v1_Systems_1.json",  # 内嵌
+        "Boot": "redfish_v1_Systems_1.json",  # Embedded
         "Gpu": None,
         "GpuOEM": None,
         # chassis
@@ -1356,7 +1357,7 @@ class TestModelCoverage:
         "Drive": "redfish_v1_Chassis_1_Drives_HDDPlaneDisk1.json",
         "NetworkAdapter": "redfish_v1_Chassis_1_NetworkAdapters_NIC_RiserA_Slot3.json",
         "Power": "redfish_v1_Chassis_1_Power.json",
-        "PowerSupply": "redfish_v1_Chassis_1_Power.json",  # 内嵌
+        "PowerSupply": "redfish_v1_Chassis_1_Power.json",  # Embedded
         "Thermal": None,
         "PCIeDevice": "redfish_v1_Chassis_1_PCIeDevices_EthernetCard0.json",
         "Fan": None,
@@ -1386,16 +1387,16 @@ class TestModelCoverage:
         "TaskService": None,
         "Task": None,
         # oem
-        "Oem": "redfish_v1_Chassis_1.json",  # 内嵌
-        "Bmc": "redfish_v1_Chassis_1.json",  # 内嵌
-        "MainBoard": "redfish_v1_Chassis_1.json",  # 内嵌
+        "Oem": "redfish_v1_Chassis_1.json",  # Embedded
+        "Bmc": "redfish_v1_Chassis_1.json",  # Embedded
+        "MainBoard": "redfish_v1_Chassis_1.json",  # Embedded
         # logs
         "Log": "redfish_v1_Systems_1_LogServices_SEL.json",
         "LogEntry": "redfish_v1_Systems_1_LogServices_SEL_Entries_1.json",
         # fru
         "Fru": "redfish_v1_Systems_1_FruInfo.json",
-        "FruChassis": "redfish_v1_Systems_1_FruInfo.json",  # 内嵌
-        "FruProduct": "redfish_v1_Systems_1_FruInfo.json",  # 内嵌
+        "FruChassis": "redfish_v1_Systems_1_FruInfo.json",  # Embedded
+        "FruProduct": "redfish_v1_Systems_1_FruInfo.json",  # Embedded
     }
 
     SELF_CONTAINED_MODELS = {
@@ -1423,19 +1424,20 @@ class TestModelCoverage:
     }
 
     def test_all_models_are_mapped(self):
-        """确保所有导出的 Model 都在映射表中"""
+        """Ensure every exported model appears in the mapping."""
         mapped = set(self.MODEL_TESTDATA_MAP.keys())
         missing = self.ALL_EXPORTED_MODELS - mapped
-        assert not missing, f"以下 Model 未在映射表中: {missing}"
+        assert not missing, f"The following models are absent from the mapping: {missing}"
 
     def test_testdata_files_exist(self):
-        """验证所有有 testdata 映射的文件确实存在"""
+        """Verify that every mapped test-data file exists."""
         missing_files = []
         for model_name, filename in self.MODEL_TESTDATA_MAP.items():
             if filename is not None and not _testdata_exists(filename):
                 missing_files.append(f"{model_name} -> {filename}")
         assert not missing_files, (
-            "以下 Model 的 testdata 文件不存在:\n" + "\n".join(missing_files)
+            "Test-data files are missing for the following models:\n"
+            + "\n".join(missing_files)
         )
 
     def test_models_without_testdata(self):
@@ -1443,8 +1445,8 @@ class TestModelCoverage:
         models_without_data = [
             name for name, filename in self.MODEL_TESTDATA_MAP.items()
             if filename is None
-            # RedfishResponse 和 RedfishError 是操作响应类，
-            # 不对应独立的 Redfish 资源端点
+            # RedfishResponse and RedfishError are operation response classes,
+            # so they do not correspond to dedicated Redfish resource endpoints.
             and name not in ("RedfishResponse", "RedfishError")
         ]
         assert set(models_without_data) == self.SELF_CONTAINED_MODELS

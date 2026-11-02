@@ -1,5 +1,5 @@
 """
-smoothcompute (顺算) out-of-band log collection strategy.
+smoothcompute out-of-band log collection strategy.
 
 smoothcompute BMCs (observed on the 6415 X2 family) do NOT publish the
 standard ``#LogService.CollectDiagnosticData`` action on any LogService.
@@ -21,7 +21,7 @@ Observed flow (verified end-to-end against a real 6415 X2 BMC):
        ``6415_X2_9800216104486830_20260902-0943.zip.gz`` — product, SN,
        timestamp).
 
-Reference: 各厂商 redfish 一键采集 — smoothcompute (Vendor="smoothcompute",
+Reference: vendor-specific one-click Redfish collection for smoothcompute (Vendor="smoothcompute",
 Product="6415 X2")
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ _DOWNLOAD_ACTION = "#DiagnosticService.DownloadBlackInfo"
 
 class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
     """
-    Log-collect strategy for smoothcompute (顺算) servers.
+    Log-collect strategy for smoothcompute servers.
 
     Trigger + download live on ``Manager.Oem.BMC.DiagnosticService``; the
     trigger response is a standard Redfish Task, so wait / progress reuse

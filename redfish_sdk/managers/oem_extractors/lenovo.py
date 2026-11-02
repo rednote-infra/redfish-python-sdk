@@ -1,5 +1,5 @@
 """
-Lenovo (联想) OEM extractor.
+Lenovo OEM extractor.
 
 Lenovo BMCs do not publish an OEM ``SpeedRatio``; the fan speed
 percentage is derived from ``Reading / MaxReadingRange`` (handled by
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class LenovoOemExtractor(BaseOemExtractor):
-    """OEM field extractor for Lenovo (联想) servers."""
+    """OEM field extractor for Lenovo servers."""
 
     # get_fan_speed_ratio: falls back to the base Reading/MaxReadingRange
     # derivation — Lenovo BMCs do not publish an OEM SpeedRatio.

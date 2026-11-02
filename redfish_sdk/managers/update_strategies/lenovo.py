@@ -1,10 +1,10 @@
 """
-Lenovo (联想) firmware update strategy.
+Lenovo firmware update strategy.
 
 Lenovo BMCs are closest to standard Redfish with no OEM extensions.
 The only addition is optional Username/Password for file server auth.
 
-Reference: UpdateService固件刷新接口 — 联想
+Reference: Lenovo UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class LenovoUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for Lenovo (联想) servers.
+    Firmware update strategy for Lenovo servers.
 
     Supported kwargs:
         username (str): File server username -> body.Username

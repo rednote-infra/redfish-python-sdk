@@ -1,11 +1,11 @@
 """
-Inspur (浪潮) firmware update strategy.
+Inspur firmware update strategy.
 
 Inspur BMCs use heavy OEM extensions under Oem.Public, including
 FlashItem selection, BIOS update type, PFR options, and file server
 credentials in the request body.
 
-Reference: UpdateService固件刷新接口 — 浪潮
+Reference: Inspur UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class InspurUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for Inspur (浪潮) servers.
+    Firmware update strategy for Inspur servers.
 
     Supported kwargs:
         username (str): File server username -> body.Username

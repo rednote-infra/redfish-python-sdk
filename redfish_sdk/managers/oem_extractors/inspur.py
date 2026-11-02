@@ -1,5 +1,5 @@
 """
-Inspur (浪潮 / IEIT_SYSTEMS) OEM extractor.
+Inspur (IEIT_SYSTEMS) OEM extractor.
 
 Inspur BMCs publish fan speed under two possible OEM sub-keys and drive
 temperature under a lowercase field name inside ``Public``:
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class InspurOemExtractor(BaseOemExtractor):
-    """OEM field extractor for Inspur (浪潮) servers."""
+    """OEM field extractor for Inspur servers."""
 
     def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         # gOemCustomeString wins; fall back to Public when it's missing

@@ -139,7 +139,7 @@ def test_set_resource_alias_fetches_etag_and_clear_uses_empty_string(
 
 @pytest.mark.parametrize(
     "alias",
-    ["", "~system", "contains space", "slash/name", "percent%20name", "中文"],
+    ["", "~system", "contains space", "slash/name", "percent%20name", "café"],
 )
 def test_alias_addressing_rejects_invalid_values(client, alias):
     with pytest.raises(RedfishValidationError, match="resource alias"):

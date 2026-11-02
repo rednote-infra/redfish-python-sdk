@@ -9,10 +9,10 @@ from enum import Enum
 
 class RedfishResource(str, Enum):
     """
-    Redfish 资源标识枚举。
+    Enumeration of Redfish resource identifiers.
 
-    值（value）对应 Redfish JSON 中的字段名（即 @odata.id 的 key）。
-    按所属层级分组。
+    Values correspond to Redfish JSON field names and are grouped by their
+    containing resource level.
 
     Usage::
 
@@ -23,7 +23,7 @@ class RedfishResource(str, Enum):
         # → "/redfish/v1/Systems/1/Processors"
     """
 
-    # ── RootService 层 (/redfish/v1/) ──
+    # RootService level (/redfish/v1/)
     SYSTEMS = "Systems"
     CHASSIS = "Chassis"
     MANAGERS = "Managers"
@@ -38,7 +38,7 @@ class RedfishResource(str, Enum):
     KEY_SERVICE = "KeyService"
     COMPONENT_INTEGRITY = "ComponentIntegrity"
 
-    # ── System 层 (/redfish/v1/Systems/{id}) ──
+    # System level (/redfish/v1/Systems/{id})
     PROCESSORS = "Processors"
     MEMORY = "Memory"
     STORAGE = "Storage"
@@ -54,7 +54,7 @@ class RedfishResource(str, Enum):
     CERTIFICATES = "Certificates"
     BOOT_OPTIONS = "BootOptions"
 
-    # ── Chassis 层 (/redfish/v1/Chassis/{id}) ──
+    # Chassis level (/redfish/v1/Chassis/{id})
     THERMAL = "Thermal"
     POWER = "Power"
     DRIVES = "Drives"
@@ -62,7 +62,7 @@ class RedfishResource(str, Enum):
     PCIE_DEVICES = "PCIeDevices"
     SENSORS = "Sensors"
 
-    # ── Manager 层 (/redfish/v1/Managers/{id}) ──
+    # Manager level (/redfish/v1/Managers/{id})
     NETWORK_PROTOCOL = "NetworkProtocol"
     HOST_INTERFACES = "HostInterfaces"
     SERIAL_INTERFACES = "SerialInterfaces"

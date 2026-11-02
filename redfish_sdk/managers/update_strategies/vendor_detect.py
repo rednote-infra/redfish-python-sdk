@@ -16,17 +16,19 @@ logger = logging.getLogger(__name__)
 
 # Canonical vendor key -> list of known manufacturer substrings (lowercase)
 _VENDOR_KEYWORDS: Dict[str, List[str]] = {
-    "enginetech": ["enginetech", "安擎"],
-    "inspur": ["inspur", "浪潮", "maginfra"],
+    # Unicode escapes preserve matching for localized manufacturer strings
+    # while keeping the source and documentation English-only.
+    "enginetech": ["enginetech", "\u5b89\u64ce"],
+    "inspur": ["inspur", "\u6d6a\u6f6e", "maginfra"],
     "ieit": ["ieit systems"],
-    "zte": ["zte", "中兴"],
-    "h3c": ["h3c", "新华三", "h3c servers"],
-    "nettrix": ["nettrix", "宁畅"],
-    "xfusion": ["xfusion", "超聚变", "huawei"],
-    "lenovo": ["lenovo", "联想"],
-    # smoothcompute (顺算) — Vendor / System.Manufacturer both report
-    # "smoothcompute" on their 6415 X2 family and similar SKUs.
-    "smoothcompute": ["smoothcompute", "顺算"],
+    "zte": ["zte", "\u4e2d\u5174"],
+    "h3c": ["h3c", "\u65b0\u534e\u4e09", "h3c servers"],
+    "nettrix": ["nettrix", "\u5b81\u7545"],
+    "xfusion": ["xfusion", "\u8d85\u805a\u53d8", "huawei"],
+    "lenovo": ["lenovo", "\u8054\u60f3"],
+    # Vendor and System.Manufacturer both report "smoothcompute" on the
+    # 6415 X2 family and similar SKUs.
+    "smoothcompute": ["smoothcompute", "\u987a\u7b97"],
 }
 
 

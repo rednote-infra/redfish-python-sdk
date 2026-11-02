@@ -1,12 +1,12 @@
 """
-xFusion (超聚变) out-of-band log collection strategy.
+xFusion out-of-band log collection strategy.
 
 xFusion iBMC exposes the standard ``#LogService.CollectDiagnosticData``
 action and produces an OEM diagnostic bundle. The one-click collection maps
 to ``DiagnosticDataType == "OEM"`` with ``OEMDiagnosticDataType`` selecting
 the full SDS/diagnostic dump.
 
-Reference: 各厂商 redfish 一键采集 — 超聚变
+Reference: vendor-specific one-click Redfish collection for xFusion
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class XFusionLogCollectStrategy(BaseLogCollectStrategy):
     """
-    Log-collect strategy for xFusion (超聚变) servers.
+    Log-collect strategy for xFusion servers.
 
     Defaults to an OEM diagnostic dump. Callers may override the diagnostic
     data type or pass ``oem_params`` for finer control.

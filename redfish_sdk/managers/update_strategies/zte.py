@@ -1,10 +1,10 @@
 """
-ZTE (中兴) firmware update strategy.
+ZTE firmware update strategy.
 
 ZTE BMCs extend SimpleUpdate with OEM fields under Oem.Public for
 BMC/BIOS flash selection, config preservation, and apply time.
 
-Reference: UpdateService固件刷新接口 — 中兴
+Reference: ZTE UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class ZteUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for ZTE (中兴) servers.
+    Firmware update strategy for ZTE servers.
 
     Supported kwargs:
         preserve_config (bool): Preserve config -> Oem.Public.PreserveConf

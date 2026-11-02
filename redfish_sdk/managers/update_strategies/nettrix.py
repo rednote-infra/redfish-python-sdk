@@ -1,10 +1,10 @@
 """
-Nettrix (宁畅) firmware update strategy.
+Nettrix firmware update strategy.
 
 Nettrix BMCs are closest to standard Redfish. The only extension is
 SaveConfig at the body top level (not under Oem).
 
-Reference: UpdateService固件刷新接口 — 宁畅
+Reference: Nettrix UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class NettrixUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for Nettrix (宁畅) servers.
+    Firmware update strategy for Nettrix servers.
 
     Supported kwargs:
         preserve_config (bool): Preserve config -> body.SaveConfig

@@ -1,5 +1,5 @@
 """
-H3C (新华三) OEM extractor.
+H3C OEM extractor.
 
 H3C BMCs publish both fan speed and drive temperature under ``Public``
 with the standard PascalCase field names:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class H3cOemExtractor(BaseOemExtractor):
-    """OEM field extractor for H3C (新华三) servers."""
+    """OEM field extractor for H3C servers."""
 
     def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         return to_float(read_public_field(fan.oem, "SpeedRatio"))
