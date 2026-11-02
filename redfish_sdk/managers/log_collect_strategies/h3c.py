@@ -37,7 +37,7 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -46,7 +46,7 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -73,7 +73,7 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     def trigger(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         *,
         log_id: Optional[str] = None,
@@ -121,7 +121,7 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     def wait_until_ready(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         poll_interval: int = 5,
         timeout: int = 1800,
@@ -139,10 +139,10 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """POST ``Manager.GeneralDownload`` and save the returned archive."""
         from ...exceptions import RedfishValidationError
 
@@ -177,7 +177,7 @@ class H3cLogCollectStrategy(BaseLogCollectStrategy):
 
     @staticmethod
     def _manager_for_log_services(
-        client: "RedfishClient", log_services_odata_id: str
+        client: RedfishClient, log_services_odata_id: str
     ) -> Manager:
         """Resolve the Manager owning an advertised LogServices collection."""
         suffix = "/LogServices"

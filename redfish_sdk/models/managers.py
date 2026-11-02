@@ -156,7 +156,9 @@ class SNMPCommunity(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     name: Optional[str] = Field(None, alias="Name")
-    community_string: Optional[str] = Field(None, alias="CommunityString")
+    community_string: Optional[str] = Field(
+        None, alias="CommunityString", repr=False
+    )
     access_mode: Optional[str] = Field(None, alias="AccessMode")
     restrict_community_to_ipv4_address_range: Optional[bool] = Field(
         None, alias="RestrictCommunityToIPv4AddressRange"
@@ -422,13 +424,13 @@ class SnmpTrapNotification(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
     trap_version: Optional[str] = Field(None, alias="TrapVersion")
     event_level_limit: Optional[str] = Field(None, alias="EventLevelLimit")
-    community: Optional[str] = Field(None, alias="Community")
+    community: Optional[str] = Field(None, alias="Community", repr=False)
     host_id: Optional[str] = Field(None, alias="HostID")
     user_name: Optional[str] = Field(None, alias="UserName")
     auth_protocol: Optional[str] = Field(None, alias="AuthProtocol")
-    auth_password: Optional[str] = Field(None, alias="AuthPassword")
+    auth_password: Optional[str] = Field(None, alias="AuthPassword", repr=False)
     priv_protocol: Optional[str] = Field(None, alias="PrivProtocol")
-    priv_password: Optional[str] = Field(None, alias="PrivPassword")
+    priv_password: Optional[str] = Field(None, alias="PrivPassword", repr=False)
     engine_id: Optional[str] = Field(None, alias="EngineID")
     device_type: Optional[int] = Field(None, alias="DeviceType")
     trap_server: Optional[List[TrapServer]] = Field(None, alias="TrapServer")
@@ -448,12 +450,20 @@ class SnmpService(Entity):
     snmp_v1_enable: Optional[bool] = Field(None, alias="SnmpV1Enable")
     snmp_v2c_enable: Optional[bool] = Field(None, alias="SnmpV2CEnable")
     snmp_v3_enable: Optional[bool] = Field(None, alias="SnmpV3Enable")
-    read_only_community: Optional[str] = Field(None, alias="ReadOnlyCommunity")
-    read_write_community: Optional[str] = Field(None, alias="ReadWriteCommunity")
+    read_only_community: Optional[str] = Field(
+        None, alias="ReadOnlyCommunity", repr=False
+    )
+    read_write_community: Optional[str] = Field(
+        None, alias="ReadWriteCommunity", repr=False
+    )
     snmp_v3_auth_protocol: Optional[str] = Field(None, alias="SnmpV3AuthProtocol")
-    snmp_v3_auth_password: Optional[str] = Field(None, alias="SnmpV3AuthPassword")
+    snmp_v3_auth_password: Optional[str] = Field(
+        None, alias="SnmpV3AuthPassword", repr=False
+    )
     snmp_v3_priv_protocol: Optional[str] = Field(None, alias="SnmpV3PrivProtocol")
-    snmp_v3_priv_password: Optional[str] = Field(None, alias="SnmpV3PrivPassword")
+    snmp_v3_priv_password: Optional[str] = Field(
+        None, alias="SnmpV3PrivPassword", repr=False
+    )
     snmp_v3_auth_user_name: Optional[str] = Field(None, alias="SnmpV3AuthUserName")
     snmp_trap_notification: Optional[SnmpTrapNotification] = Field(
         None, alias="SnmpTrapNotification",

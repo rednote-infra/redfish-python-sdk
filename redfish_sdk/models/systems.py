@@ -123,14 +123,14 @@ class GraphicalConsoleGetOneTimeURLRequest(BaseModel):
 class GraphicalConsoleSetOneTimePasswordRequest(
     GraphicalConsoleGetOneTimeURLRequest
 ):
-    password: Optional[str] = Field(None, alias="Password")
+    password: Optional[str] = Field(None, alias="Password", repr=False)
 
 
 class GraphicalConsoleSetPasswordRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     console_type: str = Field(alias="ConsoleType")
-    password: str = Field(alias="Password")
+    password: str = Field(alias="Password", repr=False)
 
 
 class GraphicalConsoleGetOneTimeURLResponse(BaseModel):
@@ -138,7 +138,7 @@ class GraphicalConsoleGetOneTimeURLResponse(BaseModel):
 
     console_type: str = Field(alias="ConsoleType")
     access_mode: str = Field(alias="AccessMode")
-    console_url: str = Field(alias="ConsoleURL")
+    console_url: str = Field(alias="ConsoleURL", repr=False)
     valid_until: Optional[str] = Field(None, alias="ValidUntil")
 
 
@@ -147,7 +147,7 @@ class GraphicalConsoleSetOneTimePasswordResponse(BaseModel):
 
     console_type: str = Field(alias="ConsoleType")
     access_mode: str = Field(alias="AccessMode")
-    password: str = Field(alias="Password")
+    password: str = Field(alias="Password", repr=False)
     valid_until: Optional[str] = Field(None, alias="ValidUntil")
 
 class ResetAction(BaseModel):

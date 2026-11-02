@@ -165,7 +165,7 @@ class RedfishClient:
         host: str,
         username: str,
         password: str,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         proxy: Optional[str] = None,
         connect_timeout: int = 10,
         read_timeout: int = 30,
@@ -174,6 +174,7 @@ class RedfishClient:
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
         strict_collection_errors: bool = False,
+        allow_insecure_http_auth: bool = False,
     ):
         """
         Initialize the Redfish Client.
@@ -182,8 +183,7 @@ class RedfishClient:
             host: BMC IP address or hostname (e.g., ``os.environ["BMC_IP"]``)
             username: BMC username (e.g., ``os.environ["BMC_USERNAME"]``)
             password: BMC password (e.g., ``os.environ["BMC_PASSWORD"]``)
-            verify_ssl: Whether to verify SSL certificates.
-                        Default False — BMCs typically use self-signed certificates.
+            verify_ssl: Whether to verify SSL certificates. Default True.
             proxy: Optional HTTP/HTTPS proxy URL.
                    Example: "http://127.0.0.1:8080" (matches Java's proxy config)
             connect_timeout: TCP connection timeout in seconds (default 10)
@@ -202,6 +202,8 @@ class RedfishClient:
                 collection member or continuation page fails. The default is
                 best-effort expansion with failures attached to the returned
                 list-compatible ``CollectionResult``.
+            allow_insecure_http_auth: Explicitly allow credentials over HTTP.
+                Disabled by default.
         """
         self._http_client = RedfishHttpClient(
             host=host,
@@ -215,6 +217,7 @@ class RedfishClient:
             retry_5xx=retry_5xx,
             retry_on_read_timeout=retry_on_read_timeout,
             retry_backoff=retry_backoff,
+            allow_insecure_http_auth=allow_insecure_http_auth,
         )
 
         # Root service cache

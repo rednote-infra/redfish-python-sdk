@@ -72,7 +72,7 @@ class Account(Entity):
     email_address: Optional[str] = Field(None, alias="EmailAddress")
     enabled: Optional[bool] = Field(None, alias="Enabled")
     locked: Optional[bool] = Field(None, alias="Locked")
-    password: Optional[str] = Field(None, alias="Password")
+    password: Optional[str] = Field(None, alias="Password", repr=False)
     password_change_required: Optional[bool] = Field(None, alias="PasswordChangeRequired")
     phone_number: Optional[str] = Field(None, alias="PhoneNumber")
     role_id: Optional[str] = Field(None, alias="RoleId")

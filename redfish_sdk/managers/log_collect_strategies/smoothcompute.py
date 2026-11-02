@@ -54,7 +54,7 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -76,10 +76,10 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """POST ``DiagnosticService.ExportBlackBox`` and stream the bundle."""
         from ...exceptions import RedfishValidationError
 
@@ -103,7 +103,7 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
 
     def _diag_action_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         action_name: str,
     ) -> Optional[str]:
@@ -122,7 +122,7 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
 
     @staticmethod
     def _diag_action_target_via_manager(
-        client: "RedfishClient",
+        client: RedfishClient,
         manager_url: str,
         action_name: str,
     ) -> Optional[str]:
@@ -139,7 +139,7 @@ class SmoothcomputeLogCollectStrategy(BaseLogCollectStrategy):
         return action.target if action else None
 
     @staticmethod
-    def _task_manager_url(client: "RedfishClient", task: Task) -> str:
+    def _task_manager_url(client: RedfishClient, task: Task) -> str:
         """
         Best-effort Manager URL the DiagnosticService lives under.
 

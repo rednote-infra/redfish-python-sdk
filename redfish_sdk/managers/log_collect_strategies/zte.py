@@ -62,7 +62,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -87,7 +87,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
 
     def trigger(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         *,
         log_id: Optional[str] = None,
@@ -142,7 +142,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -197,7 +197,7 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
 
     def wait_until_ready(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         poll_interval: int = 5,
         timeout: int = 1800,
@@ -285,10 +285,10 @@ class ZteLogCollectStrategy(BaseLogCollectStrategy):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """POST ``LogServices.ExportLogs`` and stream the returned archive."""
         from ...exceptions import RedfishValidationError
         from ...models.log_collect import LogServicesCollection, ZteDumpProgress

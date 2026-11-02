@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 class ZteOemExtractor(BaseOemExtractor):
     """OEM field extractor for ZTE (中兴) servers."""
 
-    def get_fan_speed_ratio(self, fan: "Fan") -> Optional[float]:
+    def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         return to_float(read_public_field(fan.oem, "SpeedRatio"))
 
-    def get_drive_temperature_celsius(self, drive: "Drive") -> Optional[float]:
+    def get_drive_temperature_celsius(self, drive: Drive) -> Optional[float]:
         return to_float(read_public_field(drive.oem, "TemperatureCelsius"))

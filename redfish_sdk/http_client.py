@@ -5,7 +5,7 @@ Provides low-level GET/POST/PATCH/DELETE operations against a Redfish BMC endpoi
 
 Design notes:
 - Uses Basic Auth (base64-encoded "username:password") in Authorization header
-- Skips SSL certificate verification (Redfish BMCs use self-signed certs)
+- Verifies TLS certificates by default; callers must explicitly opt out
 - Supports HTTP proxy
 - Extracts ETag from GET responses and sends If-Match on PATCH requests
 - Raises RedfishException for non-2xx responses
@@ -17,12 +17,12 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, Optional, Type, TypeVar
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 import requests
-import urllib3
 from pydantic import BaseModel
 
 from .exceptions import (
@@ -31,11 +31,9 @@ from .exceptions import (
     RedfishException,
     RedfishNotFoundError,
     RedfishTimeoutError,
+    RedfishValidationError,
 )
 from .models.common import RedfishResponse
-
-# Suppress InsecureRequestWarning for self-signed certs
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +47,17 @@ _SENSITIVE_LOG_KEYS = {
     "accesstoken", "authtoken", "xauthtoken", "httpheaders",
     "authorization", "proxyauthorization", "cookie", "setcookie",
 }
+_SENSITIVE_LOG_SUFFIXES = (
+    "authorization",
+    "community",
+    "communitystring",
+    "communitystrings",
+    "consoleurl",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
 
 
 def _redact_for_log(value: Any) -> Any:
@@ -57,10 +66,10 @@ def _redact_for_log(value: Any) -> Any:
         redacted = {}
         for key, item in value.items():
             normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-            redacted[key] = (
-                _REDACTED if normalized in _SENSITIVE_LOG_KEYS
-                else _redact_for_log(item)
+            is_sensitive = normalized in _SENSITIVE_LOG_KEYS or normalized.endswith(
+                _SENSITIVE_LOG_SUFFIXES
             )
+            redacted[key] = _REDACTED if is_sensitive else _redact_for_log(item)
         return redacted
     if isinstance(value, (list, tuple)):
         return [_redact_for_log(item) for item in value]
@@ -101,18 +110,29 @@ def _filename_from_content_disposition(value: Optional[str]) -> Optional[str]:
     """
     if not value:
         return None
-    import re
-
     # RFC 5987: filename*=UTF-8''name  (take the part after the last quote/'')
     m = re.search(r"filename\*\s*=\s*[^']*''([^;]+)", value, re.IGNORECASE)
     if m:
-        from urllib.parse import unquote
-
-        return unquote(m.group(1).strip().strip('"'))
+        filename = unquote(m.group(1).strip().strip('"'))
+        return _validate_download_filename(filename)
     m = re.search(r'filename\s*=\s*"?([^";]+)"?', value, re.IGNORECASE)
     if m:
-        return m.group(1).strip()
+        return _validate_download_filename(unquote(m.group(1).strip()))
     return None
+
+
+def _validate_download_filename(filename: str) -> str:
+    """Validate a server-provided filename before using it on disk."""
+    if (
+        not filename
+        or filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+        or os.path.isabs(filename)
+        or any(ord(character) < 32 or ord(character) == 127 for character in filename)
+    ):
+        raise RedfishValidationError("Unsafe filename in Content-Disposition header")
+    return filename
 
 
 class RedfishHttpClient:
@@ -135,7 +155,7 @@ class RedfishHttpClient:
         host: str,
         username: str,
         password: str,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         proxy: Optional[str] = None,
         connect_timeout: int = 10,
         read_timeout: int = 30,
@@ -143,6 +163,7 @@ class RedfishHttpClient:
         retry_5xx: int = 0,
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
+        allow_insecure_http_auth: bool = False,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -151,7 +172,7 @@ class RedfishHttpClient:
             host: BMC IP address or hostname (e.g., "192.0.2.10")
             username: BMC username
             password: BMC password
-            verify_ssl: Whether to verify SSL certificates. Default False (BMCs use self-signed).
+            verify_ssl: Whether to verify SSL certificates. Default True.
             proxy: Optional HTTP/HTTPS proxy URL (e.g., "http://127.0.0.1:8080")
             connect_timeout: Connection timeout in seconds
             read_timeout: Read timeout in seconds
@@ -169,9 +190,13 @@ class RedfishHttpClient:
                 for non-idempotent operations).
             retry_backoff: Base sleep in seconds between retries; each retry
                 sleeps ``retry_backoff * attempt`` (linear back-off).
+            allow_insecure_http_auth: Explicitly allow credentials over HTTP.
+                Disabled by default because Basic and session credentials are
+                otherwise exposed in plaintext.
         """
+        self._validate_endpoint(host, scheme, username, allow_insecure_http_auth)
         self.host = host
-        self.scheme = scheme
+        self.scheme = scheme.lower()
         self.verify_ssl = verify_ssl
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
@@ -197,6 +222,83 @@ class RedfishHttpClient:
 
         # Track the last ETag received for use in subsequent PATCH requests
         self._last_etag: Dict[str, str] = {}
+
+    @staticmethod
+    def _validate_endpoint(
+        host: str,
+        scheme: str,
+        username: str,
+        allow_insecure_http_auth: bool,
+    ) -> None:
+        """Validate the configured authenticated Redfish origin."""
+        if (
+            not isinstance(host, str)
+            or not host
+            or host != host.strip()
+            or any(character.isspace() or ord(character) < 32 for character in host)
+        ):
+            raise RedfishValidationError("Redfish host must be a non-empty string")
+        if not isinstance(scheme, str) or scheme.lower() not in {"http", "https"}:
+            raise RedfishValidationError("Redfish scheme must be 'http' or 'https'")
+        if not isinstance(username, str):
+            raise RedfishValidationError("Redfish username must be a string")
+        if ":" in username:
+            raise RedfishValidationError(
+                "Basic authentication username cannot contain ':'"
+            )
+        if scheme.lower() == "http" and not allow_insecure_http_auth:
+            raise RedfishValidationError(
+                "Authenticated Redfish connections require HTTPS; "
+                "set allow_insecure_http_auth=True only for isolated compatibility testing"
+            )
+
+        try:
+            endpoint = urlsplit(f"{scheme.lower()}://{host}")
+            _ = endpoint.port
+        except ValueError as exc:
+            raise RedfishValidationError("Invalid Redfish host or port") from exc
+        if (
+            endpoint.scheme != scheme.lower()
+            or endpoint.hostname is None
+            or endpoint.username is not None
+            or endpoint.password is not None
+            or endpoint.path not in {"", "/"}
+            or endpoint.query
+            or endpoint.fragment
+        ):
+            raise RedfishValidationError(
+                "Redfish host must contain only a hostname or IP address and optional port"
+            )
+
+    @staticmethod
+    def _effective_port(parts) -> int:
+        if parts.port is not None:
+            return parts.port
+        return 443 if parts.scheme.lower() == "https" else 80
+
+    def _resolve_url(self, path: str) -> str:
+        """Resolve a request target and require the configured BMC origin."""
+        base = urlsplit(f"{self.scheme}://{self.host}")
+        target = (
+            urlsplit(path)
+            if path.startswith(("http://", "https://"))
+            else urlsplit(self._build_url(path))
+        )
+        try:
+            same_origin = (
+                target.scheme.lower() == base.scheme.lower()
+                and (target.hostname or "").lower() == (base.hostname or "").lower()
+                and self._effective_port(target) == self._effective_port(base)
+                and target.username is None
+                and target.password is None
+            )
+        except ValueError as exc:
+            raise RedfishValidationError("Invalid Redfish request target") from exc
+        if not same_origin:
+            raise RedfishValidationError(
+                "Refusing to send BMC credentials to a different origin"
+            )
+        return urlunsplit(target)
 
     def _build_url(self, path: str) -> str:
         """Build a full URL from a Redfish path."""
@@ -272,7 +374,8 @@ class RedfishHttpClient:
         kwargs.setdefault(
             "timeout", (self.connect_timeout, self.read_timeout)
         )
-        url = self._build_url(path) if not path.startswith(("http://", "https://")) else path
+        url = self._resolve_url(path)
+        kwargs.setdefault("allow_redirects", False)
 
         # Dispatch through the method-specific session attribute
         # (self._session.get / .post / ...). This keeps behaviour identical
@@ -284,15 +387,7 @@ class RedfishHttpClient:
                 response = session_call(url, **kwargs)
             except requests.exceptions.ReadTimeout as exc:
                 last_exc = exc
-                if (
-                    self.retry_on_read_timeout
-                    and (
-                        method_u in self._READ_METHODS
-                        # Writes: same idempotency caveat as 503/504 above.
-                        or True
-                    )
-                    and attempt < attempts
-                ):
+                if self.retry_on_read_timeout and attempt < attempts:
                     logger.warning(
                         "%s %s read-timeout on attempt %d/%d; retrying",
                         method_u, url, attempt, attempts,
@@ -663,7 +758,7 @@ class RedfishHttpClient:
         uri: str,
         output_path: Optional[str] = None,
         chunk_size: int = 65536,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """
         Download a binary artifact (e.g. a diagnostic-data bundle).
 
@@ -671,11 +766,12 @@ class RedfishHttpClient:
         proxy configuration, so it works with BMCs whose artifact URIs require
         the same credentials as the Redfish API.
 
-        A relative ``uri`` (starting with ``/``) is resolved against the BMC
-        ``scheme://host``; an absolute ``http(s)://`` URI is used as-is.
+        A relative ``uri`` is resolved against the BMC ``scheme://host``.
+        Absolute URIs are accepted only when they have the same origin, so the
+        authenticated session cannot disclose credentials to another server.
 
         Args:
-            uri: Absolute URL or Redfish-relative path of the artifact.
+            uri: Same-origin absolute URL or Redfish-relative artifact path.
             output_path: When provided, stream the body to this path (creating
                 parent directories) and return the absolute file path. When
                 ``None``, return the full content as ``bytes``.
@@ -689,8 +785,6 @@ class RedfishHttpClient:
             RedfishException: On non-2xx HTTP responses.
             RedfishConnectionError / RedfishTimeoutError: On transport errors.
         """
-        import os
-
         logger.info("DOWNLOAD %s", _redact_for_log(uri))
         response = self._request("GET", uri, stream=True)
 
@@ -718,7 +812,7 @@ class RedfishHttpClient:
         path: str,
         output_path: Optional[str] = None,
         raw_body: Optional[Dict] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """
         Trigger a binary download via POST (OEM ``DownloadAllLog`` schemes).
 
@@ -726,7 +820,7 @@ class RedfishHttpClient:
         a POST action rather than exposing a GET-able ``AdditionalDataURI``.
 
         Args:
-            path: Redfish action path or absolute URL to POST to.
+            path: Redfish action path or same-origin absolute URL to POST to.
             output_path: When ``None``, return the body as ``bytes``. When a
                 directory, the filename from ``Content-Disposition`` is used
                 (falling back to the last path segment). When a file path,
@@ -739,8 +833,6 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses.
         """
-        import os
-
         logger.info("DOWNLOAD (POST) %s", _redact_for_log(path))
         response = self._request(
             "POST", path,
@@ -762,7 +854,12 @@ class RedfishHttpClient:
             filename = _filename_from_content_disposition(
                 response.headers.get("Content-Disposition")
             ) or path.rstrip("/").rsplit("/", 1)[-1] or "download.bin"
-            abs_path = os.path.join(abs_path, filename)
+            output_dir = os.path.realpath(abs_path)
+            abs_path = os.path.realpath(os.path.join(output_dir, filename))
+            if os.path.commonpath((output_dir, abs_path)) != output_dir:
+                raise RedfishValidationError(
+                    "Download filename escapes the requested output directory"
+                )
 
         parent = os.path.dirname(abs_path)
         if parent:

@@ -215,9 +215,9 @@ def _connection_hint(host: str, reason: str) -> str:
     if reason == "tls":
         return (
             f"Hint: TLS/SSL handshake failed with {host}. BMC self-signed "
-            f"certificates are expected — RedfishClient defaults to "
-            f"``verify_ssl=False``. If you enabled verification, provide a "
-            f"trust store; otherwise check the server's TLS version."
+            f"certificates require an explicit ``verify_ssl=False`` opt-out. "
+            f"Prefer providing a trust store; otherwise check the server's "
+            f"TLS version."
         )
     return (
         f"Hint: unclassified connection failure to {host}. Verify basic "
