@@ -44,6 +44,7 @@ class RegistryMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     description: Optional[str] = Field(None, alias="Description")
+    example: Optional[str] = Field(None, alias="Example")
     message: Optional[str] = Field(None, alias="Message")
     message_severity: Optional[str] = Field(
         None,

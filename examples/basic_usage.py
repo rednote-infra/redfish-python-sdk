@@ -24,7 +24,8 @@ def main():
     # Initialize the client
     # Credentials are read from environment variables:
     #   BMC_IP, BMC_USER, BMC_PASSWORD
-    # - verify_ssl=False: Required for self-signed certs (all BMCs)
+    # - verify_ssl=False: Explicit compatibility opt-out for a self-signed BMC.
+    #   Prefer the default certificate verification with a trusted BMC CA.
     # - proxy: Optional HTTP proxy (matches Java's ProxySelector config)
     client = RedfishClient(
         host=os.environ["BMC_IP"],

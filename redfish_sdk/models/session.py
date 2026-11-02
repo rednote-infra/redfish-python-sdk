@@ -33,7 +33,7 @@ class Session(Entity):
 
     """
     oem_session_type: Optional[str] = Field(None, alias="OemSessionType")
-    password: Optional[str] = Field(None, alias="Password")
+    password: Optional[str] = Field(None, alias="Password", repr=False)
     session_type: Optional[str] = Field(None, alias="SessionType")
     user_name: Optional[str] = Field(None, alias="UserName")
     user_authentication_source: Optional[str] = Field(
@@ -42,4 +42,4 @@ class Session(Entity):
     oem: Optional[Oem] = Field(None, alias="Oem")
 
     # Populated by the SDK after session creation (from X-Auth-Token response header)
-    x_auth_token: Optional[str] = Field(None, exclude=True)
+    x_auth_token: Optional[str] = Field(None, exclude=True, repr=False)

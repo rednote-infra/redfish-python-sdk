@@ -169,7 +169,9 @@ class Bmc(BaseModel):
     l3_cache_kib: Optional[int] = Field(None, alias="L3CacheKiB")
 
     # Auth
-    x_auth_token: Optional[str] = Field(None, alias="X-Auth-Token")
+    x_auth_token: Optional[str] = Field(
+        None, alias="X-Auth-Token", repr=False
+    )
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
     part_number: Optional[str] = Field(None, alias="PartNumber")
 

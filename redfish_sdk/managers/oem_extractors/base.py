@@ -24,7 +24,6 @@ so all three multi-vendor packages share one mental model.
 from __future__ import annotations
 
 import logging
-from abc import ABC
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -35,9 +34,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BaseOemExtractor(ABC):
+class BaseOemExtractor:
     """
-    Abstract base for vendor-specific OEM field extraction.
+    Base class for vendor-specific OEM field extraction.
 
     The default methods implement the DMTF-standard behaviour. Vendors
     override only the readings whose location differs.
@@ -47,7 +46,7 @@ class BaseOemExtractor(ABC):
     # Fan
     # ------------------------------------------------------------------
 
-    def get_fan_speed_ratio(self, fan: "Fan") -> Optional[float]:
+    def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         """
         Return fan speed as a percentage (0-100).
 
@@ -72,7 +71,7 @@ class BaseOemExtractor(ABC):
     # Drive
     # ------------------------------------------------------------------
 
-    def get_drive_temperature_celsius(self, drive: "Drive") -> Optional[float]:
+    def get_drive_temperature_celsius(self, drive: Drive) -> Optional[float]:
         """
         Return drive temperature in Celsius, or ``None`` when unknown.
 
@@ -96,7 +95,7 @@ class GenericOemExtractor(BaseOemExtractor):
 # ----------------------------------------------------------------------
 
 
-def read_public_field(oem: Optional["Oem"], field_alias: str) -> Any:
+def read_public_field(oem: Optional[Oem], field_alias: str) -> Any:
     """
     Read a field from ``Oem.Public`` by its original JSON alias.
 
@@ -132,7 +131,7 @@ def read_public_field(oem: Optional["Oem"], field_alias: str) -> Any:
 
 
 def read_vendor_field(
-    oem: Optional["Oem"], vendor_key: str, field_alias: str
+    oem: Optional[Oem], vendor_key: str, field_alias: str
 ) -> Any:
     """
     Read ``Oem.<vendor_key>.<field_alias>`` from the raw payload.

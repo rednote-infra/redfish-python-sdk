@@ -49,7 +49,9 @@ class TaskPayload(BaseModel):
     http_operation: Optional[str] = Field(None, alias="HttpOperation")
     target_uri: Optional[str] = Field(None, alias="TargetUri")
     json_body: Optional[str] = Field(None, alias="JsonBody")
-    http_headers: Optional[List[str]] = Field(None, alias="HttpHeaders")
+    http_headers: Optional[List[str]] = Field(
+        None, alias="HttpHeaders", repr=False
+    )
 
 
 class TaskLinks(BaseModel):

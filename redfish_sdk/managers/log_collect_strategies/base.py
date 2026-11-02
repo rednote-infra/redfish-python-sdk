@@ -19,13 +19,12 @@ the high-level hooks to use a collection-level OEM ``CollectAllLog`` /
 ``DownloadAllLog`` pair.
 
 The design mirrors ``update_strategies`` so the two multi-vendor features
-share the same mental model: an abstract base, a generic fallback, a
+share the same mental model: a base strategy, a generic fallback, a
 registry of singletons, and runtime vendor detection.
 """
 from __future__ import annotations
 
 import logging
-from abc import ABC
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -46,9 +45,9 @@ DEFAULT_DIAGNOSTIC_DATA_TYPE = "Manager"
 COLLECT_ACTION = "#LogService.CollectDiagnosticData"
 
 
-class BaseLogCollectStrategy(ABC):
+class BaseLogCollectStrategy:
     """
-    Abstract base class for out-of-band log collection strategies.
+    Base class for out-of-band log collection strategies.
 
     The default implementation follows the standard DMTF
     ``#LogService.CollectDiagnosticData`` flow. Vendors whose BMC uses a
@@ -85,7 +84,7 @@ class BaseLogCollectStrategy(ABC):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -143,7 +142,7 @@ class BaseLogCollectStrategy(ABC):
 
     def trigger(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         *,
         log_id: Optional[str] = None,
@@ -214,7 +213,7 @@ class BaseLogCollectStrategy(ABC):
 
     def extract_download_uri(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
     ) -> Optional[str]:
         """
@@ -250,7 +249,7 @@ class BaseLogCollectStrategy(ABC):
 
     def wait_until_ready(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         poll_interval: int = 5,
         timeout: int = 1800,
@@ -308,7 +307,7 @@ class BaseLogCollectStrategy(ABC):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -361,10 +360,10 @@ class BaseLogCollectStrategy(ABC):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """
         Download the produced bundle. Standard: resolve ``AdditionalDataURI``
         then GET it. Vendors with a POST-download action override this.
@@ -466,7 +465,7 @@ def _looks_like_collect_task(task: Task) -> bool:
 
 
 def _resolve_task_log_entry(
-    client: "RedfishClient",
+    client: RedfishClient,
     task: Task,
 ) -> Optional[LogEntry]:
     """
@@ -512,7 +511,7 @@ _ARTIFACT_KEYS = {
 _ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz", ".gz", ".zip", ".7z")
 
 
-def _task_versions(client: "RedfishClient", task: Task) -> List[Task]:
+def _task_versions(client: RedfishClient, task: Task) -> List[Task]:
     """Return the caller's Task plus a fresh Task resource when available."""
     versions = [task]
     if not task.odata_id:
@@ -586,7 +585,7 @@ def _payload_artifact_uri(task: Task) -> Optional[str]:
 
 
 def _task_monitor_artifact_uri(
-    client: "RedfishClient", task: Task
+    client: RedfishClient, task: Task
 ) -> Optional[str]:
     monitor = task.task_monitor
     if not monitor or (
@@ -631,7 +630,7 @@ def _find_named_artifact_uri(value: Any) -> Optional[str]:
 
 
 def _latest_resulting_log_entry(
-    client: "RedfishClient", task: Task
+    client: RedfishClient, task: Task
 ) -> Optional[LogEntry]:
     """Find the newest downloadable entry under the task's source LogService."""
     from ...exceptions import RedfishException

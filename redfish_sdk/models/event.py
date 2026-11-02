@@ -72,7 +72,7 @@ class Subscription(Entity):
     # (``{"X-Auth-Token": "..."}``) or a list of dicts
     # (``[{"X-Auth-Token": "..."}]``). Mirrors the lenient style used by
     # ``EventService.actions`` above.
-    http_headers: Optional[Any] = Field(None, alias="HttpHeaders")
+    http_headers: Optional[Any] = Field(None, alias="HttpHeaders", repr=False)
     oem_type: Optional[str] = Field(None, alias="OemSubscriptionType")
     protocol: Optional[str] = Field(None, alias="Protocol")
     registry_prefixes: Optional[List[str]] = Field(None, alias="RegistryPrefixes")

@@ -56,7 +56,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -78,7 +78,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     def trigger(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         *,
         log_id: Optional[str] = None,
@@ -131,7 +131,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     def wait_until_ready(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         poll_interval: int = 5,
         timeout: int = 1800,
@@ -191,10 +191,10 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """POST ``DownloadAllLog`` and stream the returned bundle to disk."""
         from ...exceptions import RedfishValidationError
 
@@ -214,7 +214,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -233,7 +233,7 @@ class LenovoLogCollectStrategy(BaseLogCollectStrategy):
 
     @staticmethod
     def _collection_action_target(
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         action_name: str,
     ) -> Optional[str]:

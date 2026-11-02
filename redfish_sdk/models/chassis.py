@@ -3,7 +3,7 @@ Chassis resource models.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -85,7 +85,9 @@ class Chassis(Entity):
     thermal: Optional[Link] = Field(None, alias="Thermal")
     weight_kg: Optional[float] = Field(None, alias="WeightKg")
     width_mm: Optional[float] = Field(None, alias="WidthMm")
-    pcie_devices: Optional[Link] = Field(None, alias="PCIeDevices")
+    pcie_devices: Optional[Union[Link, List[Link]]] = Field(
+        None, alias="PCIeDevices"
+    )
     network_adapters: Optional[Link] = Field(None, alias="NetworkAdapters")
     sensors: Optional[Link] = Field(None, alias="Sensors")
     environment_metrics: Optional[Link] = Field(None, alias="EnvironmentMetrics")

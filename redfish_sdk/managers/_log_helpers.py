@@ -61,7 +61,7 @@ def require_log_services_link(
 
 
 def resolve_log_service(
-    client: "RedfishClient",
+    client: RedfishClient,
     log_services_odata_id: str,
     log_id: Optional[str],
 ) -> Log:
@@ -144,7 +144,7 @@ def _describe_services(services: List[Log]) -> List[str]:
     return labels
 
 
-def fetch_log_entries(client: "RedfishClient", log: Log) -> List[LogEntry]:
+def fetch_log_entries(client: RedfishClient, log: Log) -> List[LogEntry]:
     """
     Fetch all LogEntry items under a Log resource.
 

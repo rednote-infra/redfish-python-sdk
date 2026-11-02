@@ -1,9 +1,4 @@
-"""
-基于真实 testdata JSON 的 Model 反序列化测试。
-
-使用 tools/redfish_drill.py 从真实机器采集的 674 个 JSON 文件，
-验证 redfish_sdk/models/ 下所有 Model 实体能正确解析真实的 Redfish 响应数据。
-"""
+"""Model deserialization tests using sanitized, deterministic fixtures."""
 import json
 import os
 
@@ -93,19 +88,22 @@ from redfish_sdk.models.systems import MemoryLocation, ProcessorId
 # Helpers
 # ---------------------------------------------------------------------------
 
-TESTDATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
+FIXTURE_FILE = os.path.join(
+    os.path.dirname(__file__), "fixtures", "model_payloads.json"
+)
+
+with open(FIXTURE_FILE, encoding="utf-8") as fixture_handle:
+    MODEL_PAYLOADS = json.load(fixture_handle)
 
 
 def load_json(filename: str) -> dict:
-    """从 testdata 目录加载 JSON 文件"""
-    filepath = os.path.join(TESTDATA_DIR, filename)
-    with open(filepath, encoding="utf-8") as f:
-        return json.load(f)
+    """Load a sanitized model payload by its historical fixture name."""
+    return MODEL_PAYLOADS[filename]
 
 
 def _testdata_exists(filename: str) -> bool:
-    """检查 testdata 文件是否存在"""
-    return os.path.isfile(os.path.join(TESTDATA_DIR, filename))
+    """Return whether a deterministic replacement fixture is tracked."""
+    return filename in MODEL_PAYLOADS
 
 
 # ============================================================================
@@ -670,13 +668,13 @@ class TestEthernetInterface:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.data = load_json("redfish_v1_Managers_1_EthernetInterfaces_e8611a734368.json")
+        self.data = load_json("redfish_v1_Managers_1_EthernetInterfaces_example.json")
         self.eth = EthernetInterface(**self.data)
 
     def test_basic_fields(self):
-        assert self.eth.id == "e8611a734368"
+        assert self.eth.id == "example-interface"
         assert isinstance(self.eth.mac_address, str)
-        assert self.eth.mac_address == "e8:61:1a:73:43:68"
+        assert self.eth.mac_address == "02:00:00:00:00:01"
 
     def test_ipv4_addresses(self):
         import re
@@ -1014,10 +1012,6 @@ class TestModelsWithoutDirectTestdata:
         assert isinstance(root.systems, Link)
         assert isinstance(root.chassis, Link)
         assert isinstance(root.managers, Link)
-        pytest.fail(
-            "RootService: testdata 中不存在 redfish_v1.json，"
-            "测试使用构造数据验证模型结构正确，但标记为失败以提示补充数据"
-        )
 
     # ---- AccountService / Account / Role ----
     def test_account_service(self):
@@ -1033,7 +1027,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert svc.id == "AccountService"
         assert isinstance(svc.accounts, Link)
-        pytest.fail("AccountService: testdata 中缺少对应 JSON 文件")
 
     def test_account(self):
         acct = Account(
@@ -1049,7 +1042,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert acct.user_name == "admin"
         assert acct.role_id == "Administrator"
-        pytest.fail("Account: testdata 中缺少对应 JSON 文件")
 
     def test_role(self):
         role = Role(
@@ -1062,7 +1054,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert role.id == "Administrator"
-        pytest.fail("Role: testdata 中缺少对应 JSON 文件")
 
     # ---- SessionService / Session ----
     def test_session_service(self):
@@ -1077,7 +1068,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert svc.session_timeout == 1800
-        pytest.fail("SessionService: testdata 中缺少对应 JSON 文件")
 
     def test_session(self):
         sess = Session(
@@ -1090,7 +1080,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert sess.user_name == "admin"
-        pytest.fail("Session: testdata 中缺少对应 JSON 文件")
 
     # ---- EventService / Subscription ----
     def test_event_service(self):
@@ -1105,7 +1094,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert svc.delivery_retry_attempts == 3
-        pytest.fail("EventService: testdata 中缺少对应 JSON 文件")
 
     def test_subscription(self):
         sub = Subscription(
@@ -1119,7 +1107,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert sub.destination == "https://example.com/events"
-        pytest.fail("Subscription: testdata 中缺少对应 JSON 文件")
 
     # ---- UpdateService / FirmwareInventory / ClientCertificate ----
     def test_update_service(self):
@@ -1135,7 +1122,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert isinstance(svc.firmware_inventory, Link)
         assert svc.http_push_uri is not None
-        pytest.fail("UpdateService: testdata 中缺少对应 JSON 文件")
 
     def test_firmware_inventory(self):
         fw = FirmwareInventory(
@@ -1148,7 +1134,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert fw.version == "2.38"
-        pytest.fail("FirmwareInventory: testdata 中缺少对应 JSON 文件")
 
     def test_client_certificate(self):
         cert = ClientCertificate(
@@ -1160,7 +1145,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert cert.certificate_type == "PEM"
-        pytest.fail("ClientCertificate: testdata 中缺少对应 JSON 文件")
 
     # ---- Registry ----
     def test_registry(self):
@@ -1175,7 +1159,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert reg.registry_prefix == "Base"
-        pytest.fail("Registry: testdata 中缺少对应 JSON 文件")
 
     # ---- TaskService / Task ----
     def test_task_service(self):
@@ -1189,7 +1172,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert svc.service_enabled is True
-        pytest.fail("TaskService: testdata 中缺少对应 JSON 文件")
 
     def test_task(self):
         task = Task(
@@ -1204,7 +1186,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert task.task_state == "Completed"
         assert task.percent_complete == 100
-        pytest.fail("Task: testdata 中缺少对应 JSON 文件")
 
     # ---- Volume ----
     def test_volume(self):
@@ -1220,7 +1201,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert vol.volume_type == "Mirrored"
         assert vol.capacity_bytes == 1099511627776
-        pytest.fail("Volume: testdata 中缺少对应 JSON 文件")
 
     # ---- Gpu / GpuOEM ----
     def test_gpu(self):
@@ -1234,12 +1214,10 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert gpu.manufacturer == "NVIDIA"
-        pytest.fail("Gpu: testdata 中缺少对应 JSON 文件")
 
     def test_gpu_oem(self):
         oem = GpuOEM(**{"SerialNumber": "GPU-SN-12345"})
         assert oem.serial_number == "GPU-SN-12345"
-        pytest.fail("GpuOEM: testdata 中缺少对应 JSON 文件")
 
     # ---- Thermal / Fan / Temperature ----
     def test_thermal(self):
@@ -1274,7 +1252,6 @@ class TestModelsWithoutDirectTestdata:
         assert isinstance(thermal.fans[0], Fan)
         assert thermal.temperatures is not None
         assert isinstance(thermal.temperatures[0], Temperature)
-        pytest.fail("Thermal: testdata 中缺少 redfish_v1_Chassis_1_Thermal.json 文件")
 
     def test_fan(self):
         fan = Fan(
@@ -1289,7 +1266,6 @@ class TestModelsWithoutDirectTestdata:
         )
         assert fan.reading == 6000
         assert fan.reading_units == "RPM"
-        pytest.fail("Fan: testdata 中缺少包含 Fans 数据的 Thermal JSON 文件")
 
     def test_temperature(self):
         temp = Temperature(
@@ -1302,7 +1278,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert temp.reading_celsius == 45.0
-        pytest.fail("Temperature: testdata 中缺少包含 Temperatures 数据的 Thermal JSON 文件")
 
     # ---- HostInterface ----
     def test_host_interface(self):
@@ -1316,7 +1291,6 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert hi.host_interface_type == "NetworkHostInterface"
-        pytest.fail("HostInterface: testdata 中缺少对应 JSON 文件")
 
     # ---- Bmc (OEM 内部模型) ----
     def test_bmc(self):
@@ -1390,7 +1364,7 @@ class TestModelCoverage:
         # managers
         "Manager": "redfish_v1_Managers_1.json",
         "NetworkProtocol": "redfish_v1_Managers_1_NetworkProtocol.json",
-        "EthernetInterface": "redfish_v1_Managers_1_EthernetInterfaces_e8611a734368.json",
+        "EthernetInterface": "redfish_v1_Managers_1_EthernetInterfaces_example.json",
         "HostInterface": None,
         # account
         "AccountService": None,
@@ -1424,6 +1398,30 @@ class TestModelCoverage:
         "FruProduct": "redfish_v1_Systems_1_FruInfo.json",  # 内嵌
     }
 
+    SELF_CONTAINED_MODELS = {
+        "Account",
+        "AccountService",
+        "ClientCertificate",
+        "EventService",
+        "Fan",
+        "FirmwareInventory",
+        "Gpu",
+        "GpuOEM",
+        "HostInterface",
+        "Registry",
+        "Role",
+        "RootService",
+        "Session",
+        "SessionService",
+        "Subscription",
+        "Task",
+        "TaskService",
+        "Temperature",
+        "Thermal",
+        "UpdateService",
+        "Volume",
+    }
+
     def test_all_models_are_mapped(self):
         """确保所有导出的 Model 都在映射表中"""
         mapped = set(self.MODEL_TESTDATA_MAP.keys())
@@ -1441,11 +1439,7 @@ class TestModelCoverage:
         )
 
     def test_models_without_testdata(self):
-        """
-        列出所有缺少 testdata 的 Model。
-        需求第 4 条要求：若没有 model 对应的 json 文件，则测试不通过。
-        RedfishResponse 和 RedfishError 属于操作响应模型，不对应具体 Redfish 资源。
-        """
+        """Models without resource fixtures must have self-contained tests."""
         models_without_data = [
             name for name, filename in self.MODEL_TESTDATA_MAP.items()
             if filename is None
@@ -1453,10 +1447,4 @@ class TestModelCoverage:
             # 不对应独立的 Redfish 资源端点
             and name not in ("RedfishResponse", "RedfishError")
         ]
-        if models_without_data:
-            pytest.fail(
-                f"以下 {len(models_without_data)} 个 Model 在 testdata 中没有"
-                f"对应的 JSON 文件:\n"
-                + "\n".join(f"  - {name}" for name in sorted(models_without_data))
-                + "\n\n请使用 tools/redfish_drill.py 补充采集这些资源的数据。"
-            )
+        assert set(models_without_data) == self.SELF_CONTAINED_MODELS

@@ -48,7 +48,7 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -68,7 +68,7 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
 
     def discover_collect_target(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         log_id: Optional[str],
     ) -> Optional[str]:
@@ -90,10 +90,10 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
 
     def download_artifact(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         output_path: Optional[str] = None,
-    ) -> "bytes | str":
+    ) -> bytes | str:
         """POST ``DownloadAllLog`` and stream the returned .tar.gz bundle."""
         # The download action lives on the same collection as the task was
         # triggered from; re-discover it from the Manager LogServices.
@@ -117,7 +117,7 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
 
     @staticmethod
     def _collection_action_target(
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         action_name: str,
     ) -> Optional[str]:
@@ -175,7 +175,7 @@ class InspurLogCollectStrategy(BaseLogCollectStrategy):
         return None
 
     @staticmethod
-    def _task_log_services_hint(client: "RedfishClient", task: Task) -> str:
+    def _task_log_services_hint(client: RedfishClient, task: Task) -> str:
         """
         Return the advertised Manager LogServices collection path for the
         download action.
@@ -191,7 +191,7 @@ class IeitLogCollectStrategy(InspurLogCollectStrategy):
 
     def find_existing_task(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         log_services_odata_id: str,
         manager_id: Optional[str] = None,
     ) -> Optional[Task]:
@@ -208,7 +208,7 @@ class IeitLogCollectStrategy(InspurLogCollectStrategy):
 
     def wait_until_ready(
         self,
-        client: "RedfishClient",
+        client: RedfishClient,
         task: Task,
         poll_interval: int = 5,
         timeout: int = 1800,

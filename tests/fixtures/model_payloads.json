@@ -1,0 +1,278 @@
+{
+  "redfish_v1_Systems_1.json": {
+    "@odata.id": "/redfish/v1/Systems/1",
+    "@odata.type": "#ComputerSystem.v1_20_0.ComputerSystem",
+    "Id": "1",
+    "Name": "Synthetic system",
+    "Manufacturer": "Example",
+    "Model": "Example Model",
+    "SerialNumber": "REDACTED-SYSTEM-SERIAL",
+    "UUID": "00000000-0000-0000-0000-000000000001",
+    "SystemType": "Physical",
+    "PowerState": "On",
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Boot": {
+      "BootSourceOverrideTarget": "Hdd",
+      "BootSourceOverrideEnabled": "Disabled",
+      "BootSourceOverrideMode": "UEFI",
+      "BootSourceOverrideTarget@Redfish.AllowableValues": ["Pxe", "Hdd"]
+    },
+    "Oem": {
+      "Public": {
+        "DeviceMaxNum": {"CPUNum": 2, "MemoryNum": 16},
+        "Mainboard": {
+          "Manufacturer": "Example",
+          "PartNumber": "REDACTED-PART",
+          "SerialNumber": "REDACTED-BOARD-SERIAL"
+        }
+      }
+    },
+    "Links": {"Chassis": [{"@odata.id": "/redfish/v1/Chassis/1"}]},
+    "Processors": {"@odata.id": "/redfish/v1/Systems/1/Processors"},
+    "Memory": {"@odata.id": "/redfish/v1/Systems/1/Memory"},
+    "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"}
+  },
+  "redfish_v1_Systems_1_Processors_1.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Processors/1",
+    "Id": "1",
+    "Manufacturer": "Hygon",
+    "Model": "Synthetic CPU",
+    "InstructionSet": "x86-64",
+    "ProcessorType": "CPU",
+    "TotalCores": 64,
+    "TotalThreads": 128,
+    "MaxSpeedMHz": 3100,
+    "Socket": "CPU1",
+    "ProcessorId": {"EffectiveFamily": "1", "EffectiveModel": "1"},
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Oem": {"Public": {"CurrentSpeedMHz": 2800}}
+  },
+  "redfish_v1_Systems_1_Memory_CPU0_DIMMA0.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Memory/CPU0_DIMMA0",
+    "Id": "CPU0_DIMMA0",
+    "Manufacturer": "Hynix",
+    "CapacityMiB": 32768,
+    "MemoryDeviceType": "DDR5",
+    "OperatingSpeedMhz": 5600,
+    "SerialNumber": "REDACTED-MEMORY-SERIAL",
+    "PartNumber": "REDACTED-MEMORY-PART",
+    "MemoryLocation": {"Socket": 0, "Channel": 0, "Slot": 0},
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Oem": {"Public": {"Technology": "DRAM"}}
+  },
+  "redfish_v1_Systems_1_Storages.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Storage",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1"}]
+  },
+  "redfish_v1_Systems_1_Bios.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Bios",
+    "Id": "Bios",
+    "Name": "BIOS settings",
+    "Attributes": {"BootMode": "UEFI"}
+  },
+  "redfish_v1_Chassis_1.json": {
+    "@odata.id": "/redfish/v1/Chassis/1",
+    "Id": "1",
+    "Name": "Synthetic chassis",
+    "ChassisType": "Rack Mount Chassis",
+    "Manufacturer": "Example",
+    "Model": "Example Chassis",
+    "SerialNumber": "REDACTED-CHASSIS-SERIAL",
+    "PowerState": "On",
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Oem": {
+      "Public": {
+        "DeviceMaxNum": {"CPUNum": 2, "MemoryNum": 16},
+        "Mainboard": {
+          "Manufacturer": "Example",
+          "PartNumber": "REDACTED-BOARD-PART",
+          "SerialNumber": "REDACTED-BOARD-SERIAL"
+        }
+      }
+    },
+    "Links": {
+      "ManagedBy": [{"@odata.id": "/redfish/v1/Managers/1"}],
+      "ComputerSystems": [{"@odata.id": "/redfish/v1/Systems/1"}]
+    },
+    "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"},
+    "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"},
+    "NetworkAdapters": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters"},
+    "PCIeDevices": [{"@odata.id": "/redfish/v1/Chassis/1/PCIeDevices/1"}]
+  },
+  "redfish_v1_Chassis_1_Drives_HDDPlaneDisk1.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/Drives/HDDPlaneDisk1",
+    "Id": "HDDPlaneDisk1",
+    "Manufacturer": "Dapustor",
+    "Model": "Synthetic NVMe",
+    "SerialNumber": "REDACTED-DRIVE-SERIAL",
+    "MediaType": "SSD",
+    "CapacityBytes": 1000000000,
+    "Protocol": "NVMe",
+    "PredictedMediaLifeLeftPercent": 99,
+    "Location": [{"Info": "Slot 1"}],
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Chassis_1_Power.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/Power",
+    "Id": "Power",
+    "Name": "Power",
+    "PowerControl": [{"MemberId": "0", "PowerConsumedWatts": 320.5}],
+    "PowerSupplies": [
+      {
+        "MemberId": "1",
+        "Manufacturer": "Great Wall",
+        "Model": "Synthetic PSU",
+        "SerialNumber": "REDACTED-PSU-1",
+        "PowerCapacityWatts": 1200,
+        "PowerInputWatts": 350,
+        "PowerOutputWatts": 320,
+        "PowerSupplyType": "AC",
+        "FirmwareVersion": "1.0",
+        "LineInputVoltage": 220.5,
+        "Status": {"State": "Enabled", "Health": "OK"},
+        "Oem": {"Public": {"FANSpeed": 4000}}
+      },
+      {
+        "MemberId": "2",
+        "Manufacturer": "Great Wall",
+        "Model": "Synthetic PSU",
+        "SerialNumber": "REDACTED-PSU-2",
+        "PowerCapacityWatts": 1200,
+        "PowerInputWatts": 340,
+        "PowerOutputWatts": 310,
+        "PowerSupplyType": "AC",
+        "FirmwareVersion": "1.0",
+        "LineInputVoltage": 220,
+        "Status": {"State": "Enabled", "Health": "OK"}
+      }
+    ],
+    "Redundancy": [{"MemberId": "0", "Mode": "N+m"}]
+  },
+  "redfish_v1_Chassis_1_NetworkAdapters_NIC_RiserA_Slot3.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/NIC_RiserA_Slot3",
+    "Id": "NIC_RiserA_Slot3",
+    "Manufacturer": "Mellanox",
+    "Model": "Synthetic NIC",
+    "SerialNumber": "REDACTED-NIC-SERIAL",
+    "Controllers": [{"FirmwarePackageVersion": "1.0"}],
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Oem": {"Public": {"DriverName": "example"}}
+  },
+  "redfish_v1_Chassis_1_PCIeDevices_EthernetCard0.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/PCIeDevices/EthernetCard0",
+    "Id": "EthernetCard0",
+    "Manufacturer": "Mellanox",
+    "Model": "Synthetic Adapter",
+    "SerialNumber": "REDACTED-PCIE-SERIAL",
+    "CardModel": "Synthetic Card",
+    "PCIeInterface": {"LanesInUse": 8, "MaxLanes": 16},
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "Oem": {"Public": {"DeviceBDF": "0000:00:00.0"}}
+  },
+  "redfish_v1_Managers_1.json": {
+    "@odata.id": "/redfish/v1/Managers/1",
+    "Id": "1",
+    "Name": "Synthetic BMC",
+    "ManagerType": "BMC",
+    "FirmwareVersion": "2.38",
+    "PowerState": "On",
+    "UUID": "00000000-0000-0000-0000-000000000002",
+    "Status": {"State": "Enabled", "Health": "OK"},
+    "GraphicalConsole": {"MaxConcurrentSessions": 2, "ServiceEnabled": true},
+    "EthernetInterfaces": {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces"},
+    "NetworkProtocol": {"@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"},
+    "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"}
+  },
+  "redfish_v1_Managers_1_NetworkProtocol.json": {
+    "@odata.id": "/redfish/v1/Managers/1/NetworkProtocol",
+    "Id": "NetworkProtocol",
+    "FQDN": "bmc.example.invalid",
+    "HostName": "bmc",
+    "HTTPS": {"Port": 443, "ProtocolEnabled": true},
+    "SSH": {"Port": 22, "ProtocolEnabled": true},
+    "IPMI": {"Port": 623, "ProtocolEnabled": true},
+    "SNMP": {"Port": 161, "ProtocolEnabled": true},
+    "KVMIP": {"Port": 5900, "ProtocolEnabled": true},
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Managers_1_EthernetInterfaces_example.json": {
+    "@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces/eth0",
+    "Id": "example-interface",
+    "MACAddress": "02:00:00:00:00:01",
+    "IPv4Addresses": [{"Address": "192.0.2.10", "SubnetMask": "255.255.255.0", "Gateway": "192.0.2.1"}],
+    "IPv6Addresses": [{"Address": "2001:db8::10", "PrefixLength": 64}],
+    "SpeedMbps": 1000,
+    "LinkStatus": "LinkUp",
+    "VLAN": {"VLANEnable": false, "VLANId": 1},
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Systems_1_FruInfo.json": {
+    "@odata.id": "/redfish/v1/Systems/1/FruInfo",
+    "Id": "FruInfo",
+    "Name": "FruInfo",
+    "Chassis": {"PartNumber": "REDACTED-CHASSIS-PART", "SerialNumber": "REDACTED-CHASSIS-SERIAL"},
+    "Product": {"Manufacturer": "Example", "ProductName": "Example Server", "PartNumber": "REDACTED-PRODUCT-PART", "SerialNumber": "REDACTED-PRODUCT-SERIAL", "Version": "1"},
+    "MainBoard": {"Manufacturer": "Example", "PartNumber": "REDACTED-BOARD-PART", "SerialNumber": "REDACTED-BOARD-SERIAL", "PrettyName": "Main Board", "BuildDate": "2024-01-01"},
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Systems_1_LogServices_SEL.json": {
+    "@odata.id": "/redfish/v1/Systems/1/LogServices/SEL",
+    "Id": "SEL",
+    "Name": "IPMI SEL",
+    "Entries": {"@odata.id": "/redfish/v1/Systems/1/LogServices/SEL/Entries"},
+    "MaxNumberOfRecords": 1024,
+    "OverWritePolicy": "WrapsWhenFull",
+    "ServiceEnabled": true,
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Systems_1_LogServices_SEL_Entries_1.json": {
+    "@odata.id": "/redfish/v1/Systems/1/LogServices/SEL/Entries/1",
+    "Id": "1",
+    "Name": "Synthetic log entry",
+    "Message": "Synthetic event",
+    "Severity": "OK",
+    "Created": "2024-01-01T00:00:00Z",
+    "EntryType": "SEL",
+    "EntryCode": "Assert",
+    "SensorNumber": 1,
+    "SensorType": "Temperature"
+  },
+  "redfish_v1_Systems_1_Processors.json": {
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Processors/1"}]
+  },
+  "redfish_v1_Systems_1_Memory.json": {
+    "Members@odata.count": 12,
+    "Members": [
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/1"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/2"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/3"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/4"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/5"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/6"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/7"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/8"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/9"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/10"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/11"},
+      {"@odata.id": "/redfish/v1/Systems/1/Memory/12"}
+    ]
+  },
+  "redfish_v1_Chassis_1_Drives.json": {
+    "Members@odata.count": 4,
+    "Members": [
+      {"@odata.id": "/redfish/v1/Chassis/1/Drives/1"},
+      {"@odata.id": "/redfish/v1/Chassis/1/Drives/2"},
+      {"@odata.id": "/redfish/v1/Chassis/1/Drives/3"},
+      {"@odata.id": "/redfish/v1/Chassis/1/Drives/4"}
+    ]
+  },
+  "redfish_v1_Managers_1_EthernetInterfaces.json": {
+    "Members@odata.count": 2,
+    "Members": [
+      {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces/1"},
+      {"@odata.id": "/redfish/v1/Managers/1/EthernetInterfaces/2"}
+    ]
+  }
+}

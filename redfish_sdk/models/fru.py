@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, AliasChoices
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from .common import Entity, Status
 from .oem import MainBoard

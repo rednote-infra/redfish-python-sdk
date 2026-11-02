@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 class InspurOemExtractor(BaseOemExtractor):
     """OEM field extractor for Inspur (浪潮) servers."""
 
-    def get_fan_speed_ratio(self, fan: "Fan") -> Optional[float]:
+    def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         # gOemCustomeString wins; fall back to Public when it's missing
         # or explicitly reported as 0 (some Inspur BMCs zero-fill the
         # OEM slot while the actual reading lives under Public).
@@ -42,7 +42,7 @@ class InspurOemExtractor(BaseOemExtractor):
         fallback = to_float(read_public_field(fan.oem, "SpeedRatio"))
         return fallback if fallback is not None else primary
 
-    def get_drive_temperature_celsius(self, drive: "Drive") -> Optional[float]:
+    def get_drive_temperature_celsius(self, drive: Drive) -> Optional[float]:
         # Note: lowercase 'temperature'. The PascalCase
         # ``TemperatureCelsius`` alias must NOT match this reading —
         # :func:`read_public_field` matches by exact alias so the two

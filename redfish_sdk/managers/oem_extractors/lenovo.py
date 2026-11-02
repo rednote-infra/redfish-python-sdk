@@ -24,5 +24,5 @@ class LenovoOemExtractor(BaseOemExtractor):
     # get_fan_speed_ratio: falls back to the base Reading/MaxReadingRange
     # derivation — Lenovo BMCs do not publish an OEM SpeedRatio.
 
-    def get_drive_temperature_celsius(self, drive: "Drive") -> Optional[float]:
+    def get_drive_temperature_celsius(self, drive: Drive) -> Optional[float]:
         return to_float(read_public_field(drive.oem, "temperature"))

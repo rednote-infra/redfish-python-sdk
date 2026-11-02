@@ -96,7 +96,7 @@ class VendorDetector:
         try:
             system = client.get_system()
             if system.oem and system.oem.model_extra:
-                extra_keys = {k.lower() for k in system.oem.model_extra.keys()}
+                extra_keys = {k.lower() for k in system.oem.model_extra}
                 if "lenovo" in extra_keys:
                     return "lenovo"
                 if "xfusion" in extra_keys:

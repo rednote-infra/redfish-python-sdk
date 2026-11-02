@@ -24,13 +24,13 @@ if TYPE_CHECKING:
 class NettrixOemExtractor(BaseOemExtractor):
     """OEM field extractor for Nettrix (宁畅) servers."""
 
-    def get_fan_speed_ratio(self, fan: "Fan") -> Optional[float]:
+    def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         public_ratio = to_float(read_public_field(fan.oem, "SpeedRatio"))
         if public_ratio is not None and public_ratio != 0:
             return public_ratio
         # No usable OEM reading — derive from Reading / MaxReadingRange.
         return super().get_fan_speed_ratio(fan)
 
-    def get_drive_temperature_celsius(self, drive: "Drive") -> Optional[float]:
+    def get_drive_temperature_celsius(self, drive: Drive) -> Optional[float]:
         # Nettrix exposes this at the top level, not under Oem.
         return to_float(drive.disk_temperature_celsius)
