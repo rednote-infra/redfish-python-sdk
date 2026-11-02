@@ -1,4 +1,4 @@
-"""Enginetech (安擎) System BlackBox diagnostic-log strategy.
+"""Enginetech System BlackBox diagnostic-log strategy.
 
 Enginetech exposes the standard ``CollectDiagnosticData`` action below a
 ComputerSystem rather than below a Manager::

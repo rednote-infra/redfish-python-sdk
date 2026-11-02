@@ -111,7 +111,10 @@ class TestVendorDetector:
         assert VendorDetector.detect(client) == "inspur"
 
     def test_detect_inspur_chinese(self):
-        client = _make_mock_client("浪潮电子信息产业股份有限公司")
+        client = _make_mock_client(
+            "\u6d6a\u6f6e\u7535\u5b50\u4fe1\u606f\u4ea7\u4e1a"
+            "\u80a1\u4efd\u6709\u9650\u516c\u53f8"
+        )
         assert VendorDetector.detect(client) == "inspur"
 
     def test_detect_inspur_maginfra(self):
@@ -215,7 +218,7 @@ class TestGenericUpdateStrategy:
 # ===========================================================================
 
 class TestInspurUpdateStrategy:
-    """Tests for Inspur (浪潮) strategy body construction."""
+    """Tests for Inspur strategy body construction."""
 
     def test_basic_body(self):
         client = _make_mock_client()
@@ -276,7 +279,7 @@ class TestInspurUpdateStrategy:
 # ===========================================================================
 
 class TestZteUpdateStrategy:
-    """Tests for ZTE (中兴) strategy body construction."""
+    """Tests for ZTE strategy body construction."""
 
     def test_basic_body(self):
         client = _make_mock_client()
@@ -309,7 +312,7 @@ class TestZteUpdateStrategy:
 # ===========================================================================
 
 class TestH3cUpdateStrategy:
-    """Tests for H3C (新华三) strategy body construction."""
+    """Tests for H3C strategy body construction."""
 
     def test_basic_body_no_transfer_protocol(self):
         """H3C should NOT include TransferProtocol in the body."""
@@ -391,7 +394,7 @@ class TestH3cUpdateStrategy:
 # ===========================================================================
 
 class TestNettrixUpdateStrategy:
-    """Tests for Nettrix (宁畅) strategy body construction."""
+    """Tests for Nettrix strategy body construction."""
 
     def test_basic_body_with_targets(self):
         client = _make_mock_client()
@@ -420,7 +423,7 @@ class TestNettrixUpdateStrategy:
 # ===========================================================================
 
 class TestXFusionUpdateStrategy:
-    """Tests for xFusion (超聚变) strategy body construction."""
+    """Tests for xFusion strategy body construction."""
 
     def test_basic_body(self):
         client = _make_mock_client()
@@ -452,7 +455,7 @@ class TestXFusionUpdateStrategy:
 # ===========================================================================
 
 class TestLenovoUpdateStrategy:
-    """Tests for Lenovo (联想) strategy body construction."""
+    """Tests for Lenovo strategy body construction."""
 
     def test_basic_body_with_targets(self):
         client = _make_mock_client()

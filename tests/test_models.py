@@ -130,7 +130,7 @@ class TestMemory:
 
 class TestOem:
     def test_oem_with_public_key(self):
-        """华为 xFusion / iBMC OEM format."""
+        """Huawei xFusion / iBMC OEM format."""
         data = {
             "Public": {
                 "ProductName": "2288H V5",
@@ -408,7 +408,7 @@ class TestDriveModel:
     """Model-layer contract for Drive: top-level DMTF fields and raw OEM."""
 
     def test_drive_top_level_disk_temperature_celsius(self):
-        """Nettrix (宁畅) exposes drive temperature at the top level."""
+        """Nettrix exposes drive temperature at the top level."""
         data = {
             "@odata.id": "/redfish/v1/Chassis/1/Drives/3",
             "Id": "3",

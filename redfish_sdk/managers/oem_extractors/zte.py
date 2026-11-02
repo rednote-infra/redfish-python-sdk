@@ -1,5 +1,5 @@
 """
-ZTE (中兴) OEM extractor.
+ZTE OEM extractor.
 
 ZTE BMCs publish both fan speed and drive temperature under ``Public``
 with the standard PascalCase field names (identical shape to H3C in the
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class ZteOemExtractor(BaseOemExtractor):
-    """OEM field extractor for ZTE (中兴) servers."""
+    """OEM field extractor for ZTE servers."""
 
     def get_fan_speed_ratio(self, fan: Fan) -> Optional[float]:
         return to_float(read_public_field(fan.oem, "SpeedRatio"))

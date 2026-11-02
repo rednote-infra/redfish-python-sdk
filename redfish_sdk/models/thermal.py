@@ -91,7 +91,7 @@ class InletHistoryTemperature(Entity):
     Air inlet historical temperature samples for a chassis.
     Endpoint: /redfish/v1/Chassis/{chassisId}/Thermal/InletHistoryTemperature
 
-    Vendor-specific sub-resource (e.g., 华为 / xFusion iBMC) referenced from
+    Vendor-specific sub-resource (for example, Huawei or xFusion iBMC) referenced from
     the Thermal resource via the ``InletHistoryTemperature`` odata link.
     """
     description: Optional[str] = Field(None, alias="Description")

@@ -1,5 +1,5 @@
 """
-Lenovo (联想) out-of-band log collection strategy.
+Lenovo out-of-band log collection strategy.
 
 Lenovo servers (observed on AMI MegaRAC-based BMCs, e.g. root Oem = ``Ami``)
 publish three OEM actions on the ``LogServices`` collection — the trigger
@@ -19,7 +19,7 @@ Observed flow (verified end-to-end against a real Lenovo BMC 10.27.97.152):
 Similar to :class:`InspurLogCollectStrategy` in overall shape, but uses a
 private progress endpoint (like ZTE) instead of a standard TaskService.
 
-Reference: 各厂商 redfish 一键采集 — Lenovo (AMI-based)
+Reference: vendor-specific one-click Redfish collection for Lenovo (AMI-based)
 """
 from __future__ import annotations
 

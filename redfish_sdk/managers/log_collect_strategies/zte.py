@@ -1,5 +1,5 @@
 """
-ZTE (中兴) out-of-band log collection strategy.
+ZTE out-of-band log collection strategy.
 
 ZTE BMCs do NOT use the standard per-LogService ``CollectDiagnosticData`` nor
 a Redfish TaskService flow. Instead the ``LogServices`` *collection* exposes
@@ -22,7 +22,7 @@ Because the trigger response is not a Redfish Task, this strategy returns a
 *synthetic* Task carrying the progress URL / LogServices context needed later,
 and overrides ``wait_until_ready`` to poll the OEM progress endpoint.
 
-Reference: 各厂商 redfish 一键采集 — 中兴
+Reference: vendor-specific one-click Redfish collection for ZTE
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ _FAIL_STATES = {"STATE_FAILED", "STATE_ERROR"}
 
 
 class ZteLogCollectStrategy(BaseLogCollectStrategy):
-    """Log-collect strategy for ZTE (中兴) servers."""
+    """Log-collect strategy for ZTE servers."""
 
     default_diagnostic_data_type = _DEFAULT_TYPE
 

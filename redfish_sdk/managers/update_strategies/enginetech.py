@@ -1,11 +1,11 @@
 """
-Enginetech (安擎) firmware update strategy.
+Enginetech firmware update strategy.
 
 Enginetech BMCs use the Oem.Public extension to distinguish the firmware type
 being flashed (BMC / BIOS / CPLD, etc.) and to carry file-server
 credentials plus config-preservation flags in the SimpleUpdate body.
 
-Reference: UpdateService固件刷新接口 — 安擎 (Enginetech)
+Reference: Enginetech UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class EnginetechUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for Enginetech (安擎) servers.
+    Firmware update strategy for Enginetech servers.
 
     Supported kwargs:
         image_type (str): Firmware type -> Oem.Public.ImageType
@@ -48,13 +48,14 @@ class EnginetechUpdateStrategy(BaseUpdateStrategy):
             "TransferProtocol": transfer_protocol,
         }
 
-        # targets 必须由调用方显式配置，禁止在策略内部自动推导，
-        # 避免刷错固件目标。未提供时直接报错提示。
+        # Callers must configure targets explicitly. Do not infer them in the
+        # strategy because that could update the wrong firmware component.
         if not targets:
             raise ValueError(
-                "EnginetechUpdateStrategy: 'targets' 必须显式配置"
-                "（例如 --targets /redfish/v1/UpdateService/FirmwareInventory/BMCImage1），"
-                "不允许使用策略自动推导的默认值。"
+                "EnginetechUpdateStrategy requires explicit 'targets' "
+                "configuration (for example, --targets "
+                "/redfish/v1/UpdateService/FirmwareInventory/BMCImage1); "
+                "the strategy does not infer a default target."
             )
         body["Targets"] = targets
 

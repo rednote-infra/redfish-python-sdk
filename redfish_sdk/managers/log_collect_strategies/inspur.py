@@ -1,5 +1,5 @@
 """
-Inspur (浪潮) out-of-band log collection strategy.
+Inspur out-of-band log collection strategy.
 
 Inspur-compatible BMCs (including IEIT SYSTEMS) do NOT expose the standard
 per-LogService ``#LogService.CollectDiagnosticData``. Instead the Manager
@@ -15,7 +15,7 @@ Observed flow (verified against a real cs5280h3 BMC):
        directly in the body (Content-Disposition carries the filename, e.g.
        ``dump_8ME800499_20260902-1146.tar.gz``).
 
-Reference: 各厂商 redfish 一键采集 — 浪潮
+Reference: vendor-specific one-click Redfish collection for Inspur
 """
 from __future__ import annotations
 

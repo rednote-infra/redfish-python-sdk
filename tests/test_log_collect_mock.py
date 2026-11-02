@@ -1422,7 +1422,7 @@ class TestStrategies(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Enginetech (安擎) Systems/Self/LogServices/BlackBox flow
+# Enginetech Systems/Self/LogServices/BlackBox flow
 # ---------------------------------------------------------------------------
 
 
@@ -1536,7 +1536,7 @@ class TestEnginetechStrategy(VendorRestoreMixin):
 
 
 # ---------------------------------------------------------------------------
-# Inspur (浪潮) collection-level CollectAllLog / DownloadAllLog OEM flow
+# Inspur collection-level CollectAllLog / DownloadAllLog OEM flow
 # ---------------------------------------------------------------------------
 
 
@@ -1896,7 +1896,7 @@ class TestIeitStrategy(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Lenovo (联想, AMI-based) CollectAllLog + CollectProgress + DownloadAllLog
+# Lenovo (AMI-based) CollectAllLog + CollectProgress + DownloadAllLog
 # ---------------------------------------------------------------------------
 
 
@@ -2037,7 +2037,7 @@ class TestLenovoStrategy(VendorRestoreMixin):
 
 
 # ---------------------------------------------------------------------------
-# smoothcompute (顺算) DiagnosticService.CollectBlackBox / ExportBlackBox
+# smoothcompute DiagnosticService.CollectBlackBox / ExportBlackBox
 # ---------------------------------------------------------------------------
 
 
@@ -2221,7 +2221,7 @@ class TestTaskMessagesNormalisation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# ZTE (中兴) Dump / Dump/Progress / ExportLogs OEM flow
+# ZTE Dump / Dump/Progress / ExportLogs OEM flow
 # ---------------------------------------------------------------------------
 
 

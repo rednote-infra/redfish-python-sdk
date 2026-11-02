@@ -70,7 +70,7 @@ def drill_data(k, v):
         try:
             content = rc.get(v)
         except Exception as e:
-            print(f"[ERROR] 请求 {v} 失败: {type(e).__name__}: {e}")
+            print(f"[ERROR] Request to {v} failed: {type(e).__name__}: {e}")
             return
         if content is None:
             return
@@ -103,7 +103,7 @@ def drill_odataid(odata_id):
     """drill odata.id recursively."""
     content = rc.get(odata_id)
     if content is None:
-        print(f"[WARN] 无法获取入口资源 {odata_id}，跳过")
+        print(f"[WARN] Unable to retrieve entry resource {odata_id}; skipping")
         return
     for k, v in content.items():
         drill_data(k, v)
@@ -143,8 +143,8 @@ class Redfish:
                 **kwargs,
             )
         except Exception as e:
-            print(f"[ERROR] HTTP 请求失败: GET {full_url}")
-            print(f"        原因: {type(e).__name__}: {e}")
+            print(f"[ERROR] HTTP request failed: GET {full_url}")
+            print(f"        Reason: {type(e).__name__}: {e}")
             return None
         if 200 <= rsp.status < 300:
             etag = rsp.headers.get("ETag")

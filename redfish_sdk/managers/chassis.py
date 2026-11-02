@@ -355,7 +355,7 @@ class ChassisManager:
         """
         Get FRU service data from the chassis OEM extension.
 
-        This is a vendor-specific (华为 iBMC) feature that provides
+        This is a vendor-specific (Huawei iBMC) feature that provides
         detailed FRU board info via /redfish/v1/Chassis/{id}/FruService.
 
 

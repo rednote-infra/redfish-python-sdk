@@ -8,13 +8,13 @@ a single entry point in UpdateServiceManager.simple_update().
 Architecture:
     BaseUpdateStrategy (ABC)
       ├── GenericUpdateStrategy   — standard Redfish fallback
-      ├── EnginetechUpdateStrategy — Enginetech (安擎)
-      ├── InspurUpdateStrategy    — Inspur (浪潮)
-      ├── ZteUpdateStrategy       — ZTE (中兴)
-      ├── H3cUpdateStrategy       — H3C (新华三)
-      ├── NettrixUpdateStrategy   — Nettrix (宁畅)
-      ├── XFusionUpdateStrategy   — xFusion (超聚变)
-      └── LenovoUpdateStrategy    — Lenovo (联想)
+      ├── EnginetechUpdateStrategy — Enginetech
+      ├── InspurUpdateStrategy    — Inspur
+      ├── ZteUpdateStrategy       — ZTE
+      ├── H3cUpdateStrategy       — H3C
+      ├── NettrixUpdateStrategy   — Nettrix
+      ├── XFusionUpdateStrategy   — xFusion
+      └── LenovoUpdateStrategy    — Lenovo
 
 All strategies are auto-registered when this package is imported.
 """

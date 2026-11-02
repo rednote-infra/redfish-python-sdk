@@ -1,10 +1,10 @@
 """
-xFusion (超聚变) firmware update strategy.
+xFusion firmware update strategy.
 
 xFusion BMCs place extension fields at the body top level (not under Oem),
 including PreserveConfig, ActiveMode, and ModuleArray for PSU updates.
 
-Reference: UpdateService固件刷新接口 — 超聚变
+Reference: xFusion UpdateService firmware update API
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class XFusionUpdateStrategy(BaseUpdateStrategy):
     """
-    Firmware update strategy for xFusion (超聚变) servers.
+    Firmware update strategy for xFusion servers.
 
     Supported kwargs:
         preserve_config (bool): Preserve config -> body.PreserveConfig
