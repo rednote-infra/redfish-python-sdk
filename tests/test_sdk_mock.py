@@ -800,6 +800,7 @@ class TestPatchPostDelete:
         monkeypatch.setattr(client._http_client, "patch_raw", lambda path, body, **kw: FakeResponse())
 
         result = client.patch("/redfish/v1/Systems/1", {"Boot": {"BootSourceOverrideTarget": "Pxe"}})
+        assert isinstance(result, dict)
         assert result == response_data
         client.close()
 
@@ -816,6 +817,7 @@ class TestPatchPostDelete:
         monkeypatch.setattr(client._http_client, "patch_raw", lambda path, body, **kw: FakeResponse())
 
         result = client.patch("/redfish/v1/Systems/1", {"AssetTag": "NEW-TAG"})
+        assert isinstance(result, dict)
         assert result == {}
         client.close()
 
@@ -938,6 +940,7 @@ class TestPatchPostDelete:
             "Password": "secret",
             "RoleId": "Operator",
         })
+        assert isinstance(result, dict)
         assert result == response_data
         client.close()
 
@@ -956,6 +959,7 @@ class TestPatchPostDelete:
             "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset",
             {"ResetType": "GracefulRestart"},
         )
+        assert isinstance(result, dict)
         assert result == {}
         client.close()
 
@@ -984,6 +988,52 @@ class TestPatchPostDelete:
         assert result == {"Message": "OK"}
         client.close()
 
+    def test_post_preserves_legacy_json_list_return(self, monkeypatch):
+        """post() should keep returning JSON arrays directly."""
+        client = self._make_client()
+
+        class FakeResponse:
+            status_code = 200
+            text = '[{"Id": "1"}]'
+            headers = {}
+
+            def json(self):
+                return [{"Id": "1"}]
+
+        monkeypatch.setattr(
+            client._http_client,
+            "post_raw",
+            lambda path, body=None: FakeResponse(),
+        )
+
+        result = client.post("/redfish/v1/Oem/Vendor/Query")
+
+        assert isinstance(result, list)
+        assert result == [{"Id": "1"}]
+        client.close()
+
+    def test_post_preserves_legacy_json_decode_error(self, monkeypatch):
+        """post() should continue raising when its legacy JSON body is invalid."""
+        client = self._make_client()
+
+        class FakeResponse:
+            status_code = 200
+            text = "not-json"
+            headers = {}
+
+            def json(self):
+                raise ValueError("invalid JSON")
+
+        monkeypatch.setattr(
+            client._http_client,
+            "post_raw",
+            lambda path, body=None: FakeResponse(),
+        )
+
+        with pytest.raises(ValueError, match="invalid JSON"):
+            client.post("/redfish/v1/Oem/Vendor/Action")
+        client.close()
+
     def test_post_propagates_exception(self, monkeypatch):
         """post() should propagate RedfishException from http_client."""
         from redfish_sdk.exceptions import RedfishException
@@ -1000,25 +1050,13 @@ class TestPatchPostDelete:
 
     # -- delete() tests --
 
-    def test_delete_returns_generic_response(self, monkeypatch):
-        """delete() should preserve the HTTP response."""
+    def test_delete_returns_none(self, monkeypatch):
+        """delete() should preserve its legacy None return value."""
         client = self._make_client()
-
-        class FakeResponse:
-            status_code = 204
-            text = ""
-            content = b""
-            headers = {}
-
-        monkeypatch.setattr(
-            client._http_client,
-            "delete_raw",
-            lambda path: FakeResponse(),
-        )
+        monkeypatch.setattr(client._http_client, "delete", lambda path: "")
 
         result = client.delete("/redfish/v1/SessionService/Sessions/abc123")
-        assert result.status_code == 204
-        assert result == {}
+        assert result is None
         client.close()
 
     def test_delete_propagates_exception(self, monkeypatch):
@@ -1026,10 +1064,10 @@ class TestPatchPostDelete:
         from redfish_sdk.exceptions import RedfishNotFoundError
         client = self._make_client()
 
-        def mock_delete_raw(path):
+        def mock_delete(path):
             raise RedfishNotFoundError(path)
 
-        monkeypatch.setattr(client._http_client, "delete_raw", mock_delete_raw)
+        monkeypatch.setattr(client._http_client, "delete", mock_delete)
 
         with pytest.raises(RedfishNotFoundError):
             client.delete("/redfish/v1/SessionService/Sessions/nonexistent")
