@@ -27,6 +27,7 @@ from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 import requests
 from pydantic import BaseModel
 
+from .auth import AuthenticationMode
 from .exceptions import (
     RedfishAuthError,
     RedfishConnectionError,
@@ -208,7 +209,7 @@ class RedfishHttpClient:
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
         allow_insecure_http_auth: Optional[bool] = None,
-        auth_mode: str = "basic",
+        auth_mode: AuthenticationMode | str = AuthenticationMode.BASIC,
         session_key: Optional[str] = None,
         session_location: Optional[str] = None,
     ):
@@ -241,8 +242,9 @@ class RedfishHttpClient:
             allow_insecure_http_auth: Control credentials over HTTP. Omitting
                 this preserves the legacy allow behavior with a deprecation
                 warning; False enforces HTTPS.
-            auth_mode: Initial authentication mode, either ``"basic"`` or
-                Redfish ``"session"`` authentication.
+            auth_mode: Initial authentication mode. Use
+                :class:`AuthenticationMode`; legacy string values remain
+                accepted for compatibility.
             session_key: Existing Redfish session token. Supplying one enables
                 session authentication immediately.
             session_location: Optional resource URI for an existing session,
@@ -265,16 +267,18 @@ class RedfishHttpClient:
         self.retry_5xx = max(int(retry_5xx), 0)
         self.retry_on_read_timeout = bool(retry_on_read_timeout)
         self.retry_backoff = float(retry_backoff)
-        if auth_mode not in {"basic", "session"}:
+        try:
+            auth_mode = AuthenticationMode(auth_mode)
+        except (TypeError, ValueError) as exc:
             raise RedfishValidationError(
-                "auth_mode must be either 'basic' or 'session'"
-            )
+                "auth_mode must be a supported AuthenticationMode"
+            ) from exc
         if session_key is not None:
             if not isinstance(session_key, str) or not session_key:
                 raise RedfishValidationError(
                     "session_key must be a non-empty string"
                 )
-            auth_mode = "session"
+            auth_mode = AuthenticationMode.SESSION
         if session_location is not None and (
             not isinstance(session_location, str) or not session_location
         ):
@@ -305,7 +309,7 @@ class RedfishHttpClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
-        if auth_mode == "basic":
+        if auth_mode is AuthenticationMode.BASIC:
             self._session.headers["Authorization"] = self._basic_auth
         elif session_key is not None:
             self.set_auth_token(
@@ -475,7 +479,7 @@ class RedfishHttpClient:
     _DEFAULT_SESSION_COLLECTION = "/redfish/v1/SessionService/Sessions"
 
     @property
-    def auth_mode(self) -> str:
+    def auth_mode(self) -> AuthenticationMode:
         """Return the currently active authentication mode."""
         return self._auth_mode
 
@@ -615,7 +619,7 @@ class RedfishHttpClient:
             self._validate_managed_headers(kwargs.get("headers"))
             if (
                 authenticated
-                and self._auth_mode == "session"
+                and self._auth_mode is AuthenticationMode.SESSION
                 and self._session_key is None
             ):
                 self._refresh_session(None)
@@ -630,7 +634,7 @@ class RedfishHttpClient:
                 authenticated
                 and method.upper() in self._READ_METHODS
                 and response.status_code == 401
-                and self._auth_mode == "session"
+                and self._auth_mode is AuthenticationMode.SESSION
             ):
                 self._refresh_session(observed_session_key)
                 response = self._send(
@@ -1122,7 +1126,7 @@ class RedfishHttpClient:
             self._session_collection_uri = self._session_collection_from_location(
                 session_location
             )
-        self._auth_mode = "session"
+        self._auth_mode = AuthenticationMode.SESSION
         self._session_key = token
         self._session_location = session_location
         self._session_refresh_failure = None
@@ -1132,7 +1136,7 @@ class RedfishHttpClient:
 
     def reset_basic_auth(self) -> None:
         """Switch back to Basic Auth (e.g., after session deletion)."""
-        self._auth_mode = "basic"
+        self._auth_mode = AuthenticationMode.BASIC
         self._session_key = None
         self._session_location = None
         self._session_refresh_failure = None
@@ -1219,7 +1223,7 @@ class RedfishHttpClient:
     def close(self) -> None:
         """Best-effort logout, then always close local HTTP sessions."""
         try:
-            if self._auth_mode == "session":
+            if self._auth_mode is AuthenticationMode.SESSION:
                 self.logout(suppress_errors=True)
         finally:
             self._session.close()

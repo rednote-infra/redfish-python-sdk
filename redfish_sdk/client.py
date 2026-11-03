@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+from .auth import AuthenticationMode
 from .exceptions import (
     RedfishException,
     RedfishMissingAttributeError,
@@ -194,7 +195,7 @@ class RedfishClient:
         retry_backoff: float = 1.0,
         strict_collection_errors: bool = False,
         allow_insecure_http_auth: Optional[bool] = None,
-        auth_mode: str = "basic",
+        auth_mode: AuthenticationMode | str = AuthenticationMode.BASIC,
         session_key: Optional[str] = None,
         session_location: Optional[str] = None,
     ):
@@ -228,8 +229,9 @@ class RedfishClient:
             allow_insecure_http_auth: Control credentials over HTTP. Omitting
                 this preserves the legacy behavior with a deprecation warning;
                 False enforces HTTPS.
-            auth_mode: Initial authentication mode: ``"basic"`` or
-                Redfish ``"session"`` authentication.
+            auth_mode: Initial authentication mode. Use
+                :class:`AuthenticationMode`; legacy string values remain
+                accepted for compatibility.
             session_key: Optional existing Redfish session token.
             session_location: Optional URI for the existing session resource.
         """

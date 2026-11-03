@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from redfish_sdk import RedfishClient
+from redfish_sdk import AuthenticationMode, RedfishClient
 from redfish_sdk.exceptions import (
     RedfishAsyncOperationError,
     RedfishAuthError,
@@ -48,24 +48,31 @@ def _http(**kwargs) -> RedfishHttpClient:
 
 
 def test_explicit_auth_modes_and_existing_session_state():
-    basic = _http(auth_mode="basic")
-    assert basic.auth_mode == "basic"
+    basic = _http(auth_mode=AuthenticationMode.BASIC)
+    assert basic.auth_mode is AuthenticationMode.BASIC
     assert "Authorization" in basic._session.headers
     assert "X-Auth-Token" not in basic._session.headers
     basic.close()
 
     session = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="existing-token",
         session_location="/redfish/v1/SessionService/Sessions/9",
     )
-    assert session.auth_mode == "session"
+    assert session.auth_mode is AuthenticationMode.SESSION
     assert session._session_key == "existing-token"
     assert session.session_location.endswith("/Sessions/9")
     assert "Authorization" not in session._session.headers
     assert session._session.headers["X-Auth-Token"] == "existing-token"
     session._session.delete = Mock(return_value=_response(204, method="DELETE"))
     session.close()
+
+
+def test_legacy_string_auth_mode_is_normalized_to_enum():
+    http = _http(auth_mode=AuthenticationMode.SESSION.value)
+
+    assert http.auth_mode is AuthenticationMode.SESSION
+    http.close()
 
 
 @pytest.mark.parametrize("auth_mode", ["", "token", "SESSION"])
@@ -113,7 +120,7 @@ def test_session_creation_accepts_header_only_201(monkeypatch):
 
 def test_safe_read_refreshes_expired_session_once(monkeypatch):
     http = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="expired-token",
         session_location="/redfish/v1/SessionService/Sessions/1",
     )
@@ -146,7 +153,7 @@ def test_safe_read_refreshes_expired_session_once(monkeypatch):
 
 
 def test_session_mode_without_key_logs_in_before_first_read(monkeypatch):
-    http = _http(auth_mode="session")
+    http = _http(auth_mode=AuthenticationMode.SESSION)
     login = Mock(
         return_value=_response(
             201,
@@ -171,7 +178,7 @@ def test_session_mode_without_key_logs_in_before_first_read(monkeypatch):
 
 def test_failed_refresh_does_not_loop_or_fall_back(monkeypatch):
     http = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="expired-token",
         session_location="/redfish/v1/SessionService/Sessions/1",
     )
@@ -185,7 +192,7 @@ def test_failed_refresh_does_not_loop_or_fall_back(monkeypatch):
 
     assert get.call_count == 1
     assert login.call_count == 1
-    assert http.auth_mode == "session"
+    assert http.auth_mode is AuthenticationMode.SESSION
     assert "Authorization" not in http._session.headers
     http._session.delete = Mock(return_value=_response(500, method="DELETE"))
     http.close()
@@ -205,13 +212,16 @@ def test_task_polling_does_not_fall_back_after_session_refresh_failure(
         client.wait_for_task("7", timeout=1)
 
     assert get.call_count == 1
-    assert client._http_client.auth_mode == "session"
+    assert client._http_client.auth_mode is AuthenticationMode.SESSION
     assert "Authorization" not in client._http_client._session.headers
     client.close()
 
 
 def test_state_changing_request_is_not_refreshed_or_replayed(monkeypatch):
-    http = _http(auth_mode="session", session_key="expired-token")
+    http = _http(
+        auth_mode=AuthenticationMode.SESSION,
+        session_key="expired-token",
+    )
     post = Mock(return_value=_response(401, method="POST"))
     login = Mock()
     monkeypatch.setattr(http._session, "post", post)
@@ -239,7 +249,7 @@ def test_per_request_headers_cannot_replace_managed_auth(header):
 
 def test_concurrent_401_responses_share_one_refresh(monkeypatch):
     http = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="expired-token",
         session_location="/redfish/v1/SessionService/Sessions/1",
     )
@@ -286,7 +296,7 @@ def test_concurrent_401_responses_share_one_refresh(monkeypatch):
 
 def test_concurrent_401_responses_share_one_failed_refresh(monkeypatch):
     http = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="expired-token",
         session_location="/redfish/v1/SessionService/Sessions/1",
     )
@@ -308,7 +318,7 @@ def test_concurrent_401_responses_share_one_failed_refresh(monkeypatch):
         list(executor.map(lambda _: read_systems(), range(2)))
 
     assert login.call_count == 1
-    assert http.auth_mode == "session"
+    assert http.auth_mode is AuthenticationMode.SESSION
     assert "Authorization" not in http._session.headers
     http._session.delete = Mock(return_value=_response(500, method="DELETE"))
     http.close()
@@ -317,7 +327,7 @@ def test_concurrent_401_responses_share_one_failed_refresh(monkeypatch):
 @pytest.mark.parametrize("delete_status", [204, 500])
 def test_close_always_clears_auth_state_and_closes_local_sessions(delete_status):
     http = _http(
-        auth_mode="session",
+        auth_mode=AuthenticationMode.SESSION,
         session_key="active-token",
         session_location="/redfish/v1/SessionService/Sessions/1",
     )
@@ -332,7 +342,7 @@ def test_close_always_clears_auth_state_and_closes_local_sessions(delete_status)
     http.close()
 
     http._session.delete.assert_called_once()
-    assert http.auth_mode == "basic"
+    assert http.auth_mode is AuthenticationMode.BASIC
     assert http._session_key is None
     assert http.session_location is None
     assert "X-Auth-Token" not in http._session.headers
@@ -355,7 +365,7 @@ def test_deleting_active_session_restores_basic_auth(monkeypatch):
     client.delete_session("7")
 
     delete.assert_called_once_with(location)
-    assert client._http_client.auth_mode == "basic"
+    assert client._http_client.auth_mode is AuthenticationMode.BASIC
     assert client._http_client._session_key is None
     assert "Authorization" in client._http_client._session.headers
     client.close()

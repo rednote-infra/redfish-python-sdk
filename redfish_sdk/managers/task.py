@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, List, Optional
 
+from ..auth import AuthenticationMode
 from ..exceptions import (
     RedfishAsyncOperationError,
     RedfishAuthError,
@@ -120,7 +121,7 @@ class TaskServiceManager:
                 self._sleep(policy.recovery_interval, deadline, task_id)
                 continue
             except RedfishAuthError as exc:
-                if self._http.auth_mode == "session":
+                if self._http.auth_mode is AuthenticationMode.SESSION:
                     raise RedfishAsyncOperationError(
                         exc.status_code,
                         f"Redfish session refresh failed while monitoring task "
@@ -220,7 +221,7 @@ class TaskServiceManager:
                 ) from exc
 
             if response.status_code in (401, 403):
-                if self._http.auth_mode == "session":
+                if self._http.auth_mode is AuthenticationMode.SESSION:
                     raise RedfishAsyncOperationError(
                         response.status_code,
                         "Redfish session remained unauthorized after refresh",

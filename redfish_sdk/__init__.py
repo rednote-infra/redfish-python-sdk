@@ -26,6 +26,7 @@ Quick start:
 
     client.close()
 """
+from .auth import AuthenticationMode
 from .client import CollectionFailure, CollectionResult, RedfishClient
 from .exceptions import (
     LogCollectFailedError,
@@ -116,6 +117,7 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "AuthenticationMode",
     "RedfishClient",
     "RedfishMissingAttributeError",
     "CollectionFailure",
