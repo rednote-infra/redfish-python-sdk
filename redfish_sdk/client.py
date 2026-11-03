@@ -194,6 +194,9 @@ class RedfishClient:
         retry_backoff: float = 1.0,
         strict_collection_errors: bool = False,
         allow_insecure_http_auth: Optional[bool] = None,
+        auth_mode: str = "basic",
+        session_key: Optional[str] = None,
+        session_location: Optional[str] = None,
     ):
         """
         Initialize the Redfish Client.
@@ -225,6 +228,10 @@ class RedfishClient:
             allow_insecure_http_auth: Control credentials over HTTP. Omitting
                 this preserves the legacy behavior with a deprecation warning;
                 False enforces HTTPS.
+            auth_mode: Initial authentication mode: ``"basic"`` or
+                Redfish ``"session"`` authentication.
+            session_key: Optional existing Redfish session token.
+            session_location: Optional URI for the existing session resource.
         """
         self._http_client = RedfishHttpClient(
             host=host,
@@ -239,6 +246,9 @@ class RedfishClient:
             retry_on_read_timeout=retry_on_read_timeout,
             retry_backoff=retry_backoff,
             allow_insecure_http_auth=allow_insecure_http_auth,
+            auth_mode=auth_mode,
+            session_key=session_key,
+            session_location=session_location,
         )
 
         # Root service cache

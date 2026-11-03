@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, List
+from urllib.parse import urlsplit
 
+from ..exceptions import RedfishAuthError
 from ..models.session import Session
 from .system_resources import select_member
 
@@ -95,18 +97,31 @@ class SessionServiceManager:
 
         response = self._http.post_raw(sessions_url, body=body)
 
-        # Parse the session from response body
-        session_data = response.json()
+        # Some conforming BMCs return only token and Location headers.
+        session_data = response.json() if response.text.strip() else {}
+        location = response.headers.get("Location")
+        if location:
+            session_data.setdefault("@odata.id", location)
+            path = urlsplit(location).path.rstrip("/")
+            session_data.setdefault("Id", path.rsplit("/", 1)[-1])
         session = Session.model_validate(session_data)
 
         # Extract X-Auth-Token from response headers
-        token = response.headers.get("X-Auth-Token") or response.headers.get("x-auth-token")
+        token = response.headers.get("X-Auth-Token")
         if token:
             session.x_auth_token = token
             logger.info("Session created successfully, token acquired")
 
             if switch_to_token_auth:
-                self._http.set_auth_token(token)
+                self._http.set_auth_token(
+                    token,
+                    session_location=location,
+                    session_collection_uri=sessions_url,
+                    username=username,
+                    password=password,
+                )
+        elif switch_to_token_auth:
+            raise RedfishAuthError(401)
 
         return session
 
@@ -124,5 +139,6 @@ class SessionServiceManager:
         """
         session = select_member(self.sessions(), session_id)
         result = self._http.delete(session.odata_id)
+        self._http.clear_active_session(session.odata_id)
         logger.info("Session %s deleted", session_id)
         return result

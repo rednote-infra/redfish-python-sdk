@@ -120,6 +120,14 @@ class TaskServiceManager:
                 self._sleep(policy.recovery_interval, deadline, task_id)
                 continue
             except RedfishAuthError as exc:
+                if self._http.auth_mode == "session":
+                    raise RedfishAsyncOperationError(
+                        exc.status_code,
+                        f"Redfish session refresh failed while monitoring task "
+                        f"{task_id}",
+                        task_uri=task_id if task_id.startswith("/") else "",
+                        recovery_attempts=1,
+                    ) from exc
                 if auth_attempts >= policy.max_auth_attempts:
                     raise RedfishAsyncOperationError(
                         exc.status_code,
@@ -201,8 +209,27 @@ class TaskServiceManager:
                 connection_attempts += 1
                 self._sleep(policy.recovery_interval, deadline, monitor_uri)
                 continue
+            except RedfishAuthError as exc:
+                raise RedfishAsyncOperationError(
+                    exc.status_code,
+                    "Redfish session refresh failed while monitoring "
+                    "asynchronous operation",
+                    task_monitor_uri=monitor_uri,
+                    task_uri=task_uri or "",
+                    recovery_attempts=1,
+                ) from exc
 
             if response.status_code in (401, 403):
+                if self._http.auth_mode == "session":
+                    raise RedfishAsyncOperationError(
+                        response.status_code,
+                        "Redfish session remained unauthorized after refresh",
+                        response.text,
+                        task_monitor_uri=monitor_uri,
+                        task_uri=task_uri or "",
+                        final_response=response,
+                        recovery_attempts=1,
+                    )
                 if auth_attempts >= policy.max_auth_attempts:
                     raise RedfishAsyncOperationError(
                         response.status_code,

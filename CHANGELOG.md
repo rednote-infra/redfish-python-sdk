@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core System, Chassis, Task, collection, and action responses now reject
   missing operational fields with URI-aware typed validation errors while
   preserving legacy identifiers and OEM properties.
+- Redfish session authentication now tracks and cleans up server sessions,
+  accepts header-only login responses, and refreshes expired tokens once for
+  safe reads without replaying state-changing requests.
 
 ## [1.3.0] - 2026-10-12
 

@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import threading
 import warnings
 from typing import Any, Dict, Optional, Type, TypeVar
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
@@ -207,6 +208,9 @@ class RedfishHttpClient:
         retry_on_read_timeout: bool = False,
         retry_backoff: float = 1.0,
         allow_insecure_http_auth: Optional[bool] = None,
+        auth_mode: str = "basic",
+        session_key: Optional[str] = None,
+        session_location: Optional[str] = None,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -237,6 +241,12 @@ class RedfishHttpClient:
             allow_insecure_http_auth: Control credentials over HTTP. Omitting
                 this preserves the legacy allow behavior with a deprecation
                 warning; False enforces HTTPS.
+            auth_mode: Initial authentication mode, either ``"basic"`` or
+                Redfish ``"session"`` authentication.
+            session_key: Existing Redfish session token. Supplying one enables
+                session authentication immediately.
+            session_location: Optional resource URI for an existing session,
+                used for server-side cleanup and refresh.
         """
         if not verify_ssl:
             _warn_deprecated_once(
@@ -255,19 +265,53 @@ class RedfishHttpClient:
         self.retry_5xx = max(int(retry_5xx), 0)
         self.retry_on_read_timeout = bool(retry_on_read_timeout)
         self.retry_backoff = float(retry_backoff)
+        if auth_mode not in {"basic", "session"}:
+            raise RedfishValidationError(
+                "auth_mode must be either 'basic' or 'session'"
+            )
+        if session_key is not None:
+            if not isinstance(session_key, str) or not session_key:
+                raise RedfishValidationError(
+                    "session_key must be a non-empty string"
+                )
+            auth_mode = "session"
+        if session_location is not None and (
+            not isinstance(session_location, str) or not session_location
+        ):
+            raise RedfishValidationError(
+                "session_location must be a non-empty string"
+            )
+        if session_location is not None:
+            self._resolve_url(session_location)
 
         # Pre-compute Basic Auth header (same as Java's base64 encoding)
+        self._username = username
+        self._password = password
         credentials = f"{username}:{password}"
         self._basic_auth = "Basic " + base64.b64encode(credentials.encode()).decode()
+        self._auth_mode = auth_mode
+        self._session_key: Optional[str] = None
+        self._session_location: Optional[str] = None
+        self._session_collection_uri = self._session_collection_from_location(
+            session_location
+        )
+        self._session_refresh_lock = threading.Lock()
+        self._session_refresh_failure: Optional[tuple[Optional[str], Exception]] = None
 
         # Session with proxy and default headers
         self._session = _CredentialSafeSession()
         self._session.verify = verify_ssl
         self._session.headers.update({
-            "Authorization": self._basic_auth,
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
+        if auth_mode == "basic":
+            self._session.headers["Authorization"] = self._basic_auth
+        elif session_key is not None:
+            self.set_auth_token(
+                session_key,
+                session_location=session_location,
+            )
 
         self._external_session = _CredentialSafeSession()
         self._external_session.verify = verify_ssl
@@ -427,6 +471,40 @@ class RedfishHttpClient:
     _WRITE_RETRY_CODES = frozenset({503, 504})
     # All 5xx codes eligible for retry on reads.
     _READ_RETRY_CODES = frozenset({500, 502, 503, 504})
+    _MANAGED_AUTH_HEADERS = frozenset({"authorization", "x-auth-token"})
+    _DEFAULT_SESSION_COLLECTION = "/redfish/v1/SessionService/Sessions"
+
+    @property
+    def auth_mode(self) -> str:
+        """Return the currently active authentication mode."""
+        return self._auth_mode
+
+    @property
+    def session_location(self) -> Optional[str]:
+        """Return the active server-side session resource URI."""
+        return self._session_location
+
+    @classmethod
+    def _session_collection_from_location(
+        cls, session_location: Optional[str]
+    ) -> str:
+        if not session_location:
+            return cls._DEFAULT_SESSION_COLLECTION
+        path = urlsplit(session_location).path.rstrip("/")
+        parent = path.rsplit("/", 1)[0]
+        return parent or cls._DEFAULT_SESSION_COLLECTION
+
+    @classmethod
+    def _validate_managed_headers(cls, headers: Any) -> None:
+        if not headers:
+            return
+        if any(
+            str(name).lower() in cls._MANAGED_AUTH_HEADERS
+            for name in headers
+        ):
+            raise RedfishValidationError(
+                "Per-request headers cannot replace managed authentication headers"
+            )
 
     def _should_retry_status(self, method: str, code: int) -> bool:
         """Return True when a retryable 5xx warrants another attempt."""
@@ -459,6 +537,7 @@ class RedfishHttpClient:
         import time as _time
 
         method_u = method.upper()
+        self._validate_managed_headers(kwargs.get("headers"))
         attempts = 1 + self.retry_5xx
         last_exc: Optional[BaseException] = None
         response: Optional[requests.Response] = None
@@ -533,12 +612,34 @@ class RedfishHttpClient:
         ``self._request("GET", path)`` call is behaviour-preserving.
         """
         try:
-            return self._send(
+            self._validate_managed_headers(kwargs.get("headers"))
+            if (
+                authenticated
+                and self._auth_mode == "session"
+                and self._session_key is None
+            ):
+                self._refresh_session(None)
+            observed_session_key = self._session_key
+            response = self._send(
                 method,
                 path,
                 authenticated=authenticated,
                 **kwargs,
             )
+            if (
+                authenticated
+                and method.upper() in self._READ_METHODS
+                and response.status_code == 401
+                and self._auth_mode == "session"
+            ):
+                self._refresh_session(observed_session_key)
+                response = self._send(
+                    method,
+                    path,
+                    authenticated=authenticated,
+                    **kwargs,
+                )
+            return response
         except requests.exceptions.Timeout as exc:
             raise RedfishTimeoutError(self.host) from exc
         except requests.exceptions.ConnectionError as exc:
@@ -994,25 +1095,135 @@ class RedfishHttpClient:
         logger.info("DOWNLOAD (POST) saved to %s", abs_path)
         return abs_path
 
-    def set_auth_token(self, token: str) -> None:
+    def set_auth_token(
+        self,
+        token: str,
+        *,
+        session_location: Optional[str] = None,
+        session_collection_uri: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> None:
         """
         Switch from Basic Auth to Session-based auth (X-Auth-Token).
         Called after successfully creating a session.
         """
+        if not isinstance(token, str) or not token:
+            raise RedfishValidationError(
+                "Redfish session token must be a non-empty string"
+            )
+        if username is not None:
+            self._username = username
+        if password is not None:
+            self._password = password
+        if session_collection_uri:
+            self._session_collection_uri = session_collection_uri
+        elif session_location:
+            self._session_collection_uri = self._session_collection_from_location(
+                session_location
+            )
+        self._auth_mode = "session"
+        self._session_key = token
+        self._session_location = session_location
+        self._session_refresh_failure = None
         self._session.headers.pop("Authorization", None)
         self._session.headers["X-Auth-Token"] = token
         logger.debug("Switched to X-Auth-Token authentication")
 
     def reset_basic_auth(self) -> None:
         """Switch back to Basic Auth (e.g., after session deletion)."""
+        self._auth_mode = "basic"
+        self._session_key = None
+        self._session_location = None
+        self._session_refresh_failure = None
         self._session.headers.pop("X-Auth-Token", None)
         self._session.headers["Authorization"] = self._basic_auth
         logger.debug("Switched back to Basic Auth")
 
+    def _refresh_session(self, observed_session_key: Optional[str]) -> None:
+        """Refresh an expired session once, synchronized across callers."""
+        with self._session_refresh_lock:
+            if (
+                observed_session_key is not None
+                and self._session_key != observed_session_key
+            ):
+                return
+            try:
+                if (
+                    self._session_refresh_failure is not None
+                    and self._session_refresh_failure[0] == observed_session_key
+                ):
+                    raise self._session_refresh_failure[1]
+                try:
+                    response = self._external_session.post(
+                        self._resolve_url(self._session_collection_uri),
+                        json={
+                            "UserName": self._username,
+                            "Password": self._password,
+                        },
+                        timeout=(self.connect_timeout, self.read_timeout),
+                    )
+                except requests.exceptions.Timeout as exc:
+                    raise RedfishTimeoutError(self.host) from exc
+                except requests.exceptions.ConnectionError as exc:
+                    raise RedfishConnectionError(self.host, exc) from exc
+                if response.status_code in (401, 403):
+                    raise RedfishAuthError(response.status_code)
+                if response.status_code not in _SUCCESS_CODES:
+                    raise RedfishException(
+                        response.status_code,
+                        "Unable to refresh Redfish session",
+                        str(_redact_for_log(response.text))[:1000],
+                    )
+                token = response.headers.get("X-Auth-Token")
+                if not token:
+                    raise RedfishAuthError(401)
+                self.set_auth_token(
+                    token,
+                    session_location=response.headers.get("Location"),
+                    session_collection_uri=self._session_collection_uri,
+                )
+            except Exception as exc:
+                self._session_refresh_failure = (observed_session_key, exc)
+                raise
+
+    def clear_active_session(self, session_location: str) -> None:
+        """Restore Basic auth after the active server session is deleted."""
+        if not self._session_location:
+            return
+        try:
+            active = self._resolve_url(self._session_location).rstrip("/")
+            deleted = self._resolve_url(session_location).rstrip("/")
+        except RedfishValidationError:
+            return
+        if active == deleted:
+            self.reset_basic_auth()
+
+    def logout(self, *, suppress_errors: bool = False) -> None:
+        """Delete the active server-side session and clear local token state."""
+        session_location = self._session_location
+        try:
+            if session_location:
+                response = self._send("DELETE", session_location)
+                self._raise_for_status(response, session_location)
+        except Exception as exc:
+            if not suppress_errors:
+                raise
+            logger.warning(
+                "Unable to delete active Redfish session during cleanup: %s",
+                exc,
+            )
+        finally:
+            self.reset_basic_auth()
+
     def close(self) -> None:
-        """Close the underlying HTTP session."""
-        self._session.close()
-        self._external_session.close()
+        """Best-effort logout, then always close local HTTP sessions."""
+        try:
+            if self._auth_mode == "session":
+                self.logout(suppress_errors=True)
+        finally:
+            self._session.close()
+            self._external_session.close()
 
     def __enter__(self) -> RedfishHttpClient:
         return self
