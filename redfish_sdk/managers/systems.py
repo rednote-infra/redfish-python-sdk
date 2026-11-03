@@ -596,11 +596,16 @@ class SystemsManager:
             system, action, console_type, access_mode,
             validity_period_seconds, "one-time URL",
         )
-        request = GraphicalConsoleGetOneTimeURLRequest(
-            console_type=console_type,
-            access_mode=access_mode,
-            validity_period_seconds=validity_period_seconds,
-        )
+        request_fields = {
+            name: value
+            for name, value in {
+                "console_type": console_type,
+                "access_mode": access_mode,
+                "validity_period_seconds": validity_period_seconds,
+            }.items()
+            if value is not None
+        }
+        request = GraphicalConsoleGetOneTimeURLRequest(**request_fields)
         return self._http.post(
             action.target, GraphicalConsoleGetOneTimeURLResponse, body=request
         )
@@ -622,12 +627,17 @@ class SystemsManager:
             system, action, console_type, access_mode,
             validity_period_seconds, "one-time password",
         )
-        request = GraphicalConsoleSetOneTimePasswordRequest(
-            console_type=console_type,
-            access_mode=access_mode,
-            password=password,
-            validity_period_seconds=validity_period_seconds,
-        )
+        request_fields = {
+            name: value
+            for name, value in {
+                "console_type": console_type,
+                "access_mode": access_mode,
+                "password": password,
+                "validity_period_seconds": validity_period_seconds,
+            }.items()
+            if value is not None
+        }
+        request = GraphicalConsoleSetOneTimePasswordRequest(**request_fields)
         return self._http.post(
             action.target,
             GraphicalConsoleSetOneTimePasswordResponse,

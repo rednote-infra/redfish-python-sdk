@@ -75,6 +75,18 @@ def test_get_one_time_url_uses_custom_target_and_typed_response():
     }
 
 
+def test_graphical_console_requests_omit_unsupplied_optional_fields():
+    manager, http = _manager()
+
+    manager.graphical_console_get_one_time_url()
+    get_request = http.post.call_args.kwargs["body"]
+    assert get_request.model_dump(by_alias=True, exclude_unset=True) == {}
+
+    manager.graphical_console_set_one_time_password()
+    password_request = http.post.call_args.kwargs["body"]
+    assert password_request.model_dump(by_alias=True, exclude_unset=True) == {}
+
+
 def test_one_time_and_persistent_password_actions_are_typed():
     manager, http = _manager()
     response = GraphicalConsoleSetOneTimePasswordResponse.model_validate(

@@ -117,14 +117,17 @@ class PolicyServiceManager:
             raise RedfishValidationError("Policy Response must not be empty")
         service = self.service()
         self._validate_definition(trigger_condition, responses, service)
-        body = PolicyCreate(
-            id=policy_id,
-            name=name,
-            enabled=enabled,
-            trigger_condition=trigger_condition,
-            response=responses,
-            oem=oem,
-        )
+        body_fields: Dict[str, Any] = {
+            "id": policy_id,
+            "name": name,
+            "trigger_condition": trigger_condition,
+            "response": responses,
+        }
+        if enabled is not None:
+            body_fields["enabled"] = enabled
+        if oem is not None:
+            body_fields["oem"] = oem
+        body = PolicyCreate(**body_fields)
         return self._http.post(
             self._policies_path(service), Policy, body=body
         )
@@ -154,13 +157,16 @@ class PolicyServiceManager:
                 "Cannot modify the definition of a predefined policy"
             )
         self._validate_definition(trigger_condition, responses)
-        body = PolicyPatch(
-            trigger_condition=trigger_condition,
-            response=responses,
-            enabled=enabled,
-            oem=oem,
-            odata_etag=current.odata_etag,
-        )
+        body_fields: Dict[str, Any] = {"odata_etag": current.odata_etag}
+        if trigger_condition is not None:
+            body_fields["trigger_condition"] = trigger_condition
+        if responses is not None:
+            body_fields["response"] = responses
+        if enabled is not None:
+            body_fields["enabled"] = enabled
+        if oem is not None:
+            body_fields["oem"] = oem
+        body = PolicyPatch(**body_fields)
         return self._http.patch(current.odata_id, Policy, body)
 
     def enable(self, identifier: str) -> Policy:
