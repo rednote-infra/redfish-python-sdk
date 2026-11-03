@@ -54,7 +54,7 @@ from .exceptions import (
     RedfishValidationError,
 )
 from .http_client import RedfishHttpClient
-from .models.account import Account, AccountService, Role
+from .models.account import Account, AccountCreate, AccountPatch, AccountService, Role
 from .models.chassis import Chassis
 from .models.common import Collection, Entity, Link, RedfishResponse
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
@@ -2020,25 +2020,29 @@ class RedfishClient:
         """
         return self._accounts.roles()
 
-    def add_account(self, account: Account) -> Account:
+    def add_account(self, account: Union[AccountCreate, Account]) -> Account:
         """
         Create a new user account.
 
         Args:
-            account: Account model with UserName, Password, RoleId, Enabled fields
+            account: Prefer AccountCreate for strict writable-field validation.
+                Account remains supported as a filtered compatibility input.
 
         Returns:
             Created Account resource
         """
         return self._accounts.add(account)
 
-    def update_account(self, username: str, account: Account) -> Account:
+    def update_account(
+        self, username: str, account: Union[AccountPatch, Account]
+    ) -> Account:
         """
         Update an existing user account.
 
         Args:
             username: Username of the account to update
-            account: Account model with fields to update
+            account: Prefer AccountPatch for strict writable-field validation.
+                Account remains supported as a filtered compatibility input.
 
         Returns:
             Updated Account resource

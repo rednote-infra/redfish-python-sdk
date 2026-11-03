@@ -3,7 +3,7 @@ Account service models.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,8 +63,12 @@ class AccountService(Entity):
 
 class Account(Entity):
     """
-    Represents a user account on the BMC.
+    Represents a user account returned by the BMC.
     Endpoint: /redfish/v1/AccountService/Accounts/{accountId}
+
+    Use :class:`AccountCreate` and :class:`AccountPatch` for new mutation code.
+    The client still accepts this response model as a filtered compatibility
+    input for existing callers.
 
     """
     account_types: Optional[List[str]] = Field(None, alias="AccountTypes")
@@ -78,6 +82,70 @@ class Account(Entity):
     role_id: Optional[str] = Field(None, alias="RoleId")
     user_name: Optional[str] = Field(None, alias="UserName")
     oem: Optional[Oem] = Field(None, alias="Oem")
+
+
+class AccountSNMP(BaseModel):
+    """Writable SNMPv3 settings for a manager account."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    authentication_key: Optional[str] = Field(
+        None, alias="AuthenticationKey", repr=False
+    )
+    authentication_protocol: Optional[str] = Field(
+        None, alias="AuthenticationProtocol"
+    )
+    encryption_key: Optional[str] = Field(
+        None, alias="EncryptionKey", repr=False
+    )
+    encryption_protocol: Optional[str] = Field(
+        None, alias="EncryptionProtocol"
+    )
+
+
+class _AccountMutation(BaseModel):
+    """Writable ManagerAccount properties shared by create and patch."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    account_expiration: Optional[str] = Field(None, alias="AccountExpiration")
+    account_types: Optional[List[str]] = Field(None, alias="AccountTypes")
+    email_address: Optional[str] = Field(None, alias="EmailAddress")
+    enabled: Optional[bool] = Field(None, alias="Enabled")
+    locked: Optional[bool] = Field(None, alias="Locked")
+    oem_account_types: Optional[List[str]] = Field(None, alias="OEMAccountTypes")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+    one_time_passcode_delivery_address: Optional[str] = Field(
+        None, alias="OneTimePasscodeDeliveryAddress"
+    )
+    password: Optional[str] = Field(None, alias="Password", repr=False)
+    password_change_required: Optional[bool] = Field(
+        None, alias="PasswordChangeRequired"
+    )
+    password_expiration: Optional[str] = Field(None, alias="PasswordExpiration")
+    phone_number: Optional[str] = Field(None, alias="PhoneNumber")
+    role_id: Optional[str] = Field(None, alias="RoleId")
+    snmp: Optional[AccountSNMP] = Field(None, alias="SNMP", repr=False)
+    strict_account_types: Optional[bool] = Field(
+        None, alias="StrictAccountTypes"
+    )
+    user_name: Optional[str] = Field(None, alias="UserName")
+
+
+class AccountCreate(_AccountMutation):
+    """Strict writable request for creating a manager account.
+
+    The DMTF-required create properties must be present.  ``Password`` is
+    nullable in the schema but remains required as a field.
+    """
+
+    password: Optional[str] = Field(alias="Password", repr=False)
+    role_id: str = Field(alias="RoleId")
+    user_name: str = Field(alias="UserName")
+
+
+class AccountPatch(_AccountMutation):
+    """Strict partial request for updating writable manager-account fields."""
 
 
 class Role(Entity):
