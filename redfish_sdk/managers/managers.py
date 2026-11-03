@@ -46,6 +46,7 @@ from ..models.managers import (
     VncService,
 )
 from ..models.task import Task
+from ._request_helpers import compact_optional_fields
 from .system_resources import select_member
 
 if TYPE_CHECKING:
@@ -869,22 +870,18 @@ class ManagersManager:
                     "VirtualMedia does not advertise HTTPHeaders support"
                 )
 
-        request_fields: dict[str, object] = {"image": image}
-        optional_fields = {
-            "inserted": inserted,
-            "write_protected": write_protected,
-            "username": username,
-            "password": password,
-            "transfer_method": transfer_method,
-            "transfer_protocol_type": transfer_protocol_type,
-            "http_headers": http_headers,
-        }
-        request_fields.update(
-            (name, value)
-            for name, value in optional_fields.items()
-            if value is not None
+        request = VirtualMediaInsertMediaRequest(
+            image=image,
+            **compact_optional_fields(
+                inserted=inserted,
+                write_protected=write_protected,
+                username=username,
+                password=password,
+                transfer_method=transfer_method,
+                transfer_protocol_type=transfer_protocol_type,
+                http_headers=http_headers,
+            ),
         )
-        request = VirtualMediaInsertMediaRequest(**request_fields)
         return self._http.post(target, RedfishResponse, body=request)
 
     def eject_virtual_media(
@@ -940,6 +937,7 @@ class ManagersManager:
             allowed = (interface.model_extra or {}).get(f"{name}@Redfish.AllowableValues")
             if allowed is not None and value not in allowed:
                 raise RedfishValidationError(f"Unsupported {name} {value!r}; advertised values: {allowed}")
+        # Revalidation marks only supplied fields as set for presence-aware transport.
         body = SerialInterfacePatch.model_validate(payload)
         body.odata_etag = interface.odata_etag
         return self._http.patch(interface.odata_id, models.RedfishResponse, body)

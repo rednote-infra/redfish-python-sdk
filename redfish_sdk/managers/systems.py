@@ -45,6 +45,7 @@ from ..models.systems import (
     SystemPatchSetting,
     Volume,
 )
+from ._request_helpers import compact_optional_fields
 from .system_resources import select_member
 
 if TYPE_CHECKING:
@@ -596,16 +597,13 @@ class SystemsManager:
             system, action, console_type, access_mode,
             validity_period_seconds, "one-time URL",
         )
-        request_fields = {
-            name: value
-            for name, value in {
-                "console_type": console_type,
-                "access_mode": access_mode,
-                "validity_period_seconds": validity_period_seconds,
-            }.items()
-            if value is not None
-        }
-        request = GraphicalConsoleGetOneTimeURLRequest(**request_fields)
+        request = GraphicalConsoleGetOneTimeURLRequest(
+            **compact_optional_fields(
+                console_type=console_type,
+                access_mode=access_mode,
+                validity_period_seconds=validity_period_seconds,
+            )
+        )
         return self._http.post(
             action.target, GraphicalConsoleGetOneTimeURLResponse, body=request
         )
@@ -627,17 +625,14 @@ class SystemsManager:
             system, action, console_type, access_mode,
             validity_period_seconds, "one-time password",
         )
-        request_fields = {
-            name: value
-            for name, value in {
-                "console_type": console_type,
-                "access_mode": access_mode,
-                "password": password,
-                "validity_period_seconds": validity_period_seconds,
-            }.items()
-            if value is not None
-        }
-        request = GraphicalConsoleSetOneTimePasswordRequest(**request_fields)
+        request = GraphicalConsoleSetOneTimePasswordRequest(
+            **compact_optional_fields(
+                console_type=console_type,
+                access_mode=access_mode,
+                password=password,
+                validity_period_seconds=validity_period_seconds,
+            )
+        )
         return self._http.post(
             action.target,
             GraphicalConsoleSetOneTimePasswordResponse,
