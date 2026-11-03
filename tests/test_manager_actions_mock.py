@@ -1,11 +1,15 @@
 """Manager reset and log clearing use advertised actions and resource links."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
 from redfish_sdk import RedfishClient
-from redfish_sdk.exceptions import RedfishNotFoundError, RedfishValidationError
+from redfish_sdk.exceptions import (
+    RedfishException,
+    RedfishNotFoundError,
+    RedfishValidationError,
+)
 from redfish_sdk.models.common import RedfishResponse
 from redfish_sdk.models.logs import Log
 from redfish_sdk.models.managers import Manager, ManagerActions
@@ -74,6 +78,21 @@ def test_manager_log_lookup_and_clear(manager_client, identifier):
     assert client.get_manager_log_service(log.odata_id).id == identifier
     client.clear_manager_log(identifier)
     post.assert_called_once_with(f"/custom/clear/{identifier}", RedfishResponse, raw_body={})
+
+
+def test_manager_log_clear_retries_without_body_after_http_400(manager_client):
+    client, _, _, post = manager_client
+    post.side_effect = [
+        RedfishException(400, "JSON body rejected"),
+        RedfishResponse(),
+    ]
+
+    client.clear_manager_log("SEL")
+
+    assert post.call_args_list == [
+        call("/custom/clear/SEL", RedfishResponse, raw_body={}),
+        call("/custom/clear/SEL", RedfishResponse),
+    ]
 
 
 def test_missing_clear_action_does_not_mutate(manager_client):

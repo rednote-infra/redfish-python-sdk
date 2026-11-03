@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .common import Entity, Link, Status
+from .common import IdentifiedEntity, Link, Status
 from .drive import Drive, Location  # noqa: F401
 from .network_adapter import (  # noqa: F401
     NPAR,
@@ -58,7 +58,7 @@ class ChassisLinks(BaseModel):
     cooling_units: Optional[List[Link]] = Field(None, alias="CoolingUnits")
 
 
-class Chassis(Entity):
+class Chassis(IdentifiedEntity):
     """
     Represents a physical chassis (server enclosure).
     Endpoint: /redfish/v1/Chassis/{chassisId}

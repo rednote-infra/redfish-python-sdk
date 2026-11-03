@@ -8,9 +8,17 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import requests
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
-from .common import Entity, Link, Status
+from ..exceptions import RedfishMissingAttributeError
+from .common import Entity, IdentifiedEntity, Link, Status, _has_value, _resource_uri
 
 
 class TaskService(Entity):
@@ -64,7 +72,7 @@ class TaskLinks(BaseModel):
     )
 
 
-class Task(Entity):
+class Task(IdentifiedEntity):
     """
     Represents an asynchronous task.
     Endpoint: /redfish/v1/TaskService/Tasks/{taskId}
@@ -98,6 +106,25 @@ class Task(Entity):
     source_log_service_uri: Optional[str] = Field(None, exclude=True)
     #: Vendor-specific ``Oem`` block (opaque; strategies read it as needed).
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+    def _has_usable_identity(self, info: ValidationInfo) -> bool:
+        context = info.context or {}
+        return (
+            super()._has_usable_identity(info)
+            or _has_value(self.task_monitor)
+            or _has_value(context.get("task_monitor_uri"))
+        )
+
+    def _identity_attribute(self) -> str:
+        return "@odata.id or Id or TaskMonitor"
+
+    @model_validator(mode="after")
+    def _require_task_state(self, info: ValidationInfo) -> Task:
+        if not _has_value(self.task_state):
+            raise RedfishMissingAttributeError(
+                "TaskState", type(self).__name__, _resource_uri(self, info)
+            )
+        return self
 
     @field_validator("messages", mode="before")
     @classmethod

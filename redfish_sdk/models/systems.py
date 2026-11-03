@@ -8,8 +8,9 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from .actions import ActionDescriptor
 from .check import Field
-from .common import Entity, Link, Status
+from .common import Entity, IdentifiedEntity, Link, Status
 from .gpu import AccelerationFunction, Gpu, GpuOEM, PCIeFunction  # noqa: F401
 from .memory import Memory, MemoryLocation  # noqa: F401
 from .oem import Oem
@@ -93,7 +94,7 @@ class BootOptionPatchSetting(BaseModel):
 # Actions
 # ---------------------------------------------------------------------------
 
-class GraphicalConsoleAction(BaseModel):
+class GraphicalConsoleAction(ActionDescriptor):
     """Descriptor for a standard ComputerSystem graphical-console action."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -150,7 +151,7 @@ class GraphicalConsoleSetOneTimePasswordResponse(BaseModel):
     password: str = Field(alias="Password", repr=False)
     valid_until: Optional[str] = Field(None, alias="ValidUntil")
 
-class ResetAction(BaseModel):
+class ResetAction(ActionDescriptor):
     """Describes the Reset action target and allowable values."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -250,7 +251,7 @@ class HostGraphicalConsole(BaseModel):
 # System
 # ---------------------------------------------------------------------------
 
-class System(Entity):
+class System(IdentifiedEntity):
     """
     Represents a single computer system (physical server).
     Endpoint: /redfish/v1/Systems/{systemId}

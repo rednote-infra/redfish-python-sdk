@@ -122,12 +122,16 @@ class FabricManager:
         """Invoke ResetTransceivers only when the selected Port advertises it."""
         port = self.port(port_id, owner_odata_id)
         action = port.actions and port.actions.reset_transceivers
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError(
                 f"Port {port.id!r} does not advertise #Port.ResetTransceivers"
             )
+        target = action.require_target(
+            action_name="#Port.ResetTransceivers",
+            resource_uri=port.odata_id or "",
+        )
         return self._http.post(
-            action.target,
+            target,
             RedfishResponse,
             body=ResetTransceiversRequest(),
         )

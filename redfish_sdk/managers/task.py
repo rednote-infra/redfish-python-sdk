@@ -220,7 +220,9 @@ class TaskServiceManager:
 
             connection_attempts = 0
             if task_resource_location and response.status_code == 200:
-                task = self._http._parse(response, Task)
+                task = self._http._parse(
+                    response, Task, task_uri or monitor_uri
+                )
                 last_task = task
                 state = task.task_state or ""
                 if state == "Completed":
@@ -254,7 +256,7 @@ class TaskServiceManager:
                 continue
 
             if response.status_code == 202:
-                task = self._task_from_response(response)
+                task = self._task_from_response(response, monitor_uri)
                 if task is not None:
                     last_task = task
                     task_uri = task_uri or task.odata_id
@@ -331,7 +333,7 @@ class TaskServiceManager:
                 task_uri=task_uri,
                 final_response=monitor_response,
             )
-        task = self._http._parse(response, Task)
+        task = self._http._parse(response, Task, task_uri)
         state = task.task_state or ""
         if state not in _TERMINAL_STATES:
             raise RedfishAsyncOperationError(
@@ -353,7 +355,9 @@ class TaskServiceManager:
             )
         return task
 
-    def _task_from_response(self, response) -> Optional[Task]:
+    def _task_from_response(
+        self, response, monitor_uri: str
+    ) -> Optional[Task]:
         if not response.text.strip():
             return None
         try:
@@ -364,7 +368,10 @@ class TaskServiceManager:
             key in body for key in ("TaskState", "TaskStatus", "@odata.id")
         ):
             return None
-        return Task.model_validate(body)
+        body.setdefault("TaskMonitor", monitor_uri)
+        return Task.model_validate(
+            body, context={"resource_uri": monitor_uri}
+        )
 
     @staticmethod
     def _is_task_resource_uri(

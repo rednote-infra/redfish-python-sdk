@@ -566,9 +566,10 @@ class SystemsManager:
         if not system.actions or not system.actions.computer_system_reset:
             raise RedfishException(400, "System reset action not found in system resource")
 
-        reset_target = system.actions.computer_system_reset.target
-        if not reset_target:
-            raise RedfishException(400, "Reset action target URL is empty")
+        reset_target = system.actions.computer_system_reset.require_target(
+            action_name="#ComputerSystem.Reset",
+            resource_uri=system.odata_id or "",
+        )
 
         logger.info("Resetting system %s with type=%s via %s",
                     system.id, reset_type, reset_target)
@@ -663,10 +664,13 @@ class SystemsManager:
                 "System does not advertise GraphicalConsole capabilities"
             )
         action = getattr(system.actions, attribute, None) if system.actions else None
-        if action is None or not action.target:
+        if action is None:
             raise RedfishValidationError(
                 f"System does not expose {action_name} action"
             )
+        action.require_target(
+            action_name=action_name, resource_uri=system.odata_id or ""
+        )
         return system, action
 
     def _validate_graphical_console_parameters(

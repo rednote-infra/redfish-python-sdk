@@ -288,8 +288,12 @@ class TestRedfish2026ModelFields:
         assert protocol.ntp.not_synchronized_servers == ["ntp2.example.com"]
 
     def test_inventory_production_dates_and_processor_security_version(self):
-        chassis = Chassis.model_validate({"ProductionDate": "2026-09-01T12:00:00Z"})
-        system = System.model_validate({"ProductionDate": "2026-09-02T12:00:00Z"})
+        chassis = Chassis.model_validate(
+            {"Id": "1", "ProductionDate": "2026-09-01T12:00:00Z"}
+        )
+        system = System.model_validate(
+            {"Id": "1", "ProductionDate": "2026-09-02T12:00:00Z"}
+        )
         processor = Processor.model_validate({"HardwareSecurityVersion": "3.2"})
 
         assert chassis.production_date == "2026-09-01T12:00:00Z"
@@ -365,11 +369,18 @@ class TestRedfish2026ModelFields:
         assert standalone.authentication.token_set is True
 
     @pytest.mark.parametrize(
-        "model",
-        [Chassis, System, Processor, Session, HostInterface, AccountService],
+        ("model", "payload"),
+        [
+            (Chassis, {"Id": "1"}),
+            (System, {"Id": "1"}),
+            (Processor, {}),
+            (Session, {}),
+            (HostInterface, {}),
+            (AccountService, {}),
+        ],
     )
-    def test_new_fields_remain_optional(self, model):
-        assert model.model_validate({}) is not None
+    def test_new_fields_remain_optional(self, model, payload):
+        assert model.model_validate(payload) is not None
 
 
 class TestFanModel:

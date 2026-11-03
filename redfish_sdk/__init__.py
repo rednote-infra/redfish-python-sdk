@@ -33,6 +33,7 @@ from .exceptions import (
     RedfishAuthError,
     RedfishConnectionError,
     RedfishException,
+    RedfishMissingAttributeError,
     RedfishNotFoundError,
     RedfishTimeoutError,
     RedfishValidationError,
@@ -116,6 +117,7 @@ __author__ = "RedNote Infrastructure"
 
 __all__ = [
     "RedfishClient",
+    "RedfishMissingAttributeError",
     "CollectionFailure",
     "CollectionResult",
     "TelemetryService",

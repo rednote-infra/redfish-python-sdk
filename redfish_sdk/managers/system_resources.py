@@ -89,8 +89,12 @@ class SystemResourcesManager:
     def reset_secure_boot_keys(self, reset_keys_type: str, system_id: Optional[str] = None) -> RedfishResponse:
         resource = self.secure_boot(system_id)
         action = SecureBootActions.model_validate(resource.actions or {}).reset_keys
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError("SecureBoot does not advertise #SecureBoot.ResetKeys with a target")
+        target = action.require_target(
+            action_name="#SecureBoot.ResetKeys",
+            resource_uri=resource.odata_id or "",
+        )
         allowed = action.reset_keys_type_allowable_values
         if allowed is None and action.action_info:
             info = self._http.get(action.action_info, ActionInfo)
@@ -99,7 +103,7 @@ class SystemResourcesManager:
             allowed = ["ResetAllKeysToDefault", "DeleteAllKeys", "DeletePK"]
         if reset_keys_type not in allowed:
             raise RedfishValidationError(f"Unsupported ResetKeysType {reset_keys_type!r}; allowable values: {allowed}")
-        return self._http.post(action.target, RedfishResponse, body=ResetKeysRequest(reset_keys_type=reset_keys_type))
+        return self._http.post(target, RedfishResponse, body=ResetKeysRequest(reset_keys_type=reset_keys_type))
 
     def network_interfaces(self, system_id: Optional[str] = None) -> List[NetworkInterface]:
         system = self._client._systems.get(system_id)

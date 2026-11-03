@@ -30,6 +30,7 @@ from .exceptions import (
     RedfishAuthError,
     RedfishConnectionError,
     RedfishException,
+    RedfishMissingAttributeError,
     RedfishNotFoundError,
     RedfishTimeoutError,
     RedfishValidationError,
@@ -580,11 +581,24 @@ class RedfishHttpClient:
             str(_redact_for_log(body)),
         )
 
-    def _parse(self, response: requests.Response, model_class: Type[T]) -> T:
+    def _parse(
+        self,
+        response: requests.Response,
+        model_class: Type[T],
+        resource_uri: str = "",
+    ) -> T:
         """Parse JSON response into a pydantic model."""
         try:
             data = response.json()
-            return model_class.model_validate(data)
+            return model_class.model_validate(
+                data,
+                context={
+                    "resource_uri": resource_uri,
+                    "task_monitor_uri": response.headers.get("Location"),
+                },
+            )
+        except RedfishMissingAttributeError:
+            raise
         except Exception as exc:
             logger.error("Failed to parse response as %s", model_class.__name__)
             raise RedfishException(
@@ -619,7 +633,7 @@ class RedfishHttpClient:
         logger.debug("GET %s -> HTTP %d", _redact_for_log(path), response.status_code)
         self._store_etag(path, response)
         self._raise_for_status(response, path)
-        result = self._parse(response, model_class)
+        result = self._parse(response, model_class, path)
 
         # Store etag on the model itself if it's an Entity
         if hasattr(result, "odata_etag") and not result.odata_etag:
@@ -688,7 +702,7 @@ class RedfishHttpClient:
         if response.status_code == 204 or not response.text.strip():
             result = model_class.model_construct()
         else:
-            result = self._parse(response, model_class)
+            result = self._parse(response, model_class, path)
 
         if isinstance(result, RedfishResponse):
             result.task_monitor = response.headers.get("Location") or result.task_monitor
@@ -799,7 +813,7 @@ class RedfishHttpClient:
         if response.status_code == 204 or not response.text.strip():
             return model_class.model_construct()
 
-        return self._parse(response, model_class)
+        return self._parse(response, model_class, path)
 
     def patch_raw(self, path: str, body: Dict, extra_headers: Optional[Dict[str, str]] = None) -> requests.Response:
         """

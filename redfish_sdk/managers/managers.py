@@ -113,15 +113,18 @@ class ManagersManager:
     def reset(self, reset_type: str = "ForceRestart", manager_id: Optional[str] = None) -> RedfishResponse:
         manager = self.get(manager_id)
         action = ManagerActions.model_validate(manager.actions or {}).manager_reset
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError("Manager does not advertise #Manager.Reset with an action target")
+        target = action.require_target(
+            action_name="#Manager.Reset", resource_uri=manager.odata_id or ""
+        )
         allowed = action.reset_type_allowable_values
         if allowed is None and action.action_info:
             info = self._http.get(action.action_info, ActionInfo)
             allowed = info.allowable_values(ManagerResetRequest.model_fields["reset_type"].alias)
         if not reset_type or (allowed is not None and reset_type not in allowed):
             raise RedfishValidationError(f"Unsupported ResetType {reset_type!r}; advertised values: {allowed}")
-        return self._http.post(action.target, RedfishResponse, body=ManagerResetRequest(reset_type=reset_type))
+        return self._http.post(target, RedfishResponse, body=ManagerResetRequest(reset_type=reset_type))
 
     def log_service(self, log_id: Optional[str] = None, manager_id: Optional[str] = None) -> Log:
         from ._log_helpers import require_log_services_link, resolve_log_service
@@ -133,15 +136,23 @@ class ManagersManager:
     def clear_log(self, log_id: Optional[str] = None, manager_id: Optional[str] = None) -> None:
         log = self.log_service(log_id, manager_id)
         action = LogActions.model_validate(log.actions or {}).clear_log
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError(f"Manager log {log.id!r} does not advertise #LogService.ClearLog")
+        target = action.require_target(
+            action_name="#LogService.ClearLog", resource_uri=log.odata_id or ""
+        )
         try:
-            self._http.post(action.target, RedfishResponse, raw_body={})
-        except RedfishException as e:
-            if getattr(e, "status_code", None) != 400:
+            self._http.post(target, RedfishResponse, raw_body={})
+        except RedfishException as exc:
+            if exc.status_code != 400:
                 raise
-            logger.warning("ClearLog with JSON body rejected (HTTP 400) on %s: %s; retrying without body", action.target, e)
-            self._http.post(action.target, RedfishResponse)
+            logger.warning(
+                "ClearLog with JSON body rejected (HTTP 400) on %s: %s; "
+                "retrying without body",
+                target,
+                exc,
+            )
+            self._http.post(target, RedfishResponse)
 
     def log_entries(
         self,
@@ -799,11 +810,15 @@ class ManagersManager:
         """Invoke the advertised standard ``InsertMedia`` action."""
         media = self.virtual_media_resource(media_id, manager_id)
         action = media.actions and media.actions.insert_media
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError(
                 f"VirtualMedia {media.id!r} does not advertise "
                 "#VirtualMedia.InsertMedia with an action target"
             )
+        target = action.require_target(
+            action_name="#VirtualMedia.InsertMedia",
+            resource_uri=media.odata_id or "",
+        )
 
         supplied = {
             "Inserted": inserted,
@@ -864,7 +879,7 @@ class ManagersManager:
             transfer_protocol_type=transfer_protocol_type,
             http_headers=http_headers,
         )
-        return self._http.post(action.target, RedfishResponse, body=request)
+        return self._http.post(target, RedfishResponse, body=request)
 
     def eject_virtual_media(
         self,
@@ -874,13 +889,17 @@ class ManagersManager:
         """Invoke the advertised standard ``EjectMedia`` action."""
         media = self.virtual_media_resource(media_id, manager_id)
         action = media.actions and media.actions.eject_media
-        if not action or not action.target:
+        if not action:
             raise RedfishValidationError(
                 f"VirtualMedia {media.id!r} does not advertise "
                 "#VirtualMedia.EjectMedia with an action target"
             )
+        target = action.require_target(
+            action_name="#VirtualMedia.EjectMedia",
+            resource_uri=media.odata_id or "",
+        )
         return self._http.post(
-            action.target, RedfishResponse, body=VirtualMediaEjectMediaRequest()
+            target, RedfishResponse, body=VirtualMediaEjectMediaRequest()
         )
 
     def serial_interfaces(self, manager_id: Optional[str] = None) -> List[SerialInterface]:
