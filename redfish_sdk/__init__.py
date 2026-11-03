@@ -112,12 +112,14 @@ from .models.update import (
     UpdateParameters,
     UpdateServiceCapabilities,
 )
+from .retry import RetryPolicy
 
 __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
     "AuthenticationMode",
+    "RetryPolicy",
     "RedfishClient",
     "RedfishMissingAttributeError",
     "CollectionFailure",

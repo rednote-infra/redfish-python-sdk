@@ -2,6 +2,7 @@
 
 import json
 import logging
+from http import HTTPStatus
 from unittest.mock import Mock
 
 import pytest
@@ -223,7 +224,7 @@ def test_standard_multipart_push_errors_propagate(
 
 
 @pytest.mark.parametrize("standard_push", [False, True], ids=["ami-action", "standard-push"])
-def test_multipart_retry_reuses_complete_body(
+def test_multipart_write_is_not_retried(
     firmware_client, monkeypatch, tmp_path, standard_push
 ):
     client, service = firmware_client
@@ -235,19 +236,25 @@ def test_multipart_retry_reuses_complete_body(
 
     def post(url, **arguments):
         calls.append(arguments)
-        return response(503 if len(calls) == 1 else 204)
+        return response(
+            HTTPStatus.SERVICE_UNAVAILABLE
+            if len(calls) == 1
+            else HTTPStatus.NO_CONTENT
+        )
 
     monkeypatch.setattr(client._http_client._session, "post", post)
+    with pytest.raises(RedfishException) as error:
+        if standard_push:
+            service.multi_part_http_push_uri = "/custom/multipart"
+            client.upload_firmware_file(image)
+        else:
+            client.upload_firmware_image(image)
+
+    assert error.value.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert len(calls) == 1
+    assert b"full-firmware" in calls[0]["data"]
     if standard_push:
-        service.multi_part_http_push_uri = "/custom/multipart"
-        client.upload_firmware_file(image)
-    else:
-        client.upload_firmware_image(image)
-    assert len(calls) == 2
-    assert calls[0]["data"] == calls[1]["data"]
-    assert b"full-firmware" in calls[1]["data"]
-    if standard_push:
-        assert [part[0] for part in multipart_parts(calls[1])] == [
+        assert [part[0] for part in multipart_parts(calls[0])] == [
             "UpdateParameters",
             "UpdateFile",
         ]
