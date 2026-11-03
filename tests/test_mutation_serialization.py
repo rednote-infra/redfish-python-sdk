@@ -11,6 +11,7 @@ import requests
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from redfish_sdk.http_client import RedfishHttpClient
+from redfish_sdk.models.account import Account
 from redfish_sdk.models.common import RedfishResponse
 
 
@@ -135,3 +136,34 @@ def test_raw_mutation_payload_is_unchanged(method_name):
 def test_request_model_can_reject_null_for_non_nullable_field():
     with pytest.raises(ValidationError):
         NonNullableMutation(required_value=None)
+
+
+def test_model_validate_keeps_absent_response_fields_out_of_patch():
+    http = _http()
+    send = Mock(return_value=_response())
+    http._request = send
+    account = Account.model_validate({"UserName": "operator"})
+
+    http.patch(
+        "/redfish/v1/AccountService/Accounts/1",
+        Account,
+        body=account,
+    )
+
+    assert send.call_args.kwargs["json"] == {"UserName": "operator"}
+    http.close()
+
+
+def test_user_built_account_preserves_explicit_null_in_patch():
+    http = _http()
+    send = Mock(return_value=_response())
+    http._request = send
+
+    http.patch(
+        "/redfish/v1/AccountService/Accounts/1",
+        Account,
+        body=Account(enabled=None),
+    )
+
+    assert send.call_args.kwargs["json"] == {"Enabled": None}
+    http.close()
