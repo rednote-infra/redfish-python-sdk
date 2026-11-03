@@ -1,4 +1,13 @@
-from .account import Account, AccountService, Authentication, ExternalAccountProvider, Role
+from .account import (
+    Account,
+    AccountCreate,
+    AccountPatch,
+    AccountService,
+    AccountSNMP,
+    Authentication,
+    ExternalAccountProvider,
+    Role,
+)
 from .chassis import Chassis, Drive, Fan, NetworkAdapter, PCIeDevice, Power, PowerSupply, Temperature, Thermal
 from .common import Collection, Condition, Entity, Link, RedfishError, RedfishResponse, Status
 from .composition import CompositionService, ResourceBlock, ResourceZone
@@ -93,7 +102,8 @@ __all__ = [
     "CXLTelemetryCapabilities", "ProcessorUALink", "ProcessorLinks",
     "Manager", "NetworkProtocol", "EthernetInterface", "HostInterface", "CredentialBootstrapping",
     "SerialInterface",
-    "AccountService", "Account", "Authentication", "ExternalAccountProvider", "Role",
+    "AccountService", "Account", "AccountCreate", "AccountPatch", "AccountSNMP",
+    "Authentication", "ExternalAccountProvider", "Role",
     "SessionService", "Session",
     "Event", "EventRecord", "EventService", "Subscription",
     "UpdateService", "FirmwareInventory", "ClientCertificate",

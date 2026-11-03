@@ -48,7 +48,8 @@ T = TypeVar("T", bound=BaseModel)
 _EXPLICIT_REDIRECT_SUCCESS_CODES = frozenset({HTTPStatus.FOUND})
 _REDACTED = "<redacted>"
 _SENSITIVE_LOG_KEYS = {
-    "password", "username", "consoleurl", "credential", "secret", "token",
+    "password", "username", "authenticationkey", "encryptionkey",
+    "consoleurl", "credential", "secret", "token",
     "accesstoken", "authtoken", "xauthtoken", "httpheaders",
     "authorization", "proxyauthorization", "cookie", "setcookie",
 }

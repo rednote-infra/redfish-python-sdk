@@ -84,6 +84,30 @@ for drive in client.get_drives():
 client.close()
 ```
 
+### Account mutations
+
+Use dedicated writable models for account creation and updates. They reject
+response annotations and unknown top-level properties, preventing data from a
+fetched account resource from being reflected into a mutation request.
+
+```python
+from redfish_sdk.models.account import AccountCreate, AccountPatch
+
+client.add_account(AccountCreate(
+    user_name="operator",
+    password=os.environ["NEW_BMC_ACCOUNT_PASSWORD"],
+    role_id="Operator",
+))
+client.update_account("operator", AccountPatch(enabled=False))
+```
+
+Vendor-specific writable data must be placed under the explicit `Oem` field.
+Passing the response-oriented `Account` model remains supported for backward
+compatibility: the SDK filters it to writable fields, but new code should
+migrate to `AccountCreate` or `AccountPatch`. Fields explicitly set to `None`
+in request models are transmitted as JSON `null`; fields not supplied are
+omitted.
+
 ## Testing
 
 ```bash
