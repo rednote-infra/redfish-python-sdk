@@ -194,6 +194,21 @@ def test_create_policy_validates_capabilities_and_preserves_response_order(
     assert policy.odata_id == "/custom/policies/RackPowerCap2"
 
 
+def test_create_policy_omits_unsupplied_optional_fields(policy_client):
+    client, calls, _ = policy_client
+
+    client.create_policy(
+        "MinimalPolicy",
+        "Minimal Policy",
+        PolicyCondition(type="Compare"),
+        [PolicyResponse(response_action="Recheck")],
+    )
+
+    post = next(call for call in calls if call[:2] == ("POST", "/custom/policies"))
+    assert "Enabled" not in post[2]["json"]
+    assert "Oem" not in post[2]["json"]
+
+
 @pytest.mark.parametrize(
     "condition_type,response_action,error",
     [

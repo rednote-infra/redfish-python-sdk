@@ -116,6 +116,11 @@ def _redact_for_log(value: Any) -> Any:
     return value
 
 
+def _serialize_mutation_body(body: BaseModel) -> Dict[str, Any]:
+    """Serialize only explicitly supplied mutation fields, including nulls."""
+    return body.model_dump(by_alias=True, exclude_unset=True)
+
+
 def _filename_from_content_disposition(value: Optional[str]) -> Optional[str]:
     """
     Extract the filename from a ``Content-Disposition`` header, or None.
@@ -822,7 +827,7 @@ class RedfishHttpClient:
         """
         json_payload = None
         if body is not None:
-            json_payload = body.model_dump(by_alias=True, exclude_none=True)
+            json_payload = _serialize_mutation_body(body)
         elif raw_body is not None:
             json_payload = raw_body
 
@@ -928,7 +933,7 @@ class RedfishHttpClient:
             RedfishException: On non-2xx HTTP responses
         """
         etag = self._get_etag(path, body)
-        json_payload = body.model_dump(by_alias=True, exclude_none=True)
+        json_payload = _serialize_mutation_body(body)
 
         headers = {"If-Match": etag}
         if extra_headers:

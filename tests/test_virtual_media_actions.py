@@ -85,6 +85,17 @@ def test_insert_media_uses_advertised_target_and_optional_http_headers():
     }
 
 
+def test_insert_media_omits_unsupplied_optional_fields():
+    manager, http = _manager()
+
+    manager.insert_virtual_media("https://images.example/os.iso")
+
+    request = http.post.call_args.kwargs["body"]
+    assert request.model_dump(by_alias=True, exclude_unset=True) == {
+        "Image": "https://images.example/os.iso"
+    }
+
+
 def test_insert_media_discovers_action_info_and_rejects_unsupported_values():
     media = _media()
     media.http_headers = None

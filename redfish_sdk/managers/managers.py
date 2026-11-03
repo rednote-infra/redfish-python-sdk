@@ -869,16 +869,22 @@ class ManagersManager:
                     "VirtualMedia does not advertise HTTPHeaders support"
                 )
 
-        request = VirtualMediaInsertMediaRequest(
-            image=image,
-            inserted=inserted,
-            write_protected=write_protected,
-            username=username,
-            password=password,
-            transfer_method=transfer_method,
-            transfer_protocol_type=transfer_protocol_type,
-            http_headers=http_headers,
+        request_fields: dict[str, object] = {"image": image}
+        optional_fields = {
+            "inserted": inserted,
+            "write_protected": write_protected,
+            "username": username,
+            "password": password,
+            "transfer_method": transfer_method,
+            "transfer_protocol_type": transfer_protocol_type,
+            "http_headers": http_headers,
+        }
+        request_fields.update(
+            (name, value)
+            for name, value in optional_fields.items()
+            if value is not None
         )
+        request = VirtualMediaInsertMediaRequest(**request_fields)
         return self._http.post(target, RedfishResponse, body=request)
 
     def eject_virtual_media(
@@ -920,11 +926,11 @@ class ManagersManager:
         data_bits: Optional[str] = None, stop_bits: Optional[str] = None,
         parity: Optional[str] = None, flow_control: Optional[str] = None,
     ) -> models.RedfishResponse:
-        body = SerialInterfacePatch(
+        candidate = SerialInterfacePatch(
             interface_enabled=interface_enabled, bit_rate=bit_rate, data_bits=data_bits,
             stop_bits=stop_bits, parity=parity, flow_control=flow_control,
         )
-        payload = body.model_dump(by_alias=True, exclude_none=True)
+        payload = candidate.model_dump(by_alias=True, exclude_none=True)
         if not payload:
             raise RedfishValidationError("Supply at least one serial configuration field")
         interface = self.serial_interface(identifier, manager_id)
@@ -934,6 +940,7 @@ class ManagersManager:
             allowed = (interface.model_extra or {}).get(f"{name}@Redfish.AllowableValues")
             if allowed is not None and value not in allowed:
                 raise RedfishValidationError(f"Unsupported {name} {value!r}; advertised values: {allowed}")
+        body = SerialInterfacePatch.model_validate(payload)
         body.odata_etag = interface.odata_etag
         return self._http.patch(interface.odata_id, models.RedfishResponse, body)
 
