@@ -985,6 +985,15 @@ class RedfishHttpClient:
         self._raise_for_status(response, path)
         return response
 
+    def delete_raw(self, path: str) -> requests.Response:
+        """Send DELETE and preserve the complete successful HTTP response."""
+        logger.info("DELETE %s", _redact_for_log(path))
+        response = self._request("DELETE", path)
+
+        logger.info("DELETE %s -> HTTP %d", _redact_for_log(path), response.status_code)
+        self._raise_for_status(response, path)
+        return response
+
     def delete(self, path: str) -> str:
         """
         Send a DELETE request.
@@ -998,12 +1007,7 @@ class RedfishHttpClient:
         Raises:
             RedfishException: On non-2xx HTTP responses
         """
-        logger.info("DELETE %s", _redact_for_log(path))
-        response = self._request("DELETE", path)
-
-        logger.info("DELETE %s -> HTTP %d", _redact_for_log(path), response.status_code)
-        self._raise_for_status(response, path)
-        return response.text
+        return self.delete_raw(path).text
 
     def download(
         self,
