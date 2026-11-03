@@ -21,6 +21,7 @@ import os
 import re
 import threading
 import warnings
+from http import HTTPStatus
 from typing import Any, Dict, Optional, Type, TypeVar
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
@@ -38,13 +39,13 @@ from .exceptions import (
     RedfishValidationError,
 )
 from .models.common import RedfishResponse
+from .retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-# HTTP status codes that indicate success
-_SUCCESS_CODES = {200, 201, 202, 204, 302}
+_EXPLICIT_REDIRECT_SUCCESS_CODES = frozenset({HTTPStatus.FOUND})
 _REDACTED = "<redacted>"
 _SENSITIVE_LOG_KEYS = {
     "password", "username", "consoleurl", "credential", "secret", "token",
@@ -226,17 +227,13 @@ class RedfishHttpClient:
             connect_timeout: Connection timeout in seconds
             read_timeout: Read timeout in seconds
             scheme: URL scheme, "https" (default) or "http"
-            retry_5xx: Extra retries when the BMC returns a 5xx response
-                (default 0 — no retry). GET/HEAD retry on any 5xx; POST /
-                PATCH / DELETE retry only on 503/504 to avoid double-writes.
-                Useful against overloaded or flaky BMCs that intermittently
-                return ``InternalError`` (Base.1.x.InternalError) but recover
-                on a second try.
-            retry_on_read_timeout: When True, also retry on read timeouts
-                (default False). Applies the same "GET always, writes only on
-                503/504 equivalence" rule (writes retry as if the timeout is a
-                503 — the request may still have hit the BMC, so use with care
-                for non-idempotent operations).
+            retry_5xx: Extra retries for GET/HEAD requests that receive a
+                configured server-error response (default 0 — no retry).
+                Writes retry only when an operation explicitly uses
+                :attr:`RetryPolicy.IDEMPOTENT`.
+            retry_on_read_timeout: When True, retry GET/HEAD read timeouts
+                within the same retry bound. Writes retry only when an
+                operation explicitly uses :attr:`RetryPolicy.IDEMPOTENT`.
             retry_backoff: Base sleep in seconds between retries; each retry
                 sleeps ``retry_backoff * attempt`` (linear back-off).
             allow_insecure_http_auth: Control credentials over HTTP. Omitting
@@ -468,13 +465,12 @@ class RedfishHttpClient:
 
     # HTTP methods that are safely retryable on any 5xx (idempotent reads).
     _READ_METHODS = frozenset({"GET", "HEAD"})
-    # Only these 5xx codes are retried for writes (POST/PATCH/DELETE) — 503
-    # (Service Unavailable) and 504 (Gateway Timeout) usually mean the write
-    # never reached the target, so retrying is generally safe. 500/502 on a
-    # write is ambiguous (the change may have partially applied) — bubble up.
-    _WRITE_RETRY_CODES = frozenset({503, 504})
-    # All 5xx codes eligible for retry on reads.
-    _READ_RETRY_CODES = frozenset({500, 502, 503, 504})
+    _RETRY_STATUS_CODES = frozenset({
+        HTTPStatus.INTERNAL_SERVER_ERROR,
+        HTTPStatus.BAD_GATEWAY,
+        HTTPStatus.SERVICE_UNAVAILABLE,
+        HTTPStatus.GATEWAY_TIMEOUT,
+    })
     _MANAGED_AUTH_HEADERS = frozenset({"authorization", "x-auth-token"})
     _DEFAULT_SESSION_COLLECTION = "/redfish/v1/SessionService/Sessions"
 
@@ -510,13 +506,30 @@ class RedfishHttpClient:
                 "Per-request headers cannot replace managed authentication headers"
             )
 
-    def _should_retry_status(self, method: str, code: int) -> bool:
-        """Return True when a retryable 5xx warrants another attempt."""
-        if code < 500 or code > 599:
-            return False
-        if method.upper() in self._READ_METHODS:
-            return code in self._READ_RETRY_CODES
-        return code in self._WRITE_RETRY_CODES
+    @classmethod
+    def _can_retry(
+        cls,
+        method: str,
+        retry_policy: RetryPolicy,
+    ) -> bool:
+        """Return whether the operation may be replayed safely."""
+        return (
+            method.upper() in cls._READ_METHODS
+            or retry_policy is RetryPolicy.IDEMPOTENT
+        )
+
+    @classmethod
+    def _should_retry_status(
+        cls,
+        method: str,
+        code: int,
+        retry_policy: RetryPolicy,
+    ) -> bool:
+        """Return True when policy permits retrying the response status."""
+        return (
+            cls._can_retry(method, retry_policy)
+            and code in cls._RETRY_STATUS_CODES
+        )
 
     def _send(
         self,
@@ -524,15 +537,15 @@ class RedfishHttpClient:
         path: str,
         *,
         authenticated: bool = True,
+        retry_policy: RetryPolicy = RetryPolicy.DEFAULT,
         **kwargs: Any,
     ) -> requests.Response:
         """
         Send an HTTP request with configurable retry on 5xx / read timeout.
 
-        Reads (GET/HEAD) retry on any 5xx in the read-retry set; writes
-        (POST/PATCH/DELETE) only retry on 503/504 to minimise double-write
-        risk. When neither ``retry_5xx`` nor ``retry_on_read_timeout`` is set,
-        this is a single-shot call — behaviour matches the original client.
+        Reads (GET/HEAD) use the configured bounded retry behavior. Writes are
+        single-shot unless their operation explicitly declares
+        :attr:`RetryPolicy.IDEMPOTENT`.
 
         Raises the same transport exceptions as ``requests``; success or a
         terminal HTTP response (2xx or a non-retried 5xx / 4xx) is returned
@@ -541,6 +554,10 @@ class RedfishHttpClient:
         import time as _time
 
         method_u = method.upper()
+        if not isinstance(retry_policy, RetryPolicy):
+            raise RedfishValidationError(
+                "retry_policy must be a RetryPolicy member"
+            )
         self._validate_managed_headers(kwargs.get("headers"))
         attempts = 1 + self.retry_5xx
         last_exc: Optional[BaseException] = None
@@ -567,7 +584,11 @@ class RedfishHttpClient:
                 response = session_call(url, **kwargs)
             except requests.exceptions.ReadTimeout as exc:
                 last_exc = exc
-                if self.retry_on_read_timeout and attempt < attempts:
+                if (
+                    self.retry_on_read_timeout
+                    and self._can_retry(method_u, retry_policy)
+                    and attempt < attempts
+                ):
                     logger.warning(
                         "%s %s read-timeout on attempt %d/%d; retrying",
                         method_u, url, attempt, attempts,
@@ -583,7 +604,10 @@ class RedfishHttpClient:
                 raise
 
             code = response.status_code
-            if attempt < attempts and self._should_retry_status(method_u, code):
+            if (
+                attempt < attempts
+                and self._should_retry_status(method_u, code, retry_policy)
+            ):
                 logger.warning(
                     "%s %s -> HTTP %d on attempt %d/%d; retrying",
                     method_u, url, code, attempt, attempts,
@@ -605,6 +629,7 @@ class RedfishHttpClient:
         path: str,
         *,
         authenticated: bool = True,
+        retry_policy: RetryPolicy = RetryPolicy.DEFAULT,
         **kwargs: Any,
     ) -> requests.Response:
         """
@@ -628,6 +653,7 @@ class RedfishHttpClient:
                 method,
                 path,
                 authenticated=authenticated,
+                retry_policy=retry_policy,
                 **kwargs,
             )
             if (
@@ -641,6 +667,7 @@ class RedfishHttpClient:
                     method,
                     path,
                     authenticated=authenticated,
+                    retry_policy=retry_policy,
                     **kwargs,
                 )
             return response
@@ -654,7 +681,10 @@ class RedfishHttpClient:
         Raise a typed RedfishException for non-2xx responses.
         """
         code = response.status_code
-        if code in _SUCCESS_CODES:
+        if (
+            HTTPStatus.OK <= code < HTTPStatus.MULTIPLE_CHOICES
+            or code in _EXPLICIT_REDIRECT_SUCCESS_CODES
+        ):
             return
 
         body = ""
@@ -1173,7 +1203,11 @@ class RedfishHttpClient:
                     raise RedfishConnectionError(self.host, exc) from exc
                 if response.status_code in (401, 403):
                     raise RedfishAuthError(response.status_code)
-                if response.status_code not in _SUCCESS_CODES:
+                if not (
+                    HTTPStatus.OK
+                    <= response.status_code
+                    < HTTPStatus.MULTIPLE_CHOICES
+                ):
                     raise RedfishException(
                         response.status_code,
                         "Unable to refresh Redfish session",
