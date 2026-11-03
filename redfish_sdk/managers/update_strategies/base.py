@@ -10,6 +10,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from ...exceptions import RedfishMissingAttributeError
 from ...models.common import RedfishResponse
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class BaseUpdateStrategy(ABC):
         """
         Discover the SimpleUpdate action target URL from the UpdateService.
 
-        Falls back to the standard path if the target is not found in Actions.
+        The BMC must advertise the action target before it can be invoked.
         """
         update_service = client._get_update_service()
         raw = client._http_client.get_raw(update_service.odata_id)
@@ -38,8 +39,12 @@ class BaseUpdateStrategy(ABC):
         simple_update_action = actions.get("#UpdateService.SimpleUpdate", {})
         target = simple_update_action.get("target")
 
-        if not target:
-            target = f"{update_service.odata_id}/Actions/UpdateService.SimpleUpdate"
+        if not isinstance(target, str) or not target.strip():
+            raise RedfishMissingAttributeError(
+                "target",
+                "#UpdateService.SimpleUpdate",
+                update_service.odata_id or "",
+            )
 
         return target
 

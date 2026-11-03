@@ -91,6 +91,27 @@ class RedfishValidationError(RedfishException):
         super().__init__(400, message)
 
 
+class RedfishMissingAttributeError(RedfishValidationError):
+    """Raised when a BMC response omits an essential Redfish property."""
+
+    def __init__(
+        self,
+        attribute: str,
+        resource_type: str,
+        resource_uri: str = "",
+    ):
+        self.attribute = attribute
+        self.resource_type = resource_type
+        self.resource_uri = resource_uri
+        location = resource_uri or "<unknown URI>"
+        RedfishException.__init__(
+            self,
+            502,
+            f"{resource_type} response at {location} is missing required "
+            f"property '{attribute}'",
+        )
+
+
 class RegistryResolutionError(RedfishValidationError):
     """Raised when a MessageId cannot be resolved through advertised registries."""
 

@@ -46,7 +46,11 @@ from pathlib import Path
 from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from .exceptions import RedfishException, RedfishValidationError
+from .exceptions import (
+    RedfishException,
+    RedfishMissingAttributeError,
+    RedfishValidationError,
+)
 from .http_client import RedfishHttpClient
 from .models.account import Account, AccountService, Role
 from .models.chassis import Chassis
@@ -119,6 +123,21 @@ from .models.update import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Entity)
+
+
+def _require_resource_identity(resource: T, resource_uri: str) -> T:
+    """Reject a fetched collection member that cannot identify itself."""
+    odata_id = resource.odata_id
+    resource_id = resource.id
+    has_odata_id = isinstance(odata_id, str) and bool(odata_id.strip())
+    has_id = resource_id is not None and (
+        not isinstance(resource_id, str) or bool(resource_id.strip())
+    )
+    if not has_odata_id and not has_id:
+        raise RedfishMissingAttributeError(
+            "@odata.id or Id", type(resource).__name__, resource_uri
+        )
+    return resource
 
 
 @dataclass(frozen=True)
@@ -817,7 +836,9 @@ class RedfishClient:
             first_page = False
 
             if adapter is not None:
-                collection = adapter.validate_python(raw)
+                collection = adapter.validate_python(
+                    raw, context={"resource_uri": page_path}
+                )
                 members = collection.members or []
                 next_link = collection.members_next_link
             else:
@@ -843,7 +864,10 @@ class RedfishClient:
                 visited_members.add(member_path)
                 try:
                     expanded_members.append(
-                        self._http_client.get(member_path, model_class)
+                        _require_resource_identity(
+                            self._http_client.get(member_path, model_class),
+                            member_path,
+                        )
                     )
                 except RedfishException as exc:
                     handle_failure("member", member_path, exc)
@@ -870,7 +894,10 @@ class RedfishClient:
             if not link.odata_id:
                 continue
             try:
-                item = self._http_client.get(link.odata_id, model_class)
+                item = _require_resource_identity(
+                    self._http_client.get(link.odata_id, model_class),
+                    link.odata_id,
+                )
                 if item is not None:
                     results.append(item)
             except RedfishException as exc:

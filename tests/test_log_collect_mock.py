@@ -587,6 +587,7 @@ class TestDownloadDiagnosticData(VendorRestoreMixin):
         # Generic strategy resolves via task's AdditionalDataURI (now typed).
         _install_get_dispatch(client, lambda path: {
             "Id": "42",
+            "TaskState": "Completed",
             "AdditionalDataURI": "/redfish/v1/download/42.tar.gz",
         })
 
@@ -876,7 +877,8 @@ class TestCollectAndDownload(VendorRestoreMixin):
         )
         # Generic download resolves AdditionalDataURI from the task body.
         _install_get_dispatch(client, lambda path: {
-            "Id": "7", "AdditionalDataURI": "/redfish/v1/download/7.tar.gz",
+            "Id": "7", "TaskState": "Completed",
+            "AdditionalDataURI": "/redfish/v1/download/7.tar.gz",
         })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -951,7 +953,8 @@ class TestReusePriorTask(VendorRestoreMixin):
 
         client._http_client.post = unexpected_post  # type: ignore[assignment]
         _install_get_dispatch(client, lambda path: {
-            "Id": "7", "AdditionalDataURI": "/redfish/v1/dl/7.tgz",
+            "Id": "7", "TaskState": "Completed",
+            "AdditionalDataURI": "/redfish/v1/dl/7.tgz",
         })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -985,7 +988,8 @@ class TestReusePriorTask(VendorRestoreMixin):
             lambda task_id, poll_interval, timeout: completed
         )
         _install_get_dispatch(client, lambda path: {
-            "Id": "8", "AdditionalDataURI": "/redfish/v1/dl/8.tgz",
+            "Id": "8", "TaskState": "Completed",
+            "AdditionalDataURI": "/redfish/v1/dl/8.tgz",
         })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -1029,7 +1033,8 @@ class TestReusePriorTask(VendorRestoreMixin):
             )
         )
         _install_get_dispatch(client, lambda path: {
-            "Id": "new-1", "AdditionalDataURI": "/x",
+            "Id": "new-1", "TaskState": "Completed",
+            "AdditionalDataURI": "/x",
         })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -1110,7 +1115,8 @@ class TestRetryOnFailure(VendorRestoreMixin):
 
         client.wait_for_task = fake_wait  # type: ignore[assignment]
         _install_get_dispatch(client, lambda path: {
-            "Id": "2", "AdditionalDataURI": "/dl/2",
+            "Id": "2", "TaskState": "Completed",
+            "AdditionalDataURI": "/dl/2",
         })
         client._http_client.download = (  # type: ignore[assignment]
             lambda uri, output_path=None, chunk_size=65536: os.path.abspath(output_path)
@@ -2211,6 +2217,7 @@ class TestTaskMessagesNormalisation(unittest.TestCase):
     def test_list_messages_unchanged(self) -> None:
         raw = {
             "Id": "1",
+            "TaskState": "Completed",
             "Messages": [
                 {"MessageId": "A"},
                 {"MessageId": "B"},

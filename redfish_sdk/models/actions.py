@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ..exceptions import RedfishMissingAttributeError
 from .common import Entity
 
 
@@ -20,6 +21,14 @@ class ActionDescriptor(BaseModel):
     @classmethod
     def valid_uri(cls, value: Any) -> Optional[str]:
         return value if isinstance(value, str) else None
+
+    def require_target(self, *, action_name: str, resource_uri: str = "") -> str:
+        """Return a usable invocation target or raise an actionable error."""
+        if not self.target or not self.target.strip():
+            raise RedfishMissingAttributeError(
+                "target", action_name, resource_uri
+            )
+        return self.target
 
 
 class ActionMap(BaseModel):
