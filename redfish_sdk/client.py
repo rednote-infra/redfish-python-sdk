@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import cached_property
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -2899,7 +2900,16 @@ class RedfishClient:
         """
         return self._http_client.get_raw(odata_id)
 
-    def patch(self, odata_id: str, body: dict) -> GenericResponse:
+    def _send_generic_patch(self, odata_id: str, body: dict) -> Any:
+        """Send a generic PATCH after populating the ETag cache when possible."""
+        if odata_id not in self._http_client._last_etag:
+            try:
+                self._http_client.get_raw(odata_id)
+            except RedfishException:
+                pass
+        return self._http_client.patch_raw(odata_id, body)
+
+    def patch(self, odata_id: str, body: dict) -> dict:
         """
         Send a PATCH request to partially update a Redfish resource.
 
@@ -2913,10 +2923,7 @@ class RedfishClient:
             body: A dict containing only the fields to modify
 
         Returns:
-            Metadata-preserving generic response. For compatibility with
-            dictionary-oriented callers, JSON-object responses support
-            mapping access and :meth:`GenericResponse.as_dict`; empty bodies
-            convert to an empty dictionary.
+            Raw JSON dict of the BMC response (empty dict ``{}`` on 204 No Content)
 
         Raises:
             RedfishException: On HTTP errors (412 Precondition Failed, 500, etc.)
@@ -2930,21 +2937,30 @@ class RedfishClient:
                 }
             })
         """
-        # Ensure ETag is cached before PATCH (auto-GET if missing)
-        if odata_id not in self._http_client._last_etag:
-            try:
-                self._http_client.get_raw(odata_id)
-            except RedfishException:
-                pass  # proceed with '*' wildcard if GET fails
+        response = self._send_generic_patch(odata_id, body)
+        if (
+            response.status_code == HTTPStatus.NO_CONTENT
+            or not response.text.strip()
+        ):
+            return {}
+        return response.json()
 
-        response = self._http_client.patch_raw(odata_id, body)
-        return GenericResponse.from_response(response)
+    def patch_response(self, odata_id: str, body: dict) -> GenericResponse:
+        """PATCH a resource and preserve HTTP metadata and arbitrary content.
+
+        Use this additive API when status, headers, asynchronous task metadata,
+        or non-JSON response bodies are required. The legacy :meth:`patch`
+        method continues to return dictionaries.
+        """
+        return GenericResponse.from_response(
+            self._send_generic_patch(odata_id, body)
+        )
 
     def post(
         self,
         odata_id: str,
         body: Optional[dict] = None,
-    ) -> GenericResponse:
+    ) -> dict:
         """
         Send a POST request to create a resource or trigger an action.
 
@@ -2955,10 +2971,7 @@ class RedfishClient:
             body: Optional request body dict
 
         Returns:
-            Metadata-preserving generic response. For compatibility with
-            dictionary-oriented callers, JSON-object responses support
-            mapping access and :meth:`GenericResponse.as_dict`; empty bodies
-            convert to an empty dictionary.
+            Raw JSON dict of the BMC response (empty dict ``{}`` on 204 No Content)
 
         Raises:
             RedfishException: On HTTP errors (400, 500, etc.)
@@ -2979,9 +2992,27 @@ class RedfishClient:
             })
         """
         response = self._http_client.post_raw(odata_id, body)
+        if (
+            response.status_code == HTTPStatus.NO_CONTENT
+            or not response.text.strip()
+        ):
+            return {}
+        return response.json()
+
+    def post_response(
+        self,
+        odata_id: str,
+        body: Optional[dict] = None,
+    ) -> GenericResponse:
+        """POST to a resource and preserve metadata and arbitrary content.
+
+        Use this additive API for asynchronous or OEM operations. The legacy
+        :meth:`post` method retains its dictionary-oriented behavior.
+        """
+        response = self._http_client.post_raw(odata_id, body)
         return GenericResponse.from_response(response)
 
-    def delete(self, odata_id: str) -> GenericResponse:
+    def delete(self, odata_id: str) -> None:
         """
         Send a DELETE request to remove a Redfish resource.
 
@@ -2990,9 +3021,7 @@ class RedfishClient:
                       (e.g., ``"/redfish/v1/SessionService/Sessions/abc123"``)
 
         Returns:
-            Metadata-preserving generic response. Empty bodies retain the
-            legacy empty-dictionary compatibility through
-            :meth:`GenericResponse.as_dict`.
+            None
 
         Raises:
             RedfishException: On HTTP errors (404, 500, etc.)
@@ -3000,6 +3029,13 @@ class RedfishClient:
         Example::
 
             client.delete("/redfish/v1/SessionService/Sessions/abc123")
+        """
+        self._http_client.delete(odata_id)
+
+    def delete_response(self, odata_id: str) -> GenericResponse:
+        """DELETE a resource and preserve metadata and arbitrary content.
+
+        The legacy :meth:`delete` method retains its ``None`` return value.
         """
         response = self._http_client.delete_raw(odata_id)
         return GenericResponse.from_response(response)

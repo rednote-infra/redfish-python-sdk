@@ -48,7 +48,7 @@ def test_post_preserves_empty_async_response_metadata(monkeypatch):
     )
     monkeypatch.setattr(client._http_client, "post_raw", lambda *args: raw)
 
-    result = client.post("/redfish/v1/Actions/Example", {})
+    result = client.post_response("/redfish/v1/Actions/Example", {})
 
     assert isinstance(result, GenericResponse)
     assert result.status_code == HTTPStatus.ACCEPTED
@@ -77,7 +77,7 @@ def test_patch_preserves_json_and_content_location(monkeypatch):
     )
     monkeypatch.setattr(client._http_client, "patch_raw", lambda *args, **kwargs: raw)
 
-    result = client.patch(path, {"AssetTag": "new-tag"})
+    result = client.patch_response(path, {"AssetTag": "new-tag"})
 
     assert result.status_code == HTTPStatus.OK
     assert result.content_location == path
@@ -113,7 +113,7 @@ def test_delete_preserves_text_response(monkeypatch):
     )
     monkeypatch.setattr(client._http_client, "delete_raw", lambda *args: raw)
 
-    result = client.delete("/redfish/v1/Oem/Vendor/Resource/1")
+    result = client.delete_response("/redfish/v1/Oem/Vendor/Resource/1")
 
     assert result.status_code == HTTPStatus.OK
     assert result.headers["x-delete-mode"] == "soft"
@@ -145,7 +145,7 @@ def test_post_keeps_non_json_body_inspectable(
     )
     monkeypatch.setattr(client._http_client, "post_raw", lambda *args: raw)
 
-    result = client.post("/redfish/v1/Oem/Vendor/Action", {})
+    result = client.post_response("/redfish/v1/Oem/Vendor/Action", {})
 
     assert result.content == content
     assert isinstance(result.text, str)
