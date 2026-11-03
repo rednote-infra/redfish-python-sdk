@@ -787,7 +787,10 @@ class TestPatchPostDelete:
 
         class FakeResponse:
             status_code = 200
-            text = '{"@odata.id": "/redfish/v1/Systems/1"}'
+            text = (
+                '{"@odata.id": "/redfish/v1/Systems/1", '
+                '"Boot": {"BootSourceOverrideTarget": "Pxe"}}'
+            )
             headers = {}
             def json(self):
                 return response_data
@@ -997,13 +1000,25 @@ class TestPatchPostDelete:
 
     # -- delete() tests --
 
-    def test_delete_returns_none(self, monkeypatch):
-        """delete() should return None."""
+    def test_delete_returns_generic_response(self, monkeypatch):
+        """delete() should preserve the HTTP response."""
         client = self._make_client()
-        monkeypatch.setattr(client._http_client, "delete", lambda path: "")
+
+        class FakeResponse:
+            status_code = 204
+            text = ""
+            content = b""
+            headers = {}
+
+        monkeypatch.setattr(
+            client._http_client,
+            "delete_raw",
+            lambda path: FakeResponse(),
+        )
 
         result = client.delete("/redfish/v1/SessionService/Sessions/abc123")
-        assert result is None
+        assert result.status_code == 204
+        assert result == {}
         client.close()
 
     def test_delete_propagates_exception(self, monkeypatch):
@@ -1011,10 +1026,10 @@ class TestPatchPostDelete:
         from redfish_sdk.exceptions import RedfishNotFoundError
         client = self._make_client()
 
-        def mock_delete(path):
+        def mock_delete_raw(path):
             raise RedfishNotFoundError(path)
 
-        monkeypatch.setattr(client._http_client, "delete", mock_delete)
+        monkeypatch.setattr(client._http_client, "delete_raw", mock_delete_raw)
 
         with pytest.raises(RedfishNotFoundError):
             client.delete("/redfish/v1/SessionService/Sessions/nonexistent")

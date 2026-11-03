@@ -120,6 +120,7 @@ from .models.update import (
     UpdateService,
     UpdateServiceCapabilities,
 )
+from .response import GenericResponse
 
 logger = logging.getLogger(__name__)
 
@@ -2898,7 +2899,7 @@ class RedfishClient:
         """
         return self._http_client.get_raw(odata_id)
 
-    def patch(self, odata_id: str, body: dict) -> dict:
+    def patch(self, odata_id: str, body: dict) -> GenericResponse:
         """
         Send a PATCH request to partially update a Redfish resource.
 
@@ -2912,7 +2913,10 @@ class RedfishClient:
             body: A dict containing only the fields to modify
 
         Returns:
-            Raw JSON dict of the BMC response (empty dict ``{}`` on 204 No Content)
+            Metadata-preserving generic response. For compatibility with
+            dictionary-oriented callers, JSON-object responses support
+            mapping access and :meth:`GenericResponse.as_dict`; empty bodies
+            convert to an empty dictionary.
 
         Raises:
             RedfishException: On HTTP errors (412 Precondition Failed, 500, etc.)
@@ -2934,12 +2938,13 @@ class RedfishClient:
                 pass  # proceed with '*' wildcard if GET fails
 
         response = self._http_client.patch_raw(odata_id, body)
+        return GenericResponse.from_response(response)
 
-        if response.status_code == 204 or not response.text.strip():
-            return {}
-        return response.json()
-
-    def post(self, odata_id: str, body: Optional[dict] = None) -> dict:
+    def post(
+        self,
+        odata_id: str,
+        body: Optional[dict] = None,
+    ) -> GenericResponse:
         """
         Send a POST request to create a resource or trigger an action.
 
@@ -2950,7 +2955,10 @@ class RedfishClient:
             body: Optional request body dict
 
         Returns:
-            Raw JSON dict of the BMC response (empty dict ``{}`` on 204 No Content)
+            Metadata-preserving generic response. For compatibility with
+            dictionary-oriented callers, JSON-object responses support
+            mapping access and :meth:`GenericResponse.as_dict`; empty bodies
+            convert to an empty dictionary.
 
         Raises:
             RedfishException: On HTTP errors (400, 500, etc.)
@@ -2971,12 +2979,9 @@ class RedfishClient:
             })
         """
         response = self._http_client.post_raw(odata_id, body)
+        return GenericResponse.from_response(response)
 
-        if response.status_code == 204 or not response.text.strip():
-            return {}
-        return response.json()
-
-    def delete(self, odata_id: str) -> None:
+    def delete(self, odata_id: str) -> GenericResponse:
         """
         Send a DELETE request to remove a Redfish resource.
 
@@ -2985,7 +2990,9 @@ class RedfishClient:
                       (e.g., ``"/redfish/v1/SessionService/Sessions/abc123"``)
 
         Returns:
-            None
+            Metadata-preserving generic response. Empty bodies retain the
+            legacy empty-dictionary compatibility through
+            :meth:`GenericResponse.as_dict`.
 
         Raises:
             RedfishException: On HTTP errors (404, 500, etc.)
@@ -2994,7 +3001,8 @@ class RedfishClient:
 
             client.delete("/redfish/v1/SessionService/Sessions/abc123")
         """
-        self._http_client.delete(odata_id)
+        response = self._http_client.delete_raw(odata_id)
+        return GenericResponse.from_response(response)
 
     # ------------------------------------------------------------------
     # Convenience aggregation method
