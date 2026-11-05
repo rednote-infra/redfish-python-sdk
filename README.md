@@ -108,28 +108,6 @@ migrate to `AccountCreate` or `AccountPatch`. Fields explicitly set to `None`
 in request models are transmitted as JSON `null`; fields not supplied are
 omitted.
 
-## OEM security service compatibility
-
-Use `client.get_https_certificates()` for the standard HTTPS certificate
-collection. The separate legacy `client.get_https_cert()` API supports both
-`SecurityService.Links.HttpsCert` and top-level `SecurityService.HttpsCert`
-links, including the layout observed on ZTE BMCs. Existing `Links.HttpsCert`
-links take precedence. Certificate subject and issuer values retain strings
-for legacy responses and expose typed `CertificateIdentity` objects for
-structured responses (for example, `server_cert.subject.common_name`).
-
-Explicit calls to `get_security_service()` and its certificate/firewall
-helpers prefer advertised OEM links. If no SecurityService link is advertised,
-they probe the selected Manager's `SecurityService` child resource. This does
-not add OEM probes to the standard certificate API or other service helpers.
-Unsupported resources can still raise `RedfishNotFoundError`.
-
-`client.get_firewall_rules()` prefers the existing Manager OEM FirewallRules
-link, then follows `SecurityService.FirewallRules`. Its result supports both
-legacy `members` and inline typed `rules` with `active_strategy`. Inline rule
-fragment identifiers are retained without additional GET requests. These APIs
-only read configuration; they do not import certificates or modify rules.
-
 ## Testing
 
 ```bash
