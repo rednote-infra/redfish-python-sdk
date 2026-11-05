@@ -23,15 +23,15 @@ class RedfishException(Exception):
 class RedfishNotFoundError(RedfishException):
     """Raised when a resource is not found (HTTP 404)."""
 
-    def __init__(self, path: str):
-        super().__init__(404, f"Resource not found: {path}")
+    def __init__(self, path: str, message: str = ""):
+        super().__init__(404, message or f"Resource not found: {path}")
 
 
 class RedfishAuthError(RedfishException):
     """Raised when authentication fails (HTTP 401 / 403)."""
 
-    def __init__(self, status_code: int = 401):
-        super().__init__(status_code, "Authentication failed. Check username and password.")
+    def __init__(self, status_code: int = 401, message: str = ""):
+        super().__init__(status_code, message or "Authentication failed. Check username and password.")
 
 
 class RedfishConnectionError(RedfishException):

@@ -713,14 +713,24 @@ class RedfishHttpClient:
                          str(_redact_for_log(body))[:500])
 
         if code in (401, 403):
-            raise RedfishAuthError(code)
+            raise RedfishAuthError(code, self._downstream_error_message(body))
         if code == 404:
-            raise RedfishNotFoundError(str(_redact_for_log(path)))
+            raise RedfishNotFoundError(str(_redact_for_log(path)), self._downstream_error_message(body))
         raise RedfishException(
             code,
-            f"Request to {_redact_for_log(path)} failed",
+            self._downstream_error_message(body) or f"Request to {_redact_for_log(path)} failed",
             str(_redact_for_log(body)),
         )
+
+    @staticmethod
+    def _downstream_error_message(body: str) -> str:
+        """Preserve a usable message from the standard Redfish error envelope."""
+        try:
+            envelope = RedfishResponse.model_validate_json(body)
+        except ValueError:
+            return ""
+        message = envelope.error and envelope.error.message
+        return message if message and message.strip() else ""
 
     def _parse(
         self,

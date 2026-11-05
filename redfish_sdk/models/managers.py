@@ -4,7 +4,7 @@ Manager (BMC) resource models.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -561,13 +561,31 @@ class SecurityService(Entity):
 
     """
     links: Optional[SecurityServiceLinks] = Field(None, alias="Links")
+    https_cert: Optional[Link] = Field(None, alias="HttpsCert")
+    firewall_rules: Optional[Link] = Field(None, alias="FirewallRules")
+
+
+class CertificateIdentity(BaseModel):
+    """Structured certificate subject or issuer returned by OEM services."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    common_name: Optional[str] = Field(None, alias="CommonName")
+    country: Optional[str] = Field(None, alias="Country")
+    state: Optional[str] = Field(None, alias="State")
+    city: Optional[str] = Field(None, alias="City")
+    organization: Optional[str] = Field(None, alias="Organization")
+    organizational_unit: Optional[str] = Field(None, alias="OrganizationalUnit")
 
 
 class ServerCert(BaseModel):
     """X.509 server certificate details."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
-    subject: Optional[str] = Field(None, alias="Subject")
-    issuer: Optional[str] = Field(None, alias="Issuer")
+    subject: Optional[Union[str, CertificateIdentity]] = Field(None, alias="Subject")
+    issuer: Optional[Union[str, CertificateIdentity]] = Field(None, alias="Issuer")
+    certificate_string: Optional[str] = Field(None, alias="CertificateString", repr=False)
+    certificate_type: Optional[str] = Field(None, alias="CertificateType")
+    issuer_address: Optional[str] = Field(None, alias="IssuerAddress")
+    subject_address: Optional[str] = Field(None, alias="SubjectAddress")
     valid_not_before: Optional[str] = Field(None, alias="ValidNotBefore")
     valid_not_after: Optional[str] = Field(None, alias="ValidNotAfter")
     serial_number: Optional[str] = Field(None, alias="SerialNumber")
@@ -586,7 +604,8 @@ class HttpsCert(Entity):
     """
     HTTPS certificate information for a manager (BMC).
 
-    Discovered via ``SecurityService.Links.HttpsCert``.  Typical endpoint:
+    Discovered via ``SecurityService.Links.HttpsCert`` or its top-level
+    ``HttpsCert`` link. Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/SecurityService/HttpsCert``
 
     This is an OEM fallback; use ``ManagerNetworkProtocol.HTTPS.Certificates``
@@ -602,6 +621,21 @@ class HttpsCert(Entity):
 # FirewallRules (OEM extension — Collection resource)
 # ---------------------------------------------------------------------------
 
+class FirewallRule(BaseModel):
+    """An inline OEM firewall rule; fragment identifiers are not GET targets."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    odata_id: Optional[str] = Field(None, alias="@odata.id")
+    rule_type: Optional[str] = Field(None, alias="RuleType")
+    start_date_time: Optional[str] = Field(None, alias="StartDateTime")
+    end_date_time: Optional[str] = Field(None, alias="EndDateTime")
+    start_ip_address: Optional[str] = Field(None, alias="StartIPAddress")
+    end_ip_address: Optional[str] = Field(None, alias="EndIPAddress")
+    start_mac_address: Optional[str] = Field(None, alias="StartMacAddress")
+    end_mac_address: Optional[str] = Field(None, alias="EndMacAddress")
+    workday_only: Optional[bool] = Field(None, alias="WorkdayOnly")
+
+
 class FirewallRules(Entity):
     """
     Firewall rules collection for a manager (BMC).
@@ -610,14 +644,15 @@ class FirewallRules(Entity):
     ``Oem.{vendor}.FirewallRules``.  Typical endpoint:
     ``/redfish/v1/Managers/{managerId}/FirewallRules``
 
-    This is a Collection resource; members can be accessed individually
-    via their ``@odata.id``.
+    Supports legacy Collection members and inline OEM ``Rules`` arrays.
 
     DMTF Redfish has no generic Manager firewall-rules resource.
 
     """
     members_count: Optional[int] = Field(None, alias="Members@odata.count")
     members: Optional[List[Link]] = Field(None, alias="Members")
+    active_strategy: Optional[str] = Field(None, alias="ActiveStrategy")
+    rules: Optional[List[FirewallRule]] = Field(None, alias="Rules")
 
 
 # ---------------------------------------------------------------------------

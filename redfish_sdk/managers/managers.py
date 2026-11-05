@@ -54,6 +54,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SECURITY_SERVICE_RESOURCE = "SecurityService"
+_HTTPS_CERT_RESOURCE = "HttpsCert"
+_FIREWALL_RULES_RESOURCE = "FirewallRules"
+
 
 class ManagersManager:
     """
@@ -684,7 +688,7 @@ class ManagersManager:
 
     def security_service(self, manager_id: Optional[str] = None) -> SecurityService:
         """
-        Get Security service from OEM links.
+        Get SecurityService via an OEM link or the legacy Manager child URI.
 
         For HTTPS certificates, prefer
         ``ManagerNetworkProtocol.HTTPS.Certificates`` via
@@ -699,9 +703,17 @@ class ManagersManager:
         Raises:
             RedfishNotFoundError: If the manager does not expose SecurityService
         """
-        return self._get_oem_service(
-            manager_id, "security_service", None, SecurityService, "SecurityService"
-        )
+        return self._security_service(self.get(manager_id))
+
+    def _security_service(self, manager: Manager) -> SecurityService:
+        """Follow an advertised link, or probe the explicit legacy API path."""
+        bmc = manager.oem and manager.oem.bmc
+        link = bmc and bmc.security_service
+        path = link and link.odata_id
+        if not path:
+            path = f"{manager.odata_id}/{_SECURITY_SERVICE_RESOURCE}"
+            logger.debug("SecurityService link not advertised; probing legacy resource: %s", path)
+        return self._http.get(path, SecurityService)
 
     def https_cert(self, manager_id: Optional[str] = None) -> HttpsCert:
         """
@@ -711,8 +723,8 @@ class ManagersManager:
         ``ManagerNetworkProtocol.HTTPS.Certificates`` link. This method keeps
         the legacy OEM ``SecurityService.Links.HttpsCert`` fallback available.
 
-        Discovers SecurityService first, then follows its
-        ``Links.HttpsCert`` link.
+        Discovers SecurityService first, then follows ``Links.HttpsCert``
+        or the top-level ``HttpsCert`` link used by some OEM services.
 
         Args:
             manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
@@ -727,17 +739,20 @@ class ManagersManager:
         link = None
         if sec.links and sec.links.https_cert and sec.links.https_cert.odata_id:
             link = sec.links.https_cert.odata_id
+        elif sec.https_cert and sec.https_cert.odata_id:
+            link = sec.https_cert.odata_id
 
         if not link:
+            logger.warning("HttpsCert link not advertised by SecurityService: %s", sec.odata_id)
             raise RedfishNotFoundError(
-                f"{sec.odata_id}/HttpsCert"
+                f"{sec.odata_id}/{_HTTPS_CERT_RESOURCE}"
             )
 
         return self._http.get(link, HttpsCert)
 
     def firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
-        Get Firewall rules collection from OEM links.
+        Get firewall rules from Manager OEM or SecurityService links.
 
         DMTF Redfish has no generic Manager firewall-rules resource; this
         optional helper must not be required from standards-compliant BMCs.
@@ -751,9 +766,18 @@ class ManagersManager:
         Raises:
             RedfishNotFoundError: If the manager does not expose FirewallRules
         """
-        return self._get_oem_service(
-            manager_id, "firewall_rules", None, FirewallRules, "FirewallRules"
-        )
+        manager = self.get(manager_id)
+        bmc = manager.oem and manager.oem.bmc
+        link = bmc and bmc.firewall_rules
+        if link and link.odata_id:
+            return self._http.get(link.odata_id, FirewallRules)
+
+        security = self._security_service(manager)
+        link = security.firewall_rules
+        if not link or not link.odata_id:
+            logger.warning("FirewallRules link not advertised by SecurityService: %s", security.odata_id)
+            raise RedfishNotFoundError(f"{security.odata_id}/{_FIREWALL_RULES_RESOURCE}")
+        return self._http.get(link.odata_id, FirewallRules)
 
     def virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
         """
