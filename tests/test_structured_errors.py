@@ -150,7 +150,7 @@ def test_explicit_restricted_session_retained_for_recovery(monkeypatch, switch_t
         payload = result.json()
         payload["@Message.ExtendedInfo"][0]["Message"] = {"invalid": "object"}
         result._content = json.dumps(payload).encode()
-    monkeypatch.setattr(client._http_client, "post_raw", lambda *a, **kw: result)
+    monkeypatch.setattr(client._http_client._session, "post", Mock(return_value=result))
     delete = Mock(return_value=response(204))
     monkeypatch.setattr(client._http_client._session, "delete", delete)
     try:
@@ -228,3 +228,73 @@ def test_password_message_with_malformed_optional_details(http):
                 "Message": {"invalid": "object"}, "MessageArgs": "invalid"}]}}), PATH)
     assert caught.value.message == "Exact downstream message"
     assert caught.value.account_uri is None
+
+
+@pytest.mark.parametrize("password", ['quote"secret', r"back\slash", "line\nbreak", "unicode-密钥"])
+def test_escaped_password_is_redacted_before_error_log_serialization(http, caplog, password):
+    http._password = password
+    result = response(payload={"error": {"message": f"Rejected credential: {password}"}})
+    with pytest.raises(RedfishException) as caught:
+        http._raise_for_status(result, PATH)
+    record = next(r for r in caplog.records if r.msg.startswith("Request failed:"))
+    logged_body = json.loads(record.args[-1])
+    assert password not in logged_body["error"]["message"]
+    assert "<redacted>" in logged_body["error"]["message"]
+    assert caught.value.body == result.text
+    assert caught.value.message == f"Rejected credential: {password}"
+
+
+def test_explicit_login_uses_attempted_password_and_returned_token_for_display(monkeypatch):
+    attempted = 'new-credential"with\\escapes'
+    token = "newly-issued-restricted-token"
+    message = f"Change password {attempted}; session {token} is restricted."
+    client = sdk.RedfishClient("example.test", "old-user", "old-password", verify_ssl=True)
+    root = RootService.model_construct(links=RootLinks.model_construct(
+        sessions=Link.model_construct(odata_id=SESSIONS)))
+    monkeypatch.setattr(client, "_get_root", lambda: root)
+    result = response(201, {"@Message.ExtendedInfo": [{
+        "MessageId": "Base.1.18.PasswordChangeRequired", "Message": message, "MessageArgs": [ACCOUNT],
+    }]}, {"X-Auth-Token": token, "Location": f"{SESSIONS}/Example"})
+    monkeypatch.setattr(client._http_client._session, "post", Mock(return_value=result))
+    monkeypatch.setattr(client._http_client._session, "delete", Mock(return_value=response(204)))
+    with client, pytest.raises(sdk.RedfishPasswordChangeRequiredError) as caught:
+        client.create_session("new-user", attempted, switch_to_token_auth=True)
+    error = caught.value
+    for display in (str(error), repr(error), str(error.args)):
+        assert attempted not in display and repr(attempted)[1:-1] not in display
+        assert token not in display
+    assert error.message == message and error.body == result.text
+
+
+class BrokenBodyResponse(requests.Response):
+    def __init__(self, status, failure):
+        super().__init__()
+        self.status_code = status
+        self.failure = failure
+        self.request = requests.Request("GET", f"https://example.test{PATH}").prepare()
+
+    @property
+    def text(self):
+        raise self.failure("Error body could not be read")
+
+
+@pytest.mark.parametrize("failure", [requests.exceptions.ChunkedEncodingError, requests.exceptions.ContentDecodingError])
+@pytest.mark.parametrize("status", [401, 404, 500])
+def test_unreadable_body_preserves_http_failure(http, failure, status):
+    with pytest.raises(RedfishException) as caught:
+        http._raise_for_status(BrokenBodyResponse(status, failure), PATH)
+    assert caught.value.status_code == status
+    assert caught.value.body == "" and caught.value.message
+
+
+def test_unreadable_401_body_still_allows_session_refresh(http, monkeypatch):
+    http.set_auth_token("expired-token")
+    monkeypatch.setattr(http._session, "get", Mock(side_effect=[
+        BrokenBodyResponse(401, requests.exceptions.ChunkedEncodingError), response(200, {"ok": True}),
+    ]))
+    login = Mock(return_value=response(201, headers={
+        "X-Auth-Token": "refreshed-token", "Location": f"{SESSIONS}/Example",
+    }))
+    monkeypatch.setattr(http._external_session, "post", login)
+    assert http.get_raw(PATH) == {"ok": True}
+    assert login.call_count == 1

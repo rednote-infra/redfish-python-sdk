@@ -17,24 +17,27 @@ _SENSITIVE_LOG_SUFFIXES = (
 )
 
 
-def redact_for_log(value: Any) -> Any:
+def redact_for_log(value: Any, secrets=()) -> Any:
     """Return a log-safe copy of request or response data."""
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
             normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
             is_sensitive = normalized in _SENSITIVE_LOG_KEYS or normalized.endswith(_SENSITIVE_LOG_SUFFIXES)
-            redacted[key] = _REDACTED if is_sensitive else redact_for_log(item)
+            redacted[key] = _REDACTED if is_sensitive else redact_for_log(item, secrets)
         return redacted
     if isinstance(value, (list, tuple)):
-        return [redact_for_log(item) for item in value]
+        return [redact_for_log(item, secrets) for item in value]
     if isinstance(value, str):
+        # Redact decoded strings before JSON serialization can escape secrets.
+        for secret in secrets:
+            value = value.replace(secret, _REDACTED)
         try:
             parsed_json = json.loads(value)
         except (TypeError, ValueError):
             parsed_json = None
         if isinstance(parsed_json, (dict, list)):
-            return json.dumps(redact_for_log(parsed_json))
+            return json.dumps(redact_for_log(parsed_json, secrets))
         if "://" in value or (value.startswith("/") and "?" in value):
             parts = urlsplit(value)
             query = urlencode([(name, _REDACTED) for name, _ in parse_qsl(parts.query, keep_blank_values=True)])
@@ -52,10 +55,9 @@ def redact_for_log(value: Any) -> Any:
 def redact_diagnostic(value: Any, secrets=()) -> str:
     """Also remove known credentials from free-text diagnostic output."""
     try:
-        rendered = str(redact_for_log(value))
+        ordered_secrets = sorted((s for s in secrets if s), key=len, reverse=True)
+        rendered = str(redact_for_log(value, ordered_secrets))
     except ValueError:
         # An invalid URL in a diagnostic must not mask the HTTP failure.
         rendered = _REDACTED
-    for secret in sorted((s for s in secrets if s), key=len, reverse=True):
-        rendered = rendered.replace(secret, _REDACTED)
     return rendered

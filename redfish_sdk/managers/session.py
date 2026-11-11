@@ -103,7 +103,7 @@ class SessionServiceManager:
 
         response = self._http.post_raw(sessions_url, body=body)
 
-        restriction = self._http._response_error(response, sessions_url)
+        restriction = self._http._response_error(response, sessions_url, secrets=(password,))
         if restriction:
             token = response.headers.get("X-Auth-Token")
             if token:
