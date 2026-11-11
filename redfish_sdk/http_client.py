@@ -660,24 +660,31 @@ class RedfishHttpClient:
         failure = self._response_error(response, path)
         if code == HTTPStatus.NOT_FOUND:
             logger.debug("Request returned 404 (not found): %s %s",
-                         failure.method, redact_diagnostic(path, self._diagnostic_secrets()))
+                         failure.method, redact_diagnostic(path, self._diagnostic_secrets(response)))
         else:
             logger.error("Request failed: %s %s -> HTTP %d, body: %s",
-                         failure.method, redact_diagnostic(path, self._diagnostic_secrets()), code,
-                         redact_diagnostic(failure.body, self._diagnostic_secrets())[:500])
+                         failure.method, redact_diagnostic(path, self._diagnostic_secrets(response)), code,
+                         redact_diagnostic(failure.body, self._diagnostic_secrets(response))[:500])
         raise failure
 
-    def _diagnostic_secrets(self):
+    def _diagnostic_secrets(self, response: Optional[requests.Response] = None):
         """Known credentials may be echoed in otherwise unstructured messages."""
-        return (self._password, self._session_key, self._basic_auth)
+        token = response.headers.get("X-Auth-Token") if response is not None else None
+        return (self._password, self._session_key, self._basic_auth, token)
 
-    def _response_error(self, response: requests.Response, path: str) -> Optional[RedfishException]:
+    def _response_error(self, response: requests.Response, path: str, *, secrets=()) -> Optional[RedfishException]:
         """Decode the standard error envelope without altering its raw data.
 
         Successful session responses can carry PasswordChangeRequired in their
-        top-level extended info. Callers install the restricted token first.
+        top-level extended info. Explicit logins supply attempted credentials
+        before installing the restricted token; response tokens are also redacted.
         """
-        body = response.text
+        try:
+            body = response.text
+        except requests.exceptions.RequestException:
+            # Streaming/decoding failures must not replace the HTTP status or
+            # block the normal 401 session-refresh path.
+            body = ""
         try:
             envelope = RedfishErrorResponse.model_validate_json(body)
         except ValueError:
@@ -695,7 +702,7 @@ class RedfishHttpClient:
             "retry_after": response.headers.get("Retry-After"),
             "request_id": response.headers.get("X-Request-ID"),
             "method": getattr(response.request, "method", ""), "path": path,
-            "secrets": self._diagnostic_secrets(),
+            "secrets": self._diagnostic_secrets(response) + tuple(secrets),
         }
         identifiers = [(error.code, None)] if error else []
         identifiers.extend((info.message_id, info.message_args) for info in messages)
