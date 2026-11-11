@@ -4,13 +4,13 @@ Systems resource models.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from .actions import ActionDescriptor
 from .check import Field
-from .common import Entity, IdentifiedEntity, Link, Status
+from .common import Entity, IdentifiedEntity, Link, SettingsApplyTime, Status
 from .gpu import AccelerationFunction, Gpu, GpuOEM, PCIeFunction  # noqa: F401
 from .memory import Memory, MemoryLocation  # noqa: F401
 from .oem import Oem
@@ -315,3 +315,11 @@ class Bios(Entity):
     """
     bios_version: Optional[str] = Field(None, alias="BiosVersion")
     attributes: Optional[Any] = Field(None, alias="Attributes")
+
+
+class BiosPatch(BaseModel):
+    """Writable BIOS properties only; never reflect response fields in PATCH."""
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    attributes: Dict[str, Any] = Field(alias="Attributes")
+    settings_apply_time: Optional[SettingsApplyTime] = Field(None, alias="@Redfish.SettingsApplyTime")

@@ -79,6 +79,14 @@ from .processor import ProcessorId  # noqa: F401
 from .registry import MessageRegistry, Registry, RegistryMessage, ResolvedMessage
 from .root import ProtocolFeaturesSupported, RootService
 from .session import Session, SessionService
+from .settings import (
+    ApplyTime,
+    MaintenanceWindow,
+    OperationApplyTime,
+    OperationApplyTimeSupport,
+    Settings,
+    SettingsApplyTime,
+)
 from .storage import CacheSummary, Identifier, StorageController  # noqa: F401
 from .system_resources import MemoryChunks, MemoryDomain, MemoryMetrics, NetworkInterface, NetworkPort, SecureBoot
 from .systems import Bios, Boot, Gpu, GpuOEM, Memory, Processor, Storage, System, Volume
@@ -88,6 +96,7 @@ from .thermal import HistoricalInletTempEntry, InletHistoryTemperature, Redundan
 from .update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
 
 __all__ = [
+    "ApplyTime", "MaintenanceWindow", "OperationApplyTime", "OperationApplyTimeSupport", "Settings", "SettingsApplyTime",
     "Link", "Entity", "Collection", "Condition", "Status", "RedfishResponse", "RedfishError",
     "RootService", "ProtocolFeaturesSupported",
     "TelemetryService", "MetricDefinition", "MetricReportDefinition", "MetricReport", "Triggers",
