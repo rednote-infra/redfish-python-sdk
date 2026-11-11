@@ -122,9 +122,10 @@ class ChassisManager:
             OEM ``SpeedRatio`` nor a usable ``Reading`` / ``MaxReadingRange``
             pair.
         """
-        from .oem_extractors import OemExtractorRegistry, VendorDetector
-        vendor = VendorDetector.detect(self._client)
-        return OemExtractorRegistry.get(vendor).get_fan_speed_ratio(fan)
+        from ..oem import OemCategory
+        from .oem_extractors import VendorDetector
+        vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
+        return self._client.oem_providers.get(OemCategory.EXTRACTOR, vendor).get_fan_speed_ratio(fan)
 
     def get_drive_temperature_celsius(self, drive) -> Optional[float]:
         """
@@ -145,9 +146,10 @@ class ChassisManager:
             Drive temperature in Celsius, or ``None`` when the BMC does not
             expose a drive temperature via any known OEM location.
         """
-        from .oem_extractors import OemExtractorRegistry, VendorDetector
-        vendor = VendorDetector.detect(self._client)
-        return OemExtractorRegistry.get(vendor).get_drive_temperature_celsius(drive)
+        from ..oem import OemCategory
+        from .oem_extractors import VendorDetector
+        vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
+        return self._client.oem_providers.get(OemCategory.EXTRACTOR, vendor).get_drive_temperature_celsius(drive)
 
     def inlet_history_temperature(self, chassis_id: Optional[str] = None) -> Optional[InletHistoryTemperature]:
         """

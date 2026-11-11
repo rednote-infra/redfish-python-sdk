@@ -210,13 +210,13 @@ class ManagersManager:
             RedfishValidationError: When the log service does not expose the
                 ``#LogService.CollectDiagnosticData`` action.
         """
+        from ..oem import OemCategory
         from .log_collect_strategies import (
-            LogCollectStrategyRegistry,
             VendorDetector,
         )
 
-        vendor = VendorDetector.detect(self._client)
-        strategy = LogCollectStrategyRegistry.get(vendor)
+        vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
+        strategy = self._client.oem_providers.get(OemCategory.LOG_COLLECT, vendor)
         odata_id = strategy.resolve_log_services_odata_id(
             self._client, manager_id
         )
@@ -257,8 +257,8 @@ class ManagersManager:
             RedfishException: On download HTTP errors.
         """
         from ..models.logs import LogEntry
+        from ..oem import OemCategory
         from .log_collect_strategies import (
-            LogCollectStrategyRegistry,
             VendorDetector,
         )
 
@@ -275,8 +275,8 @@ class ManagersManager:
         # A Task -> let the vendor strategy decide how to fetch the bundle
         # (standard AdditionalDataURI GET, or an OEM POST download).
         if isinstance(task_or_entry, Task):
-            vendor = VendorDetector.detect(self._client)
-            strategy = LogCollectStrategyRegistry.get(vendor)
+            vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
+            strategy = self._client.oem_providers.get(OemCategory.LOG_COLLECT, vendor)
             return strategy.download_artifact(self._client, task_or_entry, output_path)
 
         # Duck-typed fallback: object exposing additional_data_uri.
@@ -345,13 +345,13 @@ class ManagersManager:
         import time as _time
 
         from ..exceptions import LogCollectFailedError
+        from ..oem import OemCategory
         from .log_collect_strategies import (
-            LogCollectStrategyRegistry,
             VendorDetector,
         )
 
-        vendor = VendorDetector.detect(self._client)
-        strategy = LogCollectStrategyRegistry.get(vendor)
+        vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
+        strategy = self._client.oem_providers.get(OemCategory.LOG_COLLECT, vendor)
 
         # --- Step 1: reuse a prior collection when available -------------
         if reuse_existing:

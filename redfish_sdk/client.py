@@ -123,6 +123,7 @@ from .models.update import (
     UpdateService,
     UpdateServiceCapabilities,
 )
+from .oem import OemProviderRegistry
 from .response import GenericResponse
 
 logger = logging.getLogger(__name__)
@@ -202,6 +203,8 @@ class RedfishClient:
         auth_mode: AuthenticationMode | str = AuthenticationMode.BASIC,
         session_key: Optional[str] = None,
         session_location: Optional[str] = None,
+        oem_providers: Optional[OemProviderRegistry] = None,
+        oem_vendor: Optional[str] = None,
     ):
         """
         Initialize the Redfish Client.
@@ -238,7 +241,15 @@ class RedfishClient:
                 accepted for compatibility.
             session_key: Optional existing Redfish session token.
             session_location: Optional URI for the existing session resource.
+            oem_providers: Client-scoped optional provider discovery/registrations.
+            oem_vendor: Explicit vendor key for OEM dispatch, including new vendors.
         """
+        if oem_providers is not None and not isinstance(oem_providers, OemProviderRegistry):
+            raise RedfishValidationError("oem_providers must be an OemProviderRegistry")
+        if oem_vendor is not None and (not isinstance(oem_vendor, str) or not oem_vendor.strip()):
+            raise RedfishValidationError("oem_vendor must be a non-empty string")
+        self.oem_providers = oem_providers if oem_providers is not None else OemProviderRegistry()
+        self.oem_vendor = oem_vendor.strip().lower() if oem_vendor is not None else None
         self._http_client = RedfishHttpClient(
             host=host,
             username=username,

@@ -11,10 +11,8 @@ Tests cover:
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
-
-import pytest
+from typing import Any, Dict
+from unittest.mock import MagicMock
 
 from redfish_sdk.managers.update_strategies import (
     GenericUpdateStrategy,
@@ -29,7 +27,6 @@ from redfish_sdk.managers.update_strategies.xfusion import XFusionUpdateStrategy
 from redfish_sdk.managers.update_strategies.zte import ZteUpdateStrategy
 from redfish_sdk.models.common import RedfishResponse
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -37,6 +34,9 @@ from redfish_sdk.models.common import RedfishResponse
 def _make_mock_client(manufacturer: str = "Generic") -> MagicMock:
     """Create a mock RedfishClient with configurable manufacturer."""
     client = MagicMock()
+    from redfish_sdk.oem import OemProviderRegistry
+    client.oem_providers = OemProviderRegistry(discover=False)
+    client.oem_vendor = None
 
     # Mock _get_update_service
     update_svc = MagicMock()
