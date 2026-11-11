@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
+from .attribute_registry import ATTRIBUTE_REGISTRY_TYPE
 from .common import Entity
 
 
@@ -77,6 +78,15 @@ class MessageRegistry(Entity):
     referenced_registry: Optional[str] = Field(None, alias="ReferencedRegistry")
     version_added: Optional[str] = Field(None, alias="VersionAdded")
     oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_attribute_registry(cls, value):
+        if isinstance(value, dict) and (
+            "RegistryEntries" in value or str(value.get("@odata.type", "")).startswith(f"#{ATTRIBUTE_REGISTRY_TYPE}.")
+        ):
+            raise ValueError("AttributeRegistry documents are not MessageRegistry documents")
+        return value
 
 
 class ResolvedMessage(BaseModel):

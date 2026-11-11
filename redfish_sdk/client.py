@@ -55,6 +55,7 @@ from .exceptions import (
 )
 from .http_client import RedfishHttpClient
 from .models.account import Account, AccountCreate, AccountPatch, AccountService, Role
+from .models.attribute_registry import AttributeRegistry
 from .models.chassis import Chassis
 from .models.common import Collection, Entity, Link, RedfishResponse
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
@@ -556,6 +557,11 @@ class RedfishClient:
     def _registries(self):
         from .managers.registries import RegistriesManager
         return RegistriesManager(self)
+
+    @cached_property
+    def _attribute_registries(self):
+        from .managers.attribute_registries import AttributeRegistriesManager
+        return AttributeRegistriesManager(self)
 
     @cached_property
     def _tasks(self):
@@ -2409,8 +2415,39 @@ class RedfishClient:
         return self._registries.resolve(message_id, message_args, language)
 
     def clear_registry_cache(self) -> None:
-        """Clear cached message-registry documents."""
+        """Clear cached message and attribute registry documents."""
         self._registries.clear_cache()
+        self._attribute_registries.clear_cache()
+
+    def get_attribute_registry(self, registry_id: str, language: Optional[str] = None) -> AttributeRegistry:
+        """Load a typed AttributeRegistry using advertised RegistryFile locations.
+
+        Full versions are pinned; Major.Minor picks highest matching errata.
+        Language preference is exact, primary, English, then lexical location.
+        Attribute and message document caches are separate and each bounded.
+        """
+        return self._attribute_registries.get(registry_id, language)
+
+    def get_bios_attribute_registry(
+        self, system_id: Optional[str] = None, language: Optional[str] = None,
+    ) -> AttributeRegistry:
+        """Resolve the active BIOS resource's advertised AttributeRegistry."""
+        bios = self.get_bios(system_id)
+        if not bios.attribute_registry:
+            from .exceptions import RegistryResolutionError
+            raise RegistryResolutionError("BIOS does not advertise an AttributeRegistry")
+        return self.get_attribute_registry(bios.attribute_registry, language)
+
+    def validate_bios_attributes(
+        self, attributes: Dict[str, Any], system_id: Optional[str] = None, language: Optional[str] = None,
+    ) -> None:
+        """Preflight static BIOS types, bounds, enumerations, and mutability.
+
+        This read-only opt-in does not change update_bios behavior. Dynamic
+        dependencies and ValueExpression remain available in the typed registry
+        but are not evaluated here; the BMC remains the final authority.
+        """
+        self.get_bios_attribute_registry(system_id, language).validate_attribute_values(attributes)
 
     # ==================================================================
     # Component query methods — Tasks

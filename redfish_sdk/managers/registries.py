@@ -274,7 +274,7 @@ class RegistriesManager:
             + "; ".join(failures)
         )
 
-    def _fetch_document(self, source: str) -> MessageRegistry:
+    def _fetch_document(self, source: str, model_class=MessageRegistry):
         parsed = urlsplit(source)
         if not parsed.scheme or self._is_bmc_url(parsed):
             path = source
@@ -282,7 +282,7 @@ class RegistriesManager:
                 path = parsed.path or "/"
                 if parsed.query:
                     path = f"{path}?{parsed.query}"
-            return self._http.get(path, MessageRegistry)
+            return self._http.get(path, model_class)
 
         # Never reuse the authenticated BMC session for a publication host.
         session = requests.Session()
@@ -296,7 +296,7 @@ class RegistriesManager:
                 timeout=(self._http.connect_timeout, self._http.read_timeout),
             )
             response.raise_for_status()
-            return MessageRegistry.model_validate(response.json())
+            return model_class.model_validate(response.json())
         finally:
             session.close()
 

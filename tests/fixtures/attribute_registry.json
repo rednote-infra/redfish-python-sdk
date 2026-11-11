@@ -1,0 +1,26 @@
+{
+  "@odata.type": "#AttributeRegistry.v1_5_1.AttributeRegistry",
+  "Id": "ExampleBios.1.2.0", "Name": "Example BIOS attributes",
+  "RegistryVersion": "1.2.0", "Language": "en", "OwningEntity": "Example",
+  "FutureMetadata": {"Revision": 7},
+  "RegistryEntries": {
+    "Attributes": [
+      {"AttributeName": "Mode", "Type": "Enumeration", "DisplayName": "Boot mode",
+       "DefaultValue": "UEFI", "ResetRequired": true, "ReadOnly": false,
+       "Value": [{"ValueName": "UEFI", "ValueDisplayName": "UEFI mode"}, {"ValueName": "Legacy"}],
+       "FutureConstraint": {"Example": true}},
+      {"AttributeName": "Count", "Type": "Integer", "DefaultValue": 2, "LowerBound": 2, "UpperBound": 8, "ScalarIncrement": 2},
+      {"AttributeName": "Enabled", "Type": "Boolean", "DefaultValue": false},
+      {"AttributeName": "Label", "Type": "String", "MinLength": 2, "MaxLength": 8},
+      {"AttributeName": "Locked", "Type": "String", "ReadOnly": true},
+      {"AttributeName": "Password", "Type": "Password", "WriteOnly": true, "MinLength": 4}
+    ],
+    "Menus": [{"MenuName": "Boot", "DisplayName": "Boot settings", "MenuPath": "./", "FutureMenu": 1}],
+    "Dependencies": [{"DependencyFor": "Mode", "Type": "Map", "Dependency": {
+      "MapFrom": [{"MapFromAttribute": "Enabled", "MapFromProperty": "CurrentValue", "MapFromCondition": "EQU",
+                   "MapFromValue": false, "MapTerms": "AND", "FutureTerm": 1}],
+      "MapToAttribute": "Mode", "MapToProperty": "ReadOnly", "MapToValue": true,
+      "FutureMap": {"Example": true}
+    }}]
+  }
+}

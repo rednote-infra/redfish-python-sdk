@@ -46,6 +46,17 @@ from .exceptions import (
     RedfishValidationError,
     RegistryResolutionError,
 )
+from .models.attribute_registry import (
+    AttributeDefinition,
+    AttributeDependency,
+    AttributeDependencyMap,
+    AttributeMapFrom,
+    AttributeMenu,
+    AttributeRegistry,
+    AttributeRegistryEntries,
+    AttributeType,
+    AttributeValue,
+)
 from .models.common import Condition
 from .models.composition import CompositionService, ResourceBlock, ResourceZone
 from .models.cooling import Fan as StandaloneFan
@@ -133,6 +144,8 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "AttributeRegistry", "AttributeRegistryEntries", "AttributeDefinition", "AttributeType", "AttributeValue",
+    "AttributeMenu", "AttributeDependency", "AttributeDependencyMap", "AttributeMapFrom",
     "ApplyTime", "MaintenanceWindow", "OperationApplyTime", "OperationApplyTimeSupport", "Settings", "SettingsApplyTime",
     "AuthenticationMode",
     "RetryPolicy",
