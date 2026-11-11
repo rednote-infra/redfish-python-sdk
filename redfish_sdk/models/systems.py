@@ -314,6 +314,7 @@ class Bios(Entity):
     Endpoint: /redfish/v1/Systems/{systemId}/Bios
     """
     bios_version: Optional[str] = Field(None, alias="BiosVersion")
+    attribute_registry: Optional[str] = Field(None, alias="AttributeRegistry")
     attributes: Optional[Any] = Field(None, alias="Attributes")
 
 

@@ -8,6 +8,17 @@ from .account import (
     ExternalAccountProvider,
     Role,
 )
+from .attribute_registry import (
+    AttributeDefinition,
+    AttributeDependency,
+    AttributeDependencyMap,
+    AttributeMapFrom,
+    AttributeMenu,
+    AttributeRegistry,
+    AttributeRegistryEntries,
+    AttributeType,
+    AttributeValue,
+)
 from .chassis import Chassis, Drive, Fan, NetworkAdapter, PCIeDevice, Power, PowerSupply, Temperature, Thermal
 from .common import Collection, Condition, Entity, Link, RedfishError, RedfishResponse, Status
 from .composition import CompositionService, ResourceBlock, ResourceZone
@@ -96,6 +107,8 @@ from .thermal import HistoricalInletTempEntry, InletHistoryTemperature, Redundan
 from .update import ClientCertificate, FirmwareInventory, FirmwareUpdateResponse, UpdateService
 
 __all__ = [
+    "AttributeRegistry", "AttributeRegistryEntries", "AttributeDefinition", "AttributeType", "AttributeValue",
+    "AttributeMenu", "AttributeDependency", "AttributeDependencyMap", "AttributeMapFrom",
     "ApplyTime", "MaintenanceWindow", "OperationApplyTime", "OperationApplyTimeSupport", "Settings", "SettingsApplyTime",
     "Link", "Entity", "Collection", "Condition", "Status", "RedfishResponse", "RedfishError",
     "RootService", "ProtocolFeaturesSupported",
