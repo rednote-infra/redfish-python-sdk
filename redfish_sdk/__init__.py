@@ -89,6 +89,14 @@ from .models.policy import (
 from .models.power import PowerSubsystem, PowerSupply, PowerSupplyMetrics
 from .models.registry import MessageRegistry, RegistryMessage, ResolvedMessage
 from .models.resource_key import RedfishResource
+from .models.settings import (
+    ApplyTime,
+    MaintenanceWindow,
+    OperationApplyTime,
+    OperationApplyTimeSupport,
+    Settings,
+    SettingsApplyTime,
+)
 from .models.system_resources import (
     MemoryChunks,
     MemoryDomain,
@@ -125,6 +133,7 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "ApplyTime", "MaintenanceWindow", "OperationApplyTime", "OperationApplyTimeSupport", "Settings", "SettingsApplyTime",
     "AuthenticationMode",
     "RetryPolicy",
     "GenericResponse",

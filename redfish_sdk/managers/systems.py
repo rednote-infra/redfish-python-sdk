@@ -17,18 +17,22 @@ Provides access to:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List, Optional, Union
+import re
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from pydantic import ValidationError
 
 from ..exceptions import RedfishException, RedfishValidationError
 from ..models.actions import ActionInfo, ActionMap
 from ..models.chassis import PCIeDevice
+from ..models.common import ApplyTime, MaintenanceWindow, RedfishResponse, SettingsApplyTime
 from ..models.drive import Drive
 from ..models.fru import Fru
 from ..models.logs import Log, LogEntry
 from ..models.systems import (
     Bios,
+    BiosPatch,
     BootOption,
     BootSetting,
     Gpu,
@@ -52,6 +56,8 @@ if TYPE_CHECKING:
     from ..client import RedfishClient
 
 logger = logging.getLogger(__name__)
+
+_RFC3339_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
 
 # Boot source override constants
 BOOT_OVERRIDE_ENABLED_ONCE = "Once"
@@ -168,6 +174,72 @@ class SystemsManager:
         system = self.get(system_id)
         path = system.bios and system.bios.odata_id
         return self._http.get(path or f"{system.odata_id}/Bios", Bios)
+
+    def bios_settings(self, system_id: Optional[str] = None) -> Bios:
+        """Read pending BIOS values from the advertised SettingsObject URI."""
+        return self._bios_settings_object(self.bios(system_id))
+
+    def _bios_settings_object(self, active: Bios) -> Bios:
+        reference = active.settings and active.settings.settings_object
+        if not reference or not reference.odata_id:
+            raise RedfishValidationError("BIOS does not advertise a SettingsObject")
+        return self._http.get(reference.odata_id, Bios)
+
+    def update_bios(
+        self, attributes: Dict[str, Any], system_id: Optional[str] = None, *,
+        apply_time: Optional[ApplyTime] = None,
+        maintenance_window: Optional[MaintenanceWindow] = None,
+    ) -> RedfishResponse:
+        """PATCH pending BIOS attributes using its freshly fetched ETag.
+
+        An explicit schedule requires advertised support. Window modes require
+        a timezone-qualified start and duration. Omitting apply_time leaves the
+        server's schedule unchanged. The client initiates no reset, though the
+        server may reset for Immediate/window modes. Missing ETags fail closed;
+        a 412 is propagated without replaying the write.
+        """
+        if not isinstance(attributes, dict) or not attributes or not all(isinstance(k, str) for k in attributes):
+            raise RedfishValidationError("BIOS attributes must be a non-empty dictionary with string keys")
+        active = self.bios(system_id)
+        pending = self._bios_settings_object(active)
+        request = BiosPatch(attributes=attributes)
+        if apply_time is not None:
+            try:
+                mode = ApplyTime(apply_time)
+            except (TypeError, ValueError) as exc:
+                raise RedfishValidationError("Invalid settings apply time") from exc
+            capabilities = []
+            if active.settings.supported_apply_times is not None:
+                capabilities.append(active.settings.supported_apply_times)
+            if pending.settings_apply_time and pending.settings_apply_time.apply_time_allowable_values is not None:
+                capabilities.append(pending.settings_apply_time.apply_time_allowable_values)
+            if not capabilities or any(mode not in values for values in capabilities):
+                raise RedfishValidationError(f"BIOS does not advertise support for apply time {mode.value}")
+            window_mode = mode in (ApplyTime.AT_MAINTENANCE_WINDOW_START, ApplyTime.IN_MAINTENANCE_WINDOW_ON_RESET)
+            if window_mode != (maintenance_window is not None):
+                raise RedfishValidationError("Maintenance windows are required only for maintenance-window apply times")
+            schedule = SettingsApplyTime(apply_time=mode)
+            if maintenance_window is not None:
+                if not isinstance(maintenance_window, MaintenanceWindow):
+                    raise RedfishValidationError("maintenance_window must be a MaintenanceWindow model")
+                try:
+                    if not _RFC3339_TIMESTAMP.fullmatch(maintenance_window.maintenance_window_start_time):
+                        raise ValueError("RFC 3339 timestamp required")
+                    start = datetime.fromisoformat(maintenance_window.maintenance_window_start_time.replace("Z", "+00:00"))
+                    if start.tzinfo is None or start.utcoffset() is None:
+                        raise ValueError("Timezone required")
+                except ValueError as exc:
+                    raise RedfishValidationError("Maintenance window start must be an ISO 8601 timestamp with timezone") from exc
+                schedule.maintenance_window_start_time = maintenance_window.maintenance_window_start_time
+                schedule.maintenance_window_duration_in_seconds = maintenance_window.maintenance_window_duration_in_seconds
+            request.settings_apply_time = schedule
+        elif maintenance_window is not None:
+            raise RedfishValidationError("A maintenance window requires an explicit apply time")
+
+        if not pending.odata_etag or not pending.odata_etag.strip() or pending.odata_etag.strip() == "*":
+            raise RedfishValidationError("SettingsObject has no usable current ETag; refusing an unprotected update")
+        path = active.settings.settings_object.odata_id
+        return self._http.patch(path, RedfishResponse, request, extra_headers={"If-Match": pending.odata_etag})
 
     def log_services(self, system_id: Optional[str] = None) -> List[Log]:
         """

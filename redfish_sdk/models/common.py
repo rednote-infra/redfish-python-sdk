@@ -3,6 +3,7 @@ Common base models for Redfish resources.
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator, model_validator
@@ -68,6 +69,72 @@ class Link(BaseModel):
         return f"{self.__class__.__name__}(odata_id={self.odata_id!r})"
 
 
+class ApplyTime(str, Enum):
+    """Standard apply times for pending settings (not create/delete actions)."""
+    IMMEDIATE = "Immediate"
+    ON_RESET = "OnReset"
+    AT_MAINTENANCE_WINDOW_START = "AtMaintenanceWindowStart"
+    IN_MAINTENANCE_WINDOW_ON_RESET = "InMaintenanceWindowOnReset"
+
+
+class OperationApplyTime(str, Enum):
+    """Standard apply times for create, delete, and action operations."""
+    IMMEDIATE = "Immediate"
+    ON_RESET = "OnReset"
+    AT_MAINTENANCE_WINDOW_START = "AtMaintenanceWindowStart"
+    IN_MAINTENANCE_WINDOW_ON_RESET = "InMaintenanceWindowOnReset"
+    ON_START_UPDATE_REQUEST = "OnStartUpdateRequest"
+    ON_TARGET_RESET = "OnTargetReset"
+
+
+class MaintenanceWindow(BaseModel):
+    """Standard maintenance-window assignment; timestamps retain wire format."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    maintenance_window_start_time: str = Field(alias="MaintenanceWindowStartTime")
+    maintenance_window_duration_in_seconds: int = Field(alias="MaintenanceWindowDurationInSeconds", ge=0, strict=True)
+
+
+class SettingsApplyTime(BaseModel):
+    """Preferred settings schedule; unknown response enums remain readable."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    apply_time: Optional[Union[ApplyTime, str]] = Field(None, alias="ApplyTime")
+    apply_time_allowable_values: Optional[List[str]] = Field(None, alias="ApplyTime@Redfish.AllowableValues")
+    maintenance_window_start_time: Optional[str] = Field(None, alias="MaintenanceWindowStartTime")
+    maintenance_window_duration_in_seconds: Optional[int] = Field(
+        None, alias="MaintenanceWindowDurationInSeconds", ge=0, strict=True,
+    )
+
+
+class OperationApplyTimeSupport(BaseModel):
+    """Advertised operation scheduling capability and governing window link."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    supported_values: Optional[List[str]] = Field(None, alias="SupportedValues")
+    maintenance_window_resource: Optional[Link] = Field(None, alias="MaintenanceWindowResource")
+    maintenance_window_start_time: Optional[str] = Field(None, alias="MaintenanceWindowStartTime")
+    maintenance_window_duration_in_seconds: Optional[int] = Field(
+        None, alias="MaintenanceWindowDurationInSeconds", ge=0, strict=True,
+    )
+
+
+class Settings(BaseModel):
+    """Pending-resource discovery and results of the last settings application.
+
+    ETag describes the active resource after settings were last applied, not
+    the current concurrency validator of SettingsObject. Fetch that object.
+    """
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    settings_object: Optional[Link] = Field(None, alias="SettingsObject")
+    etag: Optional[str] = Field(None, alias="ETag")
+    supported_apply_times: Optional[List[str]] = Field(None, alias="SupportedApplyTimes")
+    maintenance_window_resource: Optional[Link] = Field(None, alias="MaintenanceWindowResource")
+    time: Optional[str] = Field(None, alias="Time")
+    messages: Optional[List[ExtendedInfo]] = Field(None, alias="Messages")
+
+
 class Entity(Link):
     """
     Entity is the base class for all Redfish resources.
@@ -84,6 +151,13 @@ class Entity(Link):
     extended_info: Optional[List[ExtendedInfo]] = Field(
         None, alias="@Message.ExtendedInfo"
     )
+    settings: Optional[Settings] = Field(None, alias="@Redfish.Settings")
+    settings_apply_time: Optional[SettingsApplyTime] = Field(None, alias="@Redfish.SettingsApplyTime")
+    operation_apply_time: Optional[Union[OperationApplyTime, str]] = Field(None, alias="@Redfish.OperationApplyTime")
+    operation_apply_time_support: Optional[OperationApplyTimeSupport] = Field(
+        None, alias="@Redfish.OperationApplyTimeSupport",
+    )
+    maintenance_window: Optional[MaintenanceWindow] = Field(None, alias="@Redfish.MaintenanceWindow")
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r}, name={self.name!r})"

@@ -784,8 +784,8 @@ class RedfishHttpClient:
         result = self._parse(response, model_class, path)
 
         # Store etag on the model itself if it's an Entity
-        if hasattr(result, "odata_etag") and not result.odata_etag:
-            etag = self._last_etag.get(path)
+        if hasattr(result, "odata_etag"):
+            etag = response.headers.get("ETag")
             if etag:
                 result.odata_etag = etag
 

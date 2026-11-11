@@ -100,6 +100,7 @@ from .models.registry import Registry, ResolvedMessage
 from .models.resource_key import RedfishResource
 from .models.root import RootService
 from .models.session import Session, SessionService
+from .models.settings import ApplyTime, MaintenanceWindow
 from .models.system_resources import (
     MemoryChunks,
     MemoryDomain,
@@ -1139,6 +1140,28 @@ class RedfishClient:
             Bios resource
         """
         return self._systems.bios(system_id)
+
+    def get_bios_settings(self, system_id: Optional[str] = None) -> Bios:
+        """Read pending BIOS settings; get_bios continues to read active values."""
+        return self._systems.bios_settings(system_id)
+
+    def update_bios(
+        self, attributes: Dict[str, Any], system_id: Optional[str] = None, *,
+        apply_time: Optional[ApplyTime] = None,
+        maintenance_window: Optional[MaintenanceWindow] = None,
+    ) -> RedfishResponse:
+        """Update the advertised BIOS SettingsObject using its current ETag.
+
+        Explicit apply times require advertised support. Maintenance-window
+        modes require a MaintenanceWindow with a timezone-qualified timestamp.
+        Immediate/window modes can cause server-side resets. Omitting apply_time
+        preserves server-defined scheduling, which callers should inspect before
+        updating. No automatic client reset is sent.
+        A missing current ETag or unsupported schedule fails before PATCH.
+        """
+        return self._systems.update_bios(
+            attributes, system_id, apply_time=apply_time, maintenance_window=maintenance_window,
+        )
 
     def get_system_log_services(self, system_id: Optional[str] = None) -> List[Log]:
         """
