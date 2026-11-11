@@ -72,6 +72,12 @@ class SessionServiceManager:
         If switch_to_token_auth=True, the SDK client will use this token
         for subsequent requests instead of Basic Auth.
 
+        A successful login reporting PasswordChangeRequired installs the
+        restricted token even if switch_to_token_auth is False, then raises
+        RedfishPasswordChangeRequiredError. Use its account_uri for recovery
+        and close/logout afterward. A surrounding client context cleans up
+        the restricted session if the exception escapes its body.
+
 
 
         Args:
@@ -96,6 +102,16 @@ class SessionServiceManager:
         body = {"UserName": username, "Password": password}
 
         response = self._http.post_raw(sessions_url, body=body)
+
+        restriction = self._http._response_error(response, sessions_url)
+        if restriction:
+            token = response.headers.get("X-Auth-Token")
+            if token:
+                self._http.set_auth_token(
+                    token, session_location=response.headers.get("Location"),
+                    session_collection_uri=sessions_url, username=username, password=password,
+                )
+            raise restriction
 
         # Some conforming BMCs return only token and Location headers.
         session_data = response.json() if response.text.strip() else {}

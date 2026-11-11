@@ -1,6 +1,14 @@
 """
 Custom exceptions for the Redfish Python SDK.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Optional, Sequence
+
+from ._redaction import redact_diagnostic
+
+if TYPE_CHECKING:
+    from .models.common import ExtendedInfo, RedfishError
 
 
 class RedfishException(Exception):
@@ -8,30 +16,103 @@ class RedfishException(Exception):
     Base exception for all Redfish SDK errors.
 
     Raised when a Redfish API call returns a non-successful HTTP status code.
+
+    HTTP failures expose ``error`` (typed RedfishError), ``code``, all typed
+    ``extended_info``, flattened ``related_properties``, and the first available
+    ``severity`` and ``resolution``. ``retry_after`` retains the server header
+    verbatim (seconds or an HTTP date); ``request_id``, ``method`` and ``path``
+    provide request context. No exception subclass automatically retries writes.
+
+    ``message`` and ``body`` retain the original downstream text and can contain
+    sensitive data. Use str/repr for diagnostic display: those surfaces redact
+    credentials without modifying the response attributes.
     """
 
-    def __init__(self, status_code: int, message: str, body: str = ""):
+    def __init__(
+        self, status_code: int, message: str, body: str = "", *,
+        error: Optional[RedfishError] = None,
+        extended_info: Optional[List[ExtendedInfo]] = None,
+        retry_after: Optional[str] = None, request_id: Optional[str] = None,
+        method: str = "", path: str = "", secrets: Sequence[Optional[str]] = (),
+    ):
         self.status_code = status_code
         self.message = message
         self.body = body
-        super().__init__(f"[HTTP {status_code}] {message}")
+        self.error = error
+        self.code = error.code if error else None
+        self.extended_info = extended_info if extended_info is not None else (error.extended_info or [] if error else [])
+        self.related_properties = list(dict.fromkeys(
+            prop for info in self.extended_info for prop in (info.related_properties or [])
+        ))
+        self.severity = next((info.message_severity or info.severity for info in self.extended_info
+                              if info.message_severity or info.severity), None)
+        self.resolution = next((info.resolution for info in self.extended_info if info.resolution), None)
+        self.retry_after = retry_after
+        self.request_id = request_id
+        self.method = method
+        self.path = path
+        self._display_message = redact_diagnostic(message, secrets) if error or method or path or secrets else message
+        self._display_code = redact_diagnostic(self.code, secrets) if self.code else ""
+        # Exception.args is also a display surface (tracebacks, repr, logging).
+        super().__init__(self._display_text())
+
+    def _display_text(self) -> str:
+        context = f" [{self._display_code}]" if self._display_code else ""
+        return f"[HTTP {self.status_code}]{context} {self._display_message}"
+
+    def __str__(self) -> str:
+        return self._display_text()
 
     def __repr__(self) -> str:
-        return f"RedfishException(status_code={self.status_code}, message={self.message!r})"
+        return f"{type(self).__name__}(status_code={self.status_code}, message={self._display_message!r})"
 
 
 class RedfishNotFoundError(RedfishException):
     """Raised when a resource is not found (HTTP 404)."""
 
-    def __init__(self, path: str):
-        super().__init__(404, f"Resource not found: {path}")
+    def __init__(self, path: str, message: str = "", body: str = "", **details):
+        super().__init__(404, message or f"Resource not found: {path}", body, path=path, **details)
 
 
 class RedfishAuthError(RedfishException):
     """Raised when authentication fails (HTTP 401 / 403)."""
 
-    def __init__(self, status_code: int = 401):
-        super().__init__(status_code, "Authentication failed. Check username and password.")
+    def __init__(self, status_code: int = 401, message: str = "", body: str = "", **details):
+        super().__init__(status_code, message or "Authentication failed. Check username and password.", body, **details)
+
+
+class RedfishBadRequestError(RedfishException):
+    """The server rejected the request or its parameters (HTTP 400)."""
+
+
+class RedfishConflictError(RedfishException):
+    """The requested operation conflicts with resource state (HTTP 409)."""
+
+
+class RedfishPreconditionFailedError(RedfishException):
+    """A request precondition, such as If-Match, failed (HTTP 412)."""
+
+
+class RedfishRateLimitError(RedfishException):
+    """The service rate limit was exceeded (HTTP 429); inspect retry_after."""
+
+
+class RedfishServiceUnavailableError(RedfishException):
+    """The service is temporarily unavailable (HTTP 503); inspect retry_after."""
+
+
+class RedfishPasswordChangeRequiredError(RedfishAuthError):
+    """Authentication is restricted pending a password update.
+
+    A successful explicit or lazy login retains its restricted token for
+    password recovery until close/logout. A surrounding client context manager
+    cleans it up when this exception leaves the context body.
+    """
+
+    def __init__(self, status_code: int = 403, message: str = "", body: str = "", *,
+                 account_uri: Optional[str] = None, **details):
+        self.account_uri = account_uri
+        super().__init__(status_code, message or "Change the account password before continuing.", body, **details)
 
 
 class RedfishConnectionError(RedfishException):

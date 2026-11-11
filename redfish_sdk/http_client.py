@@ -15,7 +15,6 @@ Design notes:
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 import re
@@ -23,22 +22,30 @@ import threading
 import warnings
 from http import HTTPStatus
 from typing import Any, Dict, Optional, Type, TypeVar
-from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import requests
 from pydantic import BaseModel
 
+from ._redaction import redact_diagnostic
+from ._redaction import redact_for_log as _redact_for_log
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishAuthError,
+    RedfishBadRequestError,
+    RedfishConflictError,
     RedfishConnectionError,
     RedfishException,
     RedfishMissingAttributeError,
     RedfishNotFoundError,
+    RedfishPasswordChangeRequiredError,
+    RedfishPreconditionFailedError,
+    RedfishRateLimitError,
+    RedfishServiceUnavailableError,
     RedfishTimeoutError,
     RedfishValidationError,
 )
-from .models.common import RedfishResponse
+from .models.common import RedfishErrorResponse, RedfishResponse
 from .retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -46,24 +53,15 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 _EXPLICIT_REDIRECT_SUCCESS_CODES = frozenset({HTTPStatus.FOUND})
-_REDACTED = "<redacted>"
-_SENSITIVE_LOG_KEYS = {
-    "password", "username", "authenticationkey", "encryptionkey",
-    "consoleurl", "credential", "secret", "token",
-    "accesstoken", "authtoken", "xauthtoken", "httpheaders",
-    "authorization", "proxyauthorization", "cookie", "setcookie",
+_HTTP_ERROR_TYPES = {
+    HTTPStatus.BAD_REQUEST: RedfishBadRequestError,
+    HTTPStatus.CONFLICT: RedfishConflictError,
+    HTTPStatus.PRECONDITION_FAILED: RedfishPreconditionFailedError,
+    HTTPStatus.TOO_MANY_REQUESTS: RedfishRateLimitError,
+    HTTPStatus.SERVICE_UNAVAILABLE: RedfishServiceUnavailableError,
 }
-_SENSITIVE_LOG_SUFFIXES = (
-    "authorization",
-    "community",
-    "communitystring",
-    "communitystrings",
-    "consoleurl",
-    "credential",
-    "password",
-    "secret",
-    "token",
-)
+_PASSWORD_CHANGE_MESSAGE = "PasswordChangeRequired"
+_BASE_REGISTRY = "Base"
 _DEPRECATION_WARNINGS_EMITTED: set[str] = set()
 
 
@@ -73,48 +71,6 @@ def _warn_deprecated_once(key: str, message: str, stacklevel: int) -> None:
         return
     _DEPRECATION_WARNINGS_EMITTED.add(key)
     warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
-
-
-def _redact_for_log(value: Any) -> Any:
-    """Return a log-safe copy of request or response data."""
-    if isinstance(value, dict):
-        redacted = {}
-        for key, item in value.items():
-            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-            is_sensitive = normalized in _SENSITIVE_LOG_KEYS or normalized.endswith(
-                _SENSITIVE_LOG_SUFFIXES
-            )
-            redacted[key] = _REDACTED if is_sensitive else _redact_for_log(item)
-        return redacted
-    if isinstance(value, (list, tuple)):
-        return [_redact_for_log(item) for item in value]
-    if isinstance(value, str):
-        try:
-            parsed_json = json.loads(value)
-        except (TypeError, ValueError):
-            parsed_json = None
-        if isinstance(parsed_json, (dict, list)):
-            return json.dumps(_redact_for_log(parsed_json))
-        if "://" in value or (value.startswith("/") and "?" in value):
-            parts = urlsplit(value)
-            query = urlencode([
-                (name, _REDACTED) for name, _ in parse_qsl(
-                    parts.query, keep_blank_values=True
-                )
-            ])
-            netloc = parts.netloc
-            if parts.username is not None or parts.password is not None:
-                host = parts.hostname or ""
-                if parts.port is not None:
-                    host = f"{host}:{parts.port}"
-                netloc = f"{_REDACTED}@{host}"
-            value = urlunsplit((parts.scheme, netloc, parts.path, query, ""))
-        return re.sub(
-            r"(?i)\b(Bearer|Basic)\s+[^\s,;\"']+",
-            rf"\1 {_REDACTED}",
-            value,
-        )
-    return value
 
 
 def _serialize_mutation_body(body: BaseModel) -> Dict[str, Any]:
@@ -668,6 +624,9 @@ class RedfishHttpClient:
                 and response.status_code == 401
                 and self._auth_mode is AuthenticationMode.SESSION
             ):
+                failure = self._response_error(response, path)
+                if isinstance(failure, RedfishPasswordChangeRequiredError):
+                    raise failure
                 self._refresh_session(observed_session_key)
                 response = self._send(
                     method,
@@ -693,34 +652,75 @@ class RedfishHttpClient:
         ):
             return
 
-        body = ""
-        try:
-            body = response.text
-        except Exception:
-            pass
-
         # 404 ("not found") is routinely an expected outcome handled by callers
         # via fallback (e.g. Chassis/1 -> Chassis/Self) or treated as "absent"
         # (e.g. optional sub-resources). Logging it at ERROR produces alarming
         # noise for what is normal control flow, so it is recorded at DEBUG only.
         # All other non-2xx responses remain at ERROR.
-        if code == 404:
+        failure = self._response_error(response, path)
+        if code == HTTPStatus.NOT_FOUND:
             logger.debug("Request returned 404 (not found): %s %s",
-                         response.request.method, _redact_for_log(path))
+                         failure.method, redact_diagnostic(path, self._diagnostic_secrets()))
         else:
             logger.error("Request failed: %s %s -> HTTP %d, body: %s",
-                         response.request.method, _redact_for_log(path), code,
-                         str(_redact_for_log(body))[:500])
+                         failure.method, redact_diagnostic(path, self._diagnostic_secrets()), code,
+                         redact_diagnostic(failure.body, self._diagnostic_secrets())[:500])
+        raise failure
 
-        if code in (401, 403):
-            raise RedfishAuthError(code)
-        if code == 404:
-            raise RedfishNotFoundError(str(_redact_for_log(path)))
-        raise RedfishException(
-            code,
-            f"Request to {_redact_for_log(path)} failed",
-            str(_redact_for_log(body)),
-        )
+    def _diagnostic_secrets(self):
+        """Known credentials may be echoed in otherwise unstructured messages."""
+        return (self._password, self._session_key, self._basic_auth)
+
+    def _response_error(self, response: requests.Response, path: str) -> Optional[RedfishException]:
+        """Decode the standard error envelope without altering its raw data.
+
+        Successful session responses can carry PasswordChangeRequired in their
+        top-level extended info. Callers install the restricted token first.
+        """
+        body = response.text
+        try:
+            envelope = RedfishErrorResponse.model_validate_json(body)
+        except ValueError:
+            envelope = None
+        error = envelope.error if envelope else None
+        messages = list(error.extended_info or []) if error else []
+        if envelope:
+            messages.extend(envelope.extended_info or [])
+        message = error.message if error else None
+        if not message or not message.strip():
+            message = next((info.message for info in messages if info.message and info.message.strip()), "")
+
+        details = {
+            "error": error, "extended_info": messages,
+            "retry_after": response.headers.get("Retry-After"),
+            "request_id": response.headers.get("X-Request-ID"),
+            "method": getattr(response.request, "method", ""), "path": path,
+            "secrets": self._diagnostic_secrets(),
+        }
+        identifiers = [(error.code, None)] if error else []
+        identifiers.extend((info.message_id, info.message_args) for info in messages)
+        password_required = False
+        account_uri = None
+        for identifier, arguments in identifiers:
+            parts = (identifier or "").split(".")
+            if (len(parts) == 4 and parts[0] == _BASE_REGISTRY
+                    and parts[1].isdigit() and parts[2].isdigit()
+                    and parts[3] == _PASSWORD_CHANGE_MESSAGE):
+                password_required = True
+                if arguments and arguments[0].strip():
+                    account_uri = arguments[0]
+        code = response.status_code
+        if password_required:
+            return RedfishPasswordChangeRequiredError(code, message, body, account_uri=account_uri, **details)
+        if HTTPStatus.OK <= code < HTTPStatus.MULTIPLE_CHOICES or code in _EXPLICIT_REDIRECT_SUCCESS_CODES:
+            return None
+        if code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            return RedfishAuthError(code, message, body, **details)
+        if code == HTTPStatus.NOT_FOUND:
+            details.pop("path")
+            return RedfishNotFoundError(path, message, body, **details)
+        exception_type = _HTTP_ERROR_TYPES.get(code, RedfishException)
+        return exception_type(code, message or f"Request to {path} failed", body, **details)
 
     def _parse(
         self,
@@ -1211,18 +1211,7 @@ class RedfishHttpClient:
                     raise RedfishTimeoutError(self.host) from exc
                 except requests.exceptions.ConnectionError as exc:
                     raise RedfishConnectionError(self.host, exc) from exc
-                if response.status_code in (401, 403):
-                    raise RedfishAuthError(response.status_code)
-                if not (
-                    HTTPStatus.OK
-                    <= response.status_code
-                    < HTTPStatus.MULTIPLE_CHOICES
-                ):
-                    raise RedfishException(
-                        response.status_code,
-                        "Unable to refresh Redfish session",
-                        str(_redact_for_log(response.text))[:1000],
-                    )
+                self._raise_for_status(response, self._session_collection_uri)
                 token = response.headers.get("X-Auth-Token")
                 if not token:
                     raise RedfishAuthError(401)
@@ -1231,6 +1220,9 @@ class RedfishHttpClient:
                     session_location=response.headers.get("Location"),
                     session_collection_uri=self._session_collection_uri,
                 )
+                restriction = self._response_error(response, self._session_collection_uri)
+                if restriction:
+                    raise restriction
             except Exception as exc:
                 self._session_refresh_failure = (observed_session_key, exc)
                 raise
