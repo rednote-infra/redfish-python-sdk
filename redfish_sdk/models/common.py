@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator, model_validator
 
 from ..exceptions import RedfishMissingAttributeError
 
@@ -36,6 +36,8 @@ class ExtendedInfo(BaseModel):
     severity: Optional[str] = Field(None, alias="Severity")
     resolution: Optional[str] = Field(None, alias="Resolution")
     vendor_code: Optional[str] = Field(None, alias="VendorCode")
+    related_properties: Optional[List[str]] = Field(None, alias="RelatedProperties")
+    oem: Optional[Dict[str, Any]] = Field(None, alias="Oem")
 
 
 class Condition(BaseModel):
@@ -156,6 +158,18 @@ class Status(BaseModel):
     health_rollup: Optional[str] = Field(None, alias="HealthRollup")
 
 
+class RedfishErrorInfo(ExtendedInfo):
+    """An error message whose malformed optional fields cannot hide its ID."""
+
+    @field_validator("message", "message_args", "related_properties", mode="wrap")
+    @classmethod
+    def _optional_message_detail(cls, value, handler):
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
+
+
 class RedfishError(BaseModel):
     """
     Standard Redfish error response body.
@@ -165,6 +179,20 @@ class RedfishError(BaseModel):
     code: Optional[str] = Field(None, alias="code")
     message: Optional[str] = Field(None, alias="message")
     extended_info: Optional[List[ExtendedInfo]] = Field(None, alias="@Message.ExtendedInfo")
+
+
+class RedfishErrorDetails(RedfishError):
+    """HTTP error details with tolerant parsing of optional message fields."""
+
+    extended_info: Optional[List[RedfishErrorInfo]] = Field(None, alias="@Message.ExtendedInfo")
+
+
+class RedfishErrorResponse(BaseModel):
+    """HTTP error envelope, also used for restricted successful session login."""
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    error: Optional[RedfishErrorDetails] = Field(None, alias="error")
+    extended_info: Optional[List[RedfishErrorInfo]] = Field(None, alias="@Message.ExtendedInfo")
 
 
 class RedfishResponse(BaseModel):
