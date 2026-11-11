@@ -29,7 +29,7 @@ from ..models.update import (
     UpdateParameters,
     UpdateServiceCapabilities,
 )
-from .update_strategies import UpdateStrategyRegistry, VendorDetector
+from .update_strategies import VendorDetector
 
 if TYPE_CHECKING:
     from ..client import RedfishClient
@@ -383,8 +383,10 @@ class UpdateServiceManager:
         Returns:
             RedfishResponse (may contain a task reference for async update)
         """
-        detected_vendor = vendor or VendorDetector.detect(self._client)
-        strategy = UpdateStrategyRegistry.get(detected_vendor)
+        from ..oem import OemCategory
+
+        detected_vendor = vendor or self._client.oem_vendor or VendorDetector.detect(self._client)
+        strategy = self._client.oem_providers.get(OemCategory.UPDATE, detected_vendor)
 
         logger.info(
             "SimpleUpdate: vendor=%s, strategy=%s, ImageURI=%s",
