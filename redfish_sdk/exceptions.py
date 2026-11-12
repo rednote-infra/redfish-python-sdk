@@ -3,12 +3,17 @@ Custom exceptions for the Redfish Python SDK.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, List, Optional, Sequence
 
 from ._redaction import redact_diagnostic
 
 if TYPE_CHECKING:
     from .models.common import ExtendedInfo, RedfishError
+
+
+class RedfishCancelledError(asyncio.CancelledError):
+    """Async operation cancelled; retains asyncio task cancellation semantics."""
 
 
 class RedfishException(Exception):

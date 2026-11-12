@@ -29,25 +29,20 @@ import requests
 from pydantic import BaseModel
 from requests.structures import CaseInsensitiveDict
 
+from ._errors import error_from_response
 from ._redaction import redact_diagnostic
 from ._redaction import redact_for_log as _redact_for_log
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishAuthError,
-    RedfishBadRequestError,
-    RedfishConflictError,
     RedfishConnectionError,
     RedfishException,
     RedfishMissingAttributeError,
-    RedfishNotFoundError,
     RedfishPasswordChangeRequiredError,
-    RedfishPreconditionFailedError,
-    RedfishRateLimitError,
-    RedfishServiceUnavailableError,
     RedfishTimeoutError,
     RedfishValidationError,
 )
-from .models.common import RedfishErrorResponse, RedfishResponse
+from .models.common import RedfishResponse
 from .request import _JSON_NULL, _UNSET_BODY, HttpMethod, QueryParameters
 from .response import GenericResponse
 from .retry import RetryPolicy
@@ -57,15 +52,6 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 _EXPLICIT_REDIRECT_SUCCESS_CODES = frozenset({HTTPStatus.FOUND})
-_HTTP_ERROR_TYPES = {
-    HTTPStatus.BAD_REQUEST: RedfishBadRequestError,
-    HTTPStatus.CONFLICT: RedfishConflictError,
-    HTTPStatus.PRECONDITION_FAILED: RedfishPreconditionFailedError,
-    HTTPStatus.TOO_MANY_REQUESTS: RedfishRateLimitError,
-    HTTPStatus.SERVICE_UNAVAILABLE: RedfishServiceUnavailableError,
-}
-_PASSWORD_CHANGE_MESSAGE = "PasswordChangeRequired"
-_BASE_REGISTRY = "Base"
 _REDIRECT_STATUSES = frozenset({
     HTTPStatus.MOVED_PERMANENTLY, HTTPStatus.FOUND, HTTPStatus.SEE_OTHER,
     HTTPStatus.TEMPORARY_REDIRECT, HTTPStatus.PERMANENT_REDIRECT,
@@ -693,49 +679,11 @@ class RedfishHttpClient:
             # Streaming/decoding failures must not replace the HTTP status or
             # block the normal 401 session-refresh path.
             body = ""
-        try:
-            envelope = RedfishErrorResponse.model_validate_json(body)
-        except ValueError:
-            envelope = None
-        error = envelope.error if envelope else None
-        messages = list(error.extended_info or []) if error else []
-        if envelope:
-            messages.extend(envelope.extended_info or [])
-        message = error.message if error else None
-        if not message or not message.strip():
-            message = next((info.message for info in messages if info.message and info.message.strip()), "")
-
-        details = {
-            "error": error, "extended_info": messages,
-            "retry_after": response.headers.get("Retry-After"),
-            "request_id": response.headers.get("X-Request-ID"),
-            "method": getattr(response.request, "method", ""), "path": path,
-            "secrets": self._diagnostic_secrets(response) + tuple(secrets),
-        }
-        identifiers = [(error.code, None)] if error else []
-        identifiers.extend((info.message_id, info.message_args) for info in messages)
-        password_required = False
-        account_uri = None
-        for identifier, arguments in identifiers:
-            parts = (identifier or "").split(".")
-            if (len(parts) == 4 and parts[0] == _BASE_REGISTRY
-                    and parts[1].isdigit() and parts[2].isdigit()
-                    and parts[3] == _PASSWORD_CHANGE_MESSAGE):
-                password_required = True
-                if arguments and arguments[0].strip():
-                    account_uri = arguments[0]
-        code = response.status_code
-        if password_required:
-            return RedfishPasswordChangeRequiredError(code, message, body, account_uri=account_uri, **details)
-        if HTTPStatus.OK <= code < HTTPStatus.MULTIPLE_CHOICES or code in _EXPLICIT_REDIRECT_SUCCESS_CODES:
-            return None
-        if code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
-            return RedfishAuthError(code, message, body, **details)
-        if code == HTTPStatus.NOT_FOUND:
-            details.pop("path")
-            return RedfishNotFoundError(path, message, body, **details)
-        exception_type = _HTTP_ERROR_TYPES.get(code, RedfishException)
-        return exception_type(code, message or f"Request to {path} failed", body, **details)
+        return error_from_response(
+            response.status_code, body, response.headers,
+            method=getattr(response.request, "method", ""), path=path,
+            secrets=self._diagnostic_secrets(response) + tuple(secrets),
+        )
 
     def _parse(
         self,

@@ -44,6 +44,17 @@ class GenericResponse(Mapping[str, Any]):
         else:
             content = bytes(content)
 
+        return cls.from_content(response.status_code, getattr(response, "headers", {}), content, text=text)
+
+    @classmethod
+    def from_content(cls, status_code: int, headers: Mapping[str, str], content: bytes,
+                     *, encoding: str = "utf-8", text: Optional[str] = None) -> GenericResponse:
+        """Buffer an async response with the same JSON and metadata semantics."""
+        if text is None:
+            try:
+                text = content.decode(encoding, errors="replace")
+            except LookupError:
+                text = content.decode("utf-8", errors="replace")
         empty_body = not content or not text.strip()
         json_data: Any = None
         json_error: Optional[str] = None
@@ -56,8 +67,8 @@ class GenericResponse(Mapping[str, Any]):
                 json_error = str(exc)
 
         return cls(
-            status_code=response.status_code,
-            headers=CaseInsensitiveDict(getattr(response, "headers", {})),
+            status_code=status_code,
+            headers=CaseInsensitiveDict(headers),
             content=content,
             text=text,
             json_data=json_data,
