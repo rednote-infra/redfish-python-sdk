@@ -26,6 +26,7 @@ Quick start:
 
     client.close()
 """
+from .async_client import AsyncRedfishClient
 from .auth import AuthenticationMode
 from .client import CollectionFailure, CollectionResult, RedfishClient
 from .exceptions import (
@@ -33,6 +34,7 @@ from .exceptions import (
     RedfishAsyncOperationError,
     RedfishAuthError,
     RedfishBadRequestError,
+    RedfishCancelledError,
     RedfishConflictError,
     RedfishConnectionError,
     RedfishException,
@@ -146,6 +148,8 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "AsyncRedfishClient",
+    "RedfishCancelledError",
     "HttpMethod",
     "OemCategory", "OemProviderRegistry", "OemProviderLoadError", "OemProviderConflictError",
     "AttributeRegistry", "AttributeRegistryEntries", "AttributeDefinition", "AttributeType", "AttributeValue",
