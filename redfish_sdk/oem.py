@@ -2,7 +2,6 @@
 
 External providers run trusted Python code in-process and receive the client
 with its transport privileges. This is not a security sandbox.
-See OEM-PROVIDERS.md for compatibility and registration expectations.
 """
 from __future__ import annotations
 
