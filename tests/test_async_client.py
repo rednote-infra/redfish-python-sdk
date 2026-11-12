@@ -202,7 +202,7 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(task.done())
         finally:
             finish.set()
-        with self.assertRaises(sdk.RedfishCancelledError):
+        with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertEqual(self.session.request.call_args_list[-1].args[0], "DELETE")
         self.session.close.assert_not_called()
@@ -340,7 +340,7 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(task.done())
         finally:
             finish.set()
-        with self.assertRaises(sdk.RedfishCancelledError):
+        with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertTrue(task.cancelled())
         self.session.request.assert_called_once()
