@@ -68,6 +68,8 @@ class AsyncRedfishClient:
     the worker to finish (using the configured connect/read timeouts) and then
     raises RedfishCancelledError, an asyncio.CancelledError subclass. A cancelled
     write may still have succeeded on the BMC; cancellation does not roll it back.
+    Python 3.9/3.10 may normalize the subclass when awaiting a cancelled Task;
+    catch asyncio.CancelledError for portable cancellation handling.
     Async contexts clean up SDK-created Redfish sessions, including on failed
     entry and cancellation. Supplied tokens are not deleted by close().
     """
