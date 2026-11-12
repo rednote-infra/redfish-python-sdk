@@ -16,16 +16,18 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 import os
 import re
 import threading
 import warnings
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Type, TypeVar
-from urllib.parse import unquote, urlsplit, urlunsplit
+from typing import Any, Dict, Mapping, Optional, Sequence, Type, TypeVar, Union
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import requests
 from pydantic import BaseModel
+from requests.structures import CaseInsensitiveDict
 
 from ._redaction import redact_diagnostic
 from ._redaction import redact_for_log as _redact_for_log
@@ -46,6 +48,8 @@ from .exceptions import (
     RedfishValidationError,
 )
 from .models.common import RedfishErrorResponse, RedfishResponse
+from .request import _JSON_NULL, _UNSET_BODY, HttpMethod, QueryParameters
+from .response import GenericResponse
 from .retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -62,6 +66,10 @@ _HTTP_ERROR_TYPES = {
 }
 _PASSWORD_CHANGE_MESSAGE = "PasswordChangeRequired"
 _BASE_REGISTRY = "Base"
+_REDIRECT_STATUSES = frozenset({
+    HTTPStatus.MOVED_PERMANENTLY, HTTPStatus.FOUND, HTTPStatus.SEE_OTHER,
+    HTTPStatus.TEMPORARY_REDIRECT, HTTPStatus.PERMANENT_REDIRECT,
+})
 _DEPRECATION_WARNINGS_EMITTED: set[str] = set()
 
 
@@ -553,7 +561,7 @@ class RedfishHttpClient:
                 ):
                     logger.warning(
                         "%s %s read-timeout on attempt %d/%d; retrying",
-                        method_u, url, attempt, attempts,
+                        method_u, _redact_for_log(url), attempt, attempts,
                     )
                     _time.sleep(self.retry_backoff * attempt)
                     continue
@@ -572,7 +580,7 @@ class RedfishHttpClient:
             ):
                 logger.warning(
                     "%s %s -> HTTP %d on attempt %d/%d; retrying",
-                    method_u, url, code, attempt, attempts,
+                    method_u, _redact_for_log(url), code, attempt, attempts,
                 )
                 _time.sleep(self.retry_backoff * attempt)
                 continue
@@ -758,6 +766,81 @@ class RedfishHttpClient:
     # ------------------------------------------------------------------
     # Public HTTP methods
     # ------------------------------------------------------------------
+
+    def request(
+        self, method: Union[HttpMethod, str], path: str, *,
+        params: Optional[QueryParameters] = None,
+        headers: Optional[Mapping[str, str]] = None, body: Any = _UNSET_BODY,
+        connect_timeout: Optional[float] = None, read_timeout: Optional[float] = None,
+        allow_redirects: bool = False, retry_policy: RetryPolicy = RetryPolicy.DEFAULT,
+    ) -> GenericResponse:
+        """Generic JSON request with explicit controls and preserved metadata.
+
+        Redirects are returned by default. Explicit following is same-origin
+        only, including scheme/port, and follows Requests' method-rewrite rules.
+        No implicit ETag preflight/cache updates occur; pass conditional headers
+        explicitly. Existing typed methods retain their own behavior.
+        """
+        try:
+            verb = HttpMethod(method.upper())
+        except (AttributeError, ValueError) as exc:
+            raise RedfishValidationError("Unsupported generic HTTP method") from exc
+        if not isinstance(retry_policy, RetryPolicy):
+            raise RedfishValidationError("retry_policy must be a RetryPolicy member")
+        if headers is not None and not isinstance(headers, Mapping):
+            raise RedfishValidationError("headers must be a mapping")
+        self._validate_managed_headers(headers)
+        request_headers = CaseInsensitiveDict(headers or {})
+        if params is not None:
+            valid_params = (isinstance(params, Mapping) and all(isinstance(key, str) for key in params)) or (
+                isinstance(params, Sequence) and not isinstance(params, (str, bytes)) and all(
+                    isinstance(pair, (list, tuple)) and len(pair) == 2 and isinstance(pair[0], str) for pair in params
+                )
+            )
+            if not valid_params:
+                raise RedfishValidationError("params must be a mapping or a sequence of key/value pairs")
+        if not isinstance(allow_redirects, bool):
+            raise RedfishValidationError("allow_redirects must be a boolean")
+        timeout = (
+            self.connect_timeout if connect_timeout is None else connect_timeout,
+            self.read_timeout if read_timeout is None else read_timeout,
+        )
+        for value in timeout:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise RedfishValidationError("Request timeouts must be finite positive numbers")
+        if verb in (HttpMethod.GET, HttpMethod.HEAD) and body is not _UNSET_BODY:
+            raise RedfishValidationError("GET and HEAD do not accept a generic request body")
+        if isinstance(body, BaseModel):
+            body = _serialize_mutation_body(body)
+        options = {"params": params, "headers": request_headers, "timeout": timeout, "allow_redirects": False}
+        if body is None:
+            options["data"] = _JSON_NULL
+        elif body is not _UNSET_BODY:
+            options["json"] = body
+        target = self._resolve_url(path)
+        redirects = 0
+        while True:
+            response = self._request(verb.value, target, retry_policy=retry_policy, **options)
+            location = response.headers.get("Location")
+            if not allow_redirects or response.status_code not in _REDIRECT_STATUSES or not location:
+                break
+            if redirects >= self._session.max_redirects:
+                raise RedfishValidationError("Generic request exceeded the redirect limit")
+            # Resolve/validate before sending the next request: stripping auth
+            # alone would still expose a POST/PUT body on a cross-origin 307.
+            target = self._resolve_url(urljoin(response.url or target, location))
+            options.pop("params", None)
+            if ((response.status_code in (HTTPStatus.FOUND, HTTPStatus.SEE_OTHER) and verb != HttpMethod.HEAD)
+                    or (response.status_code == HTTPStatus.MOVED_PERMANENTLY and verb == HttpMethod.POST)):
+                verb = HttpMethod.GET
+                options.pop("json", None)
+                options.pop("data", None)
+                for name in ("Content-Length", "Content-Type", "Transfer-Encoding"):
+                    request_headers[name] = None
+            redirects += 1
+        if not HTTPStatus.MULTIPLE_CHOICES <= response.status_code < HTTPStatus.BAD_REQUEST:
+            self._raise_for_status(response, target)
+        return GenericResponse.from_response(response)
 
     def get(self, path: str, model_class: Type[T]) -> T:
         """

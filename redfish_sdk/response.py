@@ -17,7 +17,7 @@ _HEADER_RETRY_AFTER = "Retry-After"
 
 @dataclass(eq=False, repr=False)
 class GenericResponse(Mapping[str, Any]):
-    """HTTP response returned by generic POST, PATCH, and DELETE methods.
+    """HTTP response returned by generic requests and metadata-preserving methods.
 
     The object preserves transport metadata and raw content. It also behaves
     as a read-only mapping when the response contains a JSON object, providing

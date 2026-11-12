@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Generic, List, Literal, Mapping, Optional, Type, TypeVar, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from .auth import AuthenticationMode
@@ -124,7 +124,9 @@ from .models.update import (
     UpdateService,
     UpdateServiceCapabilities,
 )
+from .request import _UNSET_BODY, HttpMethod, QueryParameters
 from .response import GenericResponse
+from .retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -2944,6 +2946,34 @@ class RedfishClient:
     # ------------------------------------------------------------------
     # Raw JSON access (generic CRUD)
     # ------------------------------------------------------------------
+
+    def request(
+        self, method: Union[HttpMethod, str], odata_id: str, *,
+        params: Optional[QueryParameters] = None,
+        headers: Optional[Mapping[str, str]] = None, body: Any = _UNSET_BODY,
+        connect_timeout: Optional[float] = None, read_timeout: Optional[float] = None,
+        allow_redirects: bool = False, retry_policy: RetryPolicy = RetryPolicy.DEFAULT,
+    ) -> GenericResponse:
+        """Send GET/HEAD/POST/PUT/PATCH/DELETE with explicit request controls.
+
+        params accepts a mapping (including list values) or repeated key/value
+        pairs; Requests encodes the query. Headers cannot override Authorization
+        or X-Auth-Token. Timeouts override the configured connect/read defaults
+        for this operation only. body is JSON; omitted differs from explicit None
+        (JSON null). GET/HEAD bodies are rejected.
+
+        Redirects are returned with status/Location by default. allow_redirects
+        follows only same-origin HTTP redirects; cross-origin/downgrade targets
+        are rejected before following. Writes are single-shot unless retry_policy
+        explicitly opts into idempotent retries. Pass If-Match explicitly when
+        required: this API does not issue an implicit ETag GET or update caches.
+        Legacy convenience methods and typed managers retain their behavior.
+        """
+        return self._http_client.request(
+            method, odata_id, params=params, headers=headers, body=body,
+            connect_timeout=connect_timeout, read_timeout=read_timeout,
+            allow_redirects=allow_redirects, retry_policy=retry_policy,
+        )
 
     def get_raw(self, odata_id: str) -> dict:
         """
