@@ -47,6 +47,9 @@ from pathlib import Path
 from typing import Any, Dict, Generic, List, Literal, Mapping, Optional, Type, TypeVar, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+import requests
+
+from ._transport import CaBundle
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishException,
@@ -208,6 +211,9 @@ class RedfishClient:
         oem_providers: Optional[OemProviderRegistry] = None,
         oem_vendor: Optional[str] = None,
         suppress_insecure_warnings: bool = True,
+        session: Optional[requests.Session] = None,
+        ca_bundle: Optional[CaBundle] = None,
+        external_session: Optional[requests.Session] = None,
     ):
         """
         Initialize the Redfish Client.
@@ -250,6 +256,24 @@ class RedfishClient:
                 warning when verify_ssl=False (default True). Set False to show
                 it. Warning filters are process-wide per hostname and do not
                 affect certificate verification or other diagnostics.
+            session: Optional caller-owned Requests session for BMC traffic.
+                Its adapters support custom SSLContext, pooling, tracing and retry
+                policies. Credentials remain SDK-managed per request. The SDK
+                never closes or overwrites a supplied transport's configuration.
+                Default authentication headers and session.auth are rejected.
+            ca_bundle: CA bundle file or hashed CA directory path. Takes precedence
+                over verify_ssl and the supplied session's verification policy.
+                Otherwise verify_ssl=True enables verification, while the legacy
+                False default preserves a supplied session.verify value. Configure
+                session.verify=False explicitly for an unverified supplied session.
+            external_session: Optional distinct caller-owned session for external
+                artifact downloads. Its verification policy is inherited unless
+                ca_bundle or verify_ssl=True overrides it. BMC adapters, cookies
+                and client certificates are not copied to external origins.
+                Injected transports disable automatic redirects; generic request
+                supports explicit same-origin following. Custom adapters control
+                their own retries. Avoid concurrent mutation/use of supplied
+                sessions outside the client.
         """
         if oem_providers is not None and not isinstance(oem_providers, OemProviderRegistry):
             raise RedfishValidationError("oem_providers must be an OemProviderRegistry")
@@ -274,6 +298,9 @@ class RedfishClient:
             session_key=session_key,
             session_location=session_location,
             suppress_insecure_warnings=suppress_insecure_warnings,
+            session=session,
+            ca_bundle=ca_bundle,
+            external_session=external_session,
         )
 
         # Root service cache
@@ -750,7 +777,7 @@ class RedfishClient:
         return self._get_root()
 
     def close(self) -> None:
-        """Close the underlying HTTP session and free resources."""
+        """Release managers and SDK-owned transports; leave supplied sessions open."""
         for attribute in list(self.__dict__):
             if isinstance(getattr(type(self), attribute, None), cached_property):
                 self.__dict__.pop(attribute, None)

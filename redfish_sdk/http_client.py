@@ -33,6 +33,14 @@ from ._errors import error_from_response
 from ._redaction import redact_diagnostic
 from ._redaction import redact_for_log as _redact_for_log
 from ._tls import configure_tls_warnings
+from ._transport import (
+    MANAGED_AUTH_HEADERS,
+    CaBundle,
+    NoDefaultAuthentication,
+    ca_bundle_path,
+    resolve_verify,
+    validate_session,
+)
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishAuthError,
@@ -171,6 +179,9 @@ class RedfishHttpClient:
         session_key: Optional[str] = None,
         session_location: Optional[str] = None,
         suppress_insecure_warnings: bool = True,
+        session: Optional[requests.Session] = None,
+        ca_bundle: Optional[CaBundle] = None,
+        external_session: Optional[requests.Session] = None,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -208,8 +219,37 @@ class RedfishHttpClient:
                 warning when verify_ssl=False (default True). Set False to show
                 it. Python warning policy is process-wide per hostname; other
                 warnings and certificate verification errors are unaffected.
+            session: Optional caller-owned Requests session for BMC traffic.
+                Its defaults and adapters are not overwritten, and close() never
+                closes it. Normal response hooks and cookie persistence remain
+                active. Authentication is
+                managed per request; session.auth and authentication defaults
+                are rejected. Configure custom SSLContext/pooling/retries on its
+                adapters. Caller adapters control their own retry behavior.
+                Do not mutate or concurrently use the session outside the client.
+            ca_bundle: CA bundle file or hashed CA directory path. Overrides
+                verify_ssl and session.verify without changing a supplied session.
+                Otherwise verify_ssl=True enables verification; the legacy False
+                default preserves session.verify when a session is supplied.
+                Set session.verify=False to explicitly disable injected TLS checks.
+            external_session: Optional distinct caller-owned session for artifact
+                downloads from other origins. Its own TLS policy is preserved
+                unless ca_bundle or verify_ssl=True overrides it. Custom adapters,
+                cookies and client certificates are not copied from the BMC
+                session to other origins. SDK-created external sessions inherit
+                BMC CA/proxy settings. Injected sessions never follow redirects
+                automatically; request(..., allow_redirects=True) supports safe
+                same-origin redirects explicitly.
         """
-        if not verify_ssl:
+        if session is not None:
+            validate_session(session)
+        if external_session is not None:
+            validate_session(external_session)
+            if external_session is session:
+                raise RedfishValidationError("external_session must be distinct from the BMC session")
+        ca_path = ca_bundle_path(ca_bundle)
+        effective_verify = resolve_verify(verify_ssl, session, ca_path)
+        if not effective_verify:
             _warn_deprecated_once(
                 "verify_ssl",
                 "The legacy verify_ssl=False default is deprecated; pass "
@@ -218,10 +258,14 @@ class RedfishHttpClient:
                 stacklevel=3,
             )
         self._validate_endpoint(host, scheme, username, allow_insecure_http_auth)
-        configure_tls_warnings(host, verify_ssl, suppress_insecure_warnings)
+        configure_tls_warnings(host, effective_verify, suppress_insecure_warnings)
         self.host = host
         self.scheme = scheme.lower()
-        self.verify_ssl = verify_ssl
+        self.verify_ssl = effective_verify
+        self._ca_bundle = ca_path
+        self._proxy = proxy
+        self._owns_session = session is None
+        self._owns_external_session = external_session is None
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
         self.retry_5xx = max(int(retry_5xx), 0)
@@ -263,27 +307,32 @@ class RedfishHttpClient:
         self._session_refresh_failure: Optional[tuple[Optional[str], Exception]] = None
 
         # Session with proxy and default headers
-        self._session = _CredentialSafeSession()
-        self._session.verify = verify_ssl
-        self._session.headers.update({
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        })
-        if auth_mode is AuthenticationMode.BASIC:
-            self._session.headers["Authorization"] = self._basic_auth
-        elif session_key is not None:
+        self._session = session if session is not None else _CredentialSafeSession()
+        if self._owns_session:
+            self._session.verify = effective_verify
+            self._session.headers.update({"Content-Type": "application/json", "Accept": "application/json"})
+            if auth_mode is AuthenticationMode.BASIC:
+                self._session.headers[self._AUTHORIZATION_HEADER] = self._basic_auth
+        if auth_mode is AuthenticationMode.SESSION and session_key is not None:
             self.set_auth_token(
                 session_key,
                 session_location=session_location,
             )
 
-        self._external_session = _CredentialSafeSession()
-        self._external_session.verify = verify_ssl
-        self._external_session.headers.update({"Accept": "*/*"})
+        self._external_session = external_session if external_session is not None else _CredentialSafeSession()
+        self._external_verify = resolve_verify(verify_ssl, external_session, ca_path) if external_session is not None else effective_verify
+        if self._owns_external_session:
+            self._external_session.verify = self._external_verify
+            self._external_session.headers.update({"Accept": "*/*"})
+            if session is not None:
+                self._external_session.proxies = dict(session.proxies)
+                self._external_session.trust_env = session.trust_env
 
         if proxy:
-            self._session.proxies = {"http": proxy, "https": proxy}
-            self._external_session.proxies = {"http": proxy, "https": proxy}
+            if self._owns_session:
+                self._session.proxies = {"http": proxy, "https": proxy}
+            if self._owns_external_session:
+                self._external_session.proxies = {"http": proxy, "https": proxy}
 
         # Track the last ETag received for use in subsequent PATCH requests
         self._last_etag: Dict[str, str] = {}
@@ -434,7 +483,9 @@ class RedfishHttpClient:
         HTTPStatus.SERVICE_UNAVAILABLE,
         HTTPStatus.GATEWAY_TIMEOUT,
     })
-    _MANAGED_AUTH_HEADERS = frozenset({"authorization", "x-auth-token"})
+    _MANAGED_AUTH_HEADERS = MANAGED_AUTH_HEADERS
+    _AUTHORIZATION_HEADER = "Authorization"
+    _TOKEN_HEADER = "X-Auth-Token"
     _DEFAULT_SESSION_COLLECTION = "/redfish/v1/SessionService/Sessions"
 
     @property
@@ -500,6 +551,7 @@ class RedfishHttpClient:
         path: str,
         *,
         authenticated: bool = True,
+        bmc_login: bool = False,
         retry_policy: RetryPolicy = RetryPolicy.DEFAULT,
         **kwargs: Any,
     ) -> requests.Response:
@@ -533,7 +585,7 @@ class RedfishHttpClient:
         )
         url = (
             self._resolve_url(path)
-            if authenticated
+            if authenticated or bmc_login
             else self._validate_external_url(path)
         )
         # Dispatch through the method-specific session attribute
@@ -541,6 +593,35 @@ class RedfishHttpClient:
         # to the pre-refactor client and preserves compatibility with unit
         # tests that stub the individual verbs.
         session = self._session if authenticated else self._external_session
+        owned = self._owns_session if authenticated else self._owns_external_session
+        verify = self.verify_ssl if authenticated else self._external_verify
+        if bmc_login and not (self._owns_session and self._owns_external_session):
+            session, owned, verify = self._session, self._owns_session, self.verify_ssl
+        if not owned:
+            validate_session(session)
+            kwargs["allow_redirects"] = False
+            kwargs["auth"] = NoDefaultAuthentication()
+            request_headers = CaseInsensitiveDict(kwargs.get("headers") or {})
+            for name, value in {"Accept": "application/json" if authenticated else "*/*",
+                                "Content-Type": "application/json"}.items():
+                if name not in session.headers:
+                    request_headers.setdefault(name, value)
+            if authenticated:
+                if self._auth_mode is AuthenticationMode.BASIC:
+                    request_headers[self._AUTHORIZATION_HEADER] = self._basic_auth
+                elif self._session_key:
+                    request_headers[self._TOKEN_HEADER] = self._session_key
+            kwargs["headers"] = request_headers
+            kwargs["verify"] = verify
+        if bmc_login:
+            kwargs["allow_redirects"] = False
+            kwargs["auth"] = NoDefaultAuthentication()
+            kwargs["headers"] = {**kwargs.get("headers", {}), self._AUTHORIZATION_HEADER: None,
+                                 self._TOKEN_HEADER: None}
+        if self._ca_bundle is not None:
+            kwargs["verify"] = self._ca_bundle
+        if self._proxy:
+            kwargs["proxies"] = {"http": self._proxy, "https": self._proxy}
         session_call = getattr(session, method_u.lower())
         for attempt in range(1, attempts + 1):
             try:
@@ -1215,8 +1296,9 @@ class RedfishHttpClient:
         self._session_key = token
         self._session_location = session_location
         self._session_refresh_failure = None
-        self._session.headers.pop("Authorization", None)
-        self._session.headers["X-Auth-Token"] = token
+        if self._owns_session:
+            self._session.headers.pop(self._AUTHORIZATION_HEADER, None)
+            self._session.headers[self._TOKEN_HEADER] = token
         logger.debug("Switched to X-Auth-Token authentication")
 
     def reset_basic_auth(self) -> None:
@@ -1225,8 +1307,9 @@ class RedfishHttpClient:
         self._session_key = None
         self._session_location = None
         self._session_refresh_failure = None
-        self._session.headers.pop("X-Auth-Token", None)
-        self._session.headers["Authorization"] = self._basic_auth
+        if self._owns_session:
+            self._session.headers.pop(self._TOKEN_HEADER, None)
+            self._session.headers[self._AUTHORIZATION_HEADER] = self._basic_auth
         logger.debug("Switched back to Basic Auth")
 
     def _refresh_session(self, observed_session_key: Optional[str]) -> None:
@@ -1244,8 +1327,9 @@ class RedfishHttpClient:
                 ):
                     raise self._session_refresh_failure[1]
                 try:
-                    response = self._external_session.post(
-                        self._resolve_url(self._session_collection_uri),
+                    response = self._send(
+                        "POST", self._session_collection_uri,
+                        authenticated=False, bmc_login=True,
                         json={
                             "UserName": self._username,
                             "Password": self._password,
@@ -1302,13 +1386,15 @@ class RedfishHttpClient:
             self.reset_basic_auth()
 
     def close(self) -> None:
-        """Best-effort logout, then always close local HTTP sessions."""
+        """Best-effort logout, then close only SDK-owned HTTP sessions."""
         try:
             if self._auth_mode is AuthenticationMode.SESSION:
                 self.logout(suppress_errors=True)
         finally:
-            self._session.close()
-            self._external_session.close()
+            if self._owns_session:
+                self._session.close()
+            if self._owns_external_session:
+                self._external_session.close()
 
     def __enter__(self) -> RedfishHttpClient:
         return self
