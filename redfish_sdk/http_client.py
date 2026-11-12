@@ -32,6 +32,7 @@ from requests.structures import CaseInsensitiveDict
 from ._errors import error_from_response
 from ._redaction import redact_diagnostic
 from ._redaction import redact_for_log as _redact_for_log
+from ._tls import configure_tls_warnings
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishAuthError,
@@ -169,6 +170,7 @@ class RedfishHttpClient:
         auth_mode: AuthenticationMode | str = AuthenticationMode.BASIC,
         session_key: Optional[str] = None,
         session_location: Optional[str] = None,
+        suppress_insecure_warnings: bool = True,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -202,6 +204,10 @@ class RedfishHttpClient:
                 session authentication immediately.
             session_location: Optional resource URI for an existing session,
                 used for server-side cleanup and refresh.
+            suppress_insecure_warnings: Hide this BMC hostname's unverified HTTPS
+                warning when verify_ssl=False (default True). Set False to show
+                it. Python warning policy is process-wide per hostname; other
+                warnings and certificate verification errors are unaffected.
         """
         if not verify_ssl:
             _warn_deprecated_once(
@@ -212,6 +218,7 @@ class RedfishHttpClient:
                 stacklevel=3,
             )
         self._validate_endpoint(host, scheme, username, allow_insecure_http_auth)
+        configure_tls_warnings(host, verify_ssl, suppress_insecure_warnings)
         self.host = host
         self.scheme = scheme.lower()
         self.verify_ssl = verify_ssl
