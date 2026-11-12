@@ -202,6 +202,10 @@ class RegistryResolutionError(RedfishValidationError):
     """Raised when a MessageId cannot be resolved through advertised registries."""
 
 
+class RedfishDiscoveryError(RedfishException):
+    """SSDP discovery failed at the UDP transport; status_code is zero."""
+
+
 class RedfishAsyncOperationError(RedfishException):
     """Raised when an asynchronous operation cannot be completed safely."""
 
