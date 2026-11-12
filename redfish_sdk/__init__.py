@@ -138,6 +138,7 @@ from .models.update import (
     UpdateServiceCapabilities,
 )
 from .oem import OemCategory, OemProviderConflictError, OemProviderLoadError, OemProviderRegistry
+from .request import HttpMethod
 from .response import GenericResponse
 from .retry import RetryPolicy
 
@@ -145,6 +146,7 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "HttpMethod",
     "OemCategory", "OemProviderRegistry", "OemProviderLoadError", "OemProviderConflictError",
     "AttributeRegistry", "AttributeRegistryEntries", "AttributeDefinition", "AttributeType", "AttributeValue",
     "AttributeMenu", "AttributeDependency", "AttributeDependencyMap", "AttributeMapFrom",
