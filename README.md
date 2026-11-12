@@ -14,9 +14,9 @@
 - **Multi-vendor hardware inventory** — inspect CPU, memory, GPU, storage, networking, power, and cooling through one SDK
 - **Remote power & boot control** — power servers on/off, restart them, and select PXE, disk, or BIOS setup boot
 - **BIOS configuration** — check attribute values before updating pending settings and schedule when changes take effect
-- **Firmware updates & diagnostics** — update firmware and collect/download diagnostic bundles for troubleshooting
+- **Firmware updates** — update device firmware through Redfish update workflows
 - **Find resources quickly** — discover standard and OEM resources by type and properties without hardcoding collection paths
-- **Preview changes before applying** — inspect configuration diffs, validate and dry-run changes, then submit them in order
+- **One-click out-of-band log download** — collect diagnostic logs, wait for collection to finish, and download the bundle in one call
 - **Async automation** — coordinate operations across multiple BMCs with `AsyncRedfishClient`
 
 ## Installation
