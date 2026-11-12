@@ -28,6 +28,14 @@ Quick start:
 """
 from .async_client import AsyncRedfishClient
 from .auth import AuthenticationMode
+from .changes import (
+    ChangeOperation,
+    ChangeOperationResult,
+    ChangeSet,
+    ChangeSetResult,
+    ChangeStatus,
+    ChangeValidationIssue,
+)
 from .client import CollectionFailure, CollectionResult, RedfishClient
 from .discovery import DiscoveredService, DiscoveryProtocol, discover_ssdp
 from .exceptions import (
@@ -151,6 +159,8 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "ChangeOperation", "ChangeOperationResult", "ChangeSet", "ChangeSetResult",
+    "ChangeStatus", "ChangeValidationIssue",
     "ResourceDescriptor", "ResourceDiscoveryFailure", "ResourceIndex",
     "DiscoveredService", "DiscoveryProtocol", "discover_ssdp", "RedfishDiscoveryError",
     "AsyncRedfishClient",
