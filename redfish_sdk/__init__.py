@@ -155,7 +155,7 @@ from .resource_index import ResourceDescriptor, ResourceDiscoveryFailure, Resour
 from .response import GenericResponse
 from .retry import RetryPolicy
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
