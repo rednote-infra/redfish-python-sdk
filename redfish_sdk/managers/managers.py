@@ -47,6 +47,7 @@ from ..models.managers import (
 )
 from ..models.task import Task
 from ._request_helpers import compact_optional_fields
+from .oem_providers import OemCategory
 from .system_resources import select_member
 
 if TYPE_CHECKING:
@@ -210,7 +211,6 @@ class ManagersManager:
             RedfishValidationError: When the log service does not expose the
                 ``#LogService.CollectDiagnosticData`` action.
         """
-        from ..oem import OemCategory
         from .log_collect_strategies import (
             VendorDetector,
         )
@@ -257,7 +257,6 @@ class ManagersManager:
             RedfishException: On download HTTP errors.
         """
         from ..models.logs import LogEntry
-        from ..oem import OemCategory
         from .log_collect_strategies import (
             VendorDetector,
         )
@@ -345,7 +344,6 @@ class ManagersManager:
         import time as _time
 
         from ..exceptions import LogCollectFailedError
-        from ..oem import OemCategory
         from .log_collect_strategies import (
             VendorDetector,
         )

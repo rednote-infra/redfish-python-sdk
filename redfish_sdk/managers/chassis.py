@@ -33,6 +33,7 @@ from ..models.chassis import (
     Thermal,
 )
 from ..models.thermal import InletHistoryTemperature
+from .oem_providers import OemCategory
 from .system_resources import select_member
 
 if TYPE_CHECKING:
@@ -122,7 +123,6 @@ class ChassisManager:
             OEM ``SpeedRatio`` nor a usable ``Reading`` / ``MaxReadingRange``
             pair.
         """
-        from ..oem import OemCategory
         from .oem_extractors import VendorDetector
         vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
         return self._client.oem_providers.get(OemCategory.EXTRACTOR, vendor).get_fan_speed_ratio(fan)
@@ -146,7 +146,6 @@ class ChassisManager:
             Drive temperature in Celsius, or ``None`` when the BMC does not
             expose a drive temperature via any known OEM location.
         """
-        from ..oem import OemCategory
         from .oem_extractors import VendorDetector
         vendor = self._client.oem_vendor or VendorDetector.detect(self._client)
         return self._client.oem_providers.get(OemCategory.EXTRACTOR, vendor).get_drive_temperature_celsius(drive)
