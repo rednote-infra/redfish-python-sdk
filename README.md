@@ -1,6 +1,6 @@
 # redfish-python-sdk
-**redfish-python-sdk** is a typed, high-level Python SDK for managing
-multi-vendor BMCs and bare-metal servers through the DMTF Redfish API.
+
+> A lightweight Python SDK for managing server BMCs (Baseboard Management Controllers) via the [DMTF Redfish](https://www.dmtf.org/standards/redfish) protocol. Covers system inventory, hardware inspection, power control, boot management, event subscriptions, and more.
 
 [![PyPI version](https://img.shields.io/pypi/v/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
 [![Python versions](https://img.shields.io/pypi/pyversions/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
@@ -9,121 +9,68 @@ multi-vendor BMCs and bare-metal servers through the DMTF Redfish API.
 
 [English](README.md) | [中文](README_zh.md)
 
-> A lightweight Python SDK for managing server BMCs (Baseboard Management Controllers) via the [DMTF Redfish](https://www.dmtf.org/standards/redfish) protocol. Covers system inventory, hardware inspection, power control, boot management, event subscriptions, and more.
-
 ## Features
 
-- **Comprehensive hardware queries** — CPU, memory, drives, GPU, NIC, PCIe, PSU, fans — one line of code each
-- **Power & boot management** — power on/off, restart, PXE/HDD/BIOS boot source switching
-- **Multi-vendor compatible** — auto-adapts to OEM extensions from Huawei, xFusion, Lenovo, HPE, Dell, and others
-- **Pydantic v2 models** — all return values are strongly-typed objects with full IDE autocompletion
-- **Context manager** — `with` statement support for automatic connection cleanup
-- **Minimal dependencies** — only `requests`, `pydantic`, and `urllib3`
-
-Use DMTF standard fields first. In particular, xFusion's PCIe `DeviceBDF`
-field is OEM-only; portable code should use `PCIeFunctions` and only consume
-the OEM field when the xFusion contract applies.
-
-## Requirements
-
-- Python >= 3.9
-- A network-reachable Redfish-compliant BMC endpoint
+- **Hardware inventory** — query CPU, memory, drives, GPU, NIC, PCIe, PSUs, and cooling resources
+- **Power & boot management** — power on/off, restart, and PXE/disk/BIOS setup boot overrides
+- **Multi-vendor support** — standard Redfish resources and targeted OEM adapters; availability depends on BMC firmware
+- **Pydantic v2 models** — typed resource getters provide validation and IDE autocompletion
+- **Context manager** — use `with` for automatic client cleanup
+- **Minimal dependencies** — direct runtime dependencies on `requests` and `pydantic`
 
 ## Installation
+
+Requires Python 3.9 or later; CI covers Python 3.9–3.13. This README describes the current `main` branch; released packages may differ. Install from GitHub for current source behavior.
 
 ```bash
 # Install from PyPI
 pip install redfish-python-sdk
 
-# Or install from GitHub
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
-
-# Install a specific version
-pip install redfish-python-sdk==1.2.3
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
-
-# In requirements.txt
-# redfish-python-sdk>=1.2.3
+# Or install the current main branch from GitHub
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@main
 ```
+
+To pin a release, use `redfish-python-sdk==VERSION` for PyPI or replace `@main` with `@TAG` in the Git URL.
 
 ## Quick Start
 
-> **Credential management**: All BMC credentials should be injected via environment variables. **Never** hardcode them in your source code.
-> Before running examples or tests, set `export BMC_IP=...`, `export BMC_USER=...`, `export BMC_PASSWORD=...`.
+Set `BMC_IP`, `BMC_USER`, and `BMC_PASSWORD` in your environment before running this read-only example. Keep credentials out of source code.
 
 ```python
 import os
+
 from redfish_sdk import RedfishClient
 
-# Connect to BMC (credentials from environment variables)
-client = RedfishClient(
+with RedfishClient(
     host=os.environ["BMC_IP"],
     username=os.environ["BMC_USER"],
     password=os.environ["BMC_PASSWORD"],
-)
+    verify_ssl=True,
+) as client:
+    # Get system information.
+    system = client.get_system()
+    print(f"Server: {system.manufacturer} {system.model}")
+    print(f"SN:     {system.serial_number}")
+    print(f"Power:  {system.power_state}")
 
-# Get system info
-system = client.systems.get()
-print(f"Server: {system.manufacturer} {system.model}")
-print(f"SN:     {system.serial_number}")
-print(f"Power:  {system.power_state}")
+    # Get CPU information.
+    for cpu in client.get_processors():
+        print(f"CPU: {cpu.model}, {cpu.total_cores} cores / {cpu.total_threads} threads")
 
-# Get CPU info
-for cpu in client.get_processors():
-    print(f"CPU: {cpu.model}, {cpu.total_cores} cores / {cpu.total_threads} threads")
+    # Get memory information; missing capacity stays unknown.
+    for mem in client.get_memory():
+        capacity = "unknown" if mem.capacity_mib is None else f"{mem.capacity_mib / 1024:.1f} GiB"
+        print(f"DIMM: {mem.manufacturer} {capacity}")
 
-# Get memory info
-for mem in client.get_memory():
-    print(f"DIMM: {mem.manufacturer} {(mem.capacity_mib or 0) // 1024} GB")
-
-# Get drive info
-for drive in client.get_drives():
-    print(f"Drive: {drive.model} {(drive.capacity_bytes or 0) / 1e12:.1f} TB")
-
-# Don't forget to close
-client.close()
+    # Get drive information.
+    for drive in client.get_drives():
+        capacity = "unknown" if drive.capacity_bytes is None else f"{drive.capacity_bytes / 1e12:.1f} TB"
+        print(f"Drive: {drive.model} {capacity}")
 ```
 
-### Account mutations
+The example enables TLS certificate verification. For a BMC using a private or self-signed CA, supply `ca_bundle="/path/to/bmc-ca.pem"`. For a trusted test environment, explicitly setting `verify_ssl=False` disables verification.
 
-Use dedicated writable models for account creation and updates. They reject
-response annotations and unknown top-level properties, preventing data from a
-fetched account resource from being reflected into a mutation request.
-
-```python
-from redfish_sdk.models.account import AccountCreate, AccountPatch
-
-client.add_account(AccountCreate(
-    user_name="operator",
-    password=os.environ["NEW_BMC_ACCOUNT_PASSWORD"],
-    role_id="Operator",
-))
-client.update_account("operator", AccountPatch(enabled=False))
-```
-
-Vendor-specific writable data must be placed under the explicit `Oem` field.
-Passing the response-oriented `Account` model remains supported for backward
-compatibility: the SDK filters it to writable fields, but new code should
-migrate to `AccountCreate` or `AccountPatch`. Fields explicitly set to `None`
-in request models are transmitted as JSON `null`; fields not supplied are
-omitted.
-
-## Testing
-
-```bash
-# Run unit tests (no BMC or env vars required)
-pytest tests/test_models_mock.py tests/test_client_mock.py -v
-
-# Run offline tests (using pre-collected JSON data)
-export REDFISH_JSON_DIR="./testdata"
-pytest tests/test_offline_json.py -v
-
-# Run integration tests (requires a real BMC)
-export BMC_IP="<your-bmc-ip>"
-export BMC_USER="<your-bmc-user>"
-export BMC_PASSWORD="<your-bmc-password>"
-pytest tests/test_real_bmc.py -v
-```
+For BMCs exposing multiple systems or chassis, pass `system_id` or `chassis_id` to the corresponding getters.
 
 ## Contributing
 

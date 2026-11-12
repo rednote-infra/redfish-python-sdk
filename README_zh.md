@@ -1,99 +1,76 @@
 # redfish-python-sdk
-**redfish-python-sdk** 是一个类型安全的高级 Python SDK，通过 DMTF Redfish API 管理多厂商 BMC 和裸金属服务器。
+
+> 一个轻量级 Python SDK，用于通过 [DMTF Redfish](https://www.dmtf.org/standards/redfish) 协议管理服务器 BMC（Baseboard Management Controller，基板管理控制器），覆盖系统信息、硬件巡检、电源控制、启动项管理、事件订阅等场景。
 
 [![PyPI version](https://img.shields.io/pypi/v/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
 [![Python versions](https://img.shields.io/pypi/pyversions/redfish-python-sdk)](https://pypi.org/project/redfish-python-sdk/)
 [![License](https://img.shields.io/pypi/l/redfish-python-sdk)](https://github.com/rednote-infra/redfish-python-sdk/blob/main/LICENSE)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/redfish-python-sdk?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/redfish-python-sdk)
 
 [English](README.md) | [中文](README_zh.md)
 
-> 一个轻量级 Python SDK，用于通过 [DMTF Redfish](https://www.dmtf.org/standards/redfish) 协议管理服务器 BMC（Baseboard Management Controller），覆盖系统信息、硬件巡检、电源控制、启动项管理、事件订阅等场景。
-
 ## 特性
 
-- **全面的硬件查询** — CPU、内存、硬盘、GPU、网卡、PCIe、电源、散热，一行代码获取
-- **电源与启动管理** — 开关机、重启、PXE/HDD/BIOS 启动项切换
-- **多厂商兼容** — 自动适配华为/超聚变/联想/HPE/Dell 等厂商的 OEM 扩展字段
-- **Pydantic v2 模型** — 所有返回值均为强类型对象，IDE 自动补全友好
-- **上下文管理器** — 支持 `with` 语句自动释放连接
-- **最小依赖** — 仅依赖 `requests`、`pydantic`、`urllib3`
-
-## 环境要求
-
-- Python >= 3.9
-- 网络可达的 Redfish-compliant BMC 端点
+- **硬件信息查询** — 查询 CPU、内存、硬盘、GPU、网卡、PCIe、电源和散热资源
+- **电源与启动管理** — 开关机、重启，以及 PXE、磁盘和 BIOS 设置界面的启动覆盖配置
+- **多厂商支持** — 支持标准 Redfish 资源和针对性的 OEM 适配，具体能力取决于 BMC 固件
+- **Pydantic v2 模型** — 类型化资源查询接口提供数据校验和 IDE 自动补全
+- **上下文管理器** — 使用 `with` 自动清理客户端资源
+- **最小依赖** — 运行时直接依赖 `requests` 和 `pydantic`
 
 ## 安装
 
+要求 Python 3.9 或更高版本；CI 覆盖 Python 3.9–3.13。本文档介绍当前 `main` 分支，已发布的软件包可能有所不同；如需当前源码的行为，请从 GitHub 安装。
+
 ```bash
-# 从 PyPI 安装
+# Install from PyPI
 pip install redfish-python-sdk
 
-# 或从 GitHub 安装
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
-
-# 安装指定版本
-pip install redfish-python-sdk==1.2.3
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
-
-# 在 requirements.txt 中引用
-# redfish-python-sdk>=1.2.3
+# Or install the current main branch from GitHub
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@main
 ```
+
+如需固定发布版本，PyPI 使用 `redfish-python-sdk==VERSION`，Git 安装则将 URL 中的 `@main` 替换为 `@TAG`。
 
 ## 快速开始
 
-> **凭证管理**：所有 BMC 凭证都通过环境变量注入，**不要**在代码里硬编码。
-> 在运行示例 / 测试前先 `export BMC_IP=...`、`export BMC_USER=...`、`export BMC_PASSWORD=...`。
+运行以下只读示例前，请在环境中设置 `BMC_IP`、`BMC_USER` 和 `BMC_PASSWORD`，不要将凭证写入源代码。
 
 ```python
 import os
+
 from redfish_sdk import RedfishClient
 
-# 通过环境变量连接 BMC
-client = RedfishClient(
+with RedfishClient(
     host=os.environ["BMC_IP"],
     username=os.environ["BMC_USER"],
     password=os.environ["BMC_PASSWORD"],
-)
+    verify_ssl=True,
+) as client:
+    # Get system information.
+    system = client.get_system()
+    print(f"Server: {system.manufacturer} {system.model}")
+    print(f"SN:     {system.serial_number}")
+    print(f"Power:  {system.power_state}")
 
-# 获取系统信息
-system = client.systems.get()
-print(f"Server: {system.manufacturer} {system.model}")
-print(f"SN:     {system.serial_number}")
-print(f"Power:  {system.power_state}")
+    # Get CPU information.
+    for cpu in client.get_processors():
+        print(f"CPU: {cpu.model}, {cpu.total_cores} cores / {cpu.total_threads} threads")
 
-# 获取 CPU 信息
-for cpu in client.get_processors():
-    print(f"CPU: {cpu.model}, {cpu.total_cores} cores / {cpu.total_threads} threads")
+    # Get memory information; missing capacity stays unknown.
+    for mem in client.get_memory():
+        capacity = "unknown" if mem.capacity_mib is None else f"{mem.capacity_mib / 1024:.1f} GiB"
+        print(f"DIMM: {mem.manufacturer} {capacity}")
 
-# 获取内存信息
-for mem in client.get_memory():
-    print(f"DIMM: {mem.manufacturer} {(mem.capacity_mib or 0) // 1024} GB")
-
-# 获取硬盘信息
-for drive in client.get_drives():
-    print(f"Drive: {drive.model} {(drive.capacity_bytes or 0) / 1e12:.1f} TB")
-
-# 记得关闭连接
-client.close()
+    # Get drive information.
+    for drive in client.get_drives():
+        capacity = "unknown" if drive.capacity_bytes is None else f"{drive.capacity_bytes / 1e12:.1f} TB"
+        print(f"Drive: {drive.model} {capacity}")
 ```
 
-## 测试
+示例开启 TLS 证书校验。对于使用私有或自签名 CA 的 BMC，可传入 `ca_bundle="/path/to/bmc-ca.pem"`。在可信测试环境中，显式设置 `verify_ssl=False` 可关闭证书校验。
 
-```bash
-# 运行单元测试（无需 BMC / env）
-pytest tests/test_models_mock.py tests/test_client_mock.py -v
-
-# 运行离线测试（使用预采集的 JSON 数据）
-export REDFISH_JSON_DIR="./testdata"
-pytest tests/test_offline_json.py -v
-
-# 运行集成测试（需要连接真实 BMC，凭证从环境变量读取）
-export BMC_IP="<your-bmc-ip>"
-export BMC_USER="<your-bmc-user>"
-export BMC_PASSWORD="<your-bmc-password>"
-pytest tests/test_real_bmc.py -v
-```
+如果 BMC 暴露多个系统或机箱，请向对应的查询方法传入 `system_id` 或 `chassis_id`。
 
 ## 贡献
 
