@@ -207,6 +207,7 @@ class RedfishClient:
         session_location: Optional[str] = None,
         oem_providers: Optional[OemProviderRegistry] = None,
         oem_vendor: Optional[str] = None,
+        suppress_insecure_warnings: bool = True,
     ):
         """
         Initialize the Redfish Client.
@@ -245,6 +246,10 @@ class RedfishClient:
             session_location: Optional URI for the existing session resource.
             oem_providers: Client-scoped optional provider discovery/registrations.
             oem_vendor: Explicit vendor key for OEM dispatch, including new vendors.
+            suppress_insecure_warnings: Hide this BMC hostname's unverified HTTPS
+                warning when verify_ssl=False (default True). Set False to show
+                it. Warning filters are process-wide per hostname and do not
+                affect certificate verification or other diagnostics.
         """
         if oem_providers is not None and not isinstance(oem_providers, OemProviderRegistry):
             raise RedfishValidationError("oem_providers must be an OemProviderRegistry")
@@ -268,6 +273,7 @@ class RedfishClient:
             auth_mode=auth_mode,
             session_key=session_key,
             session_location=session_location,
+            suppress_insecure_warnings=suppress_insecure_warnings,
         )
 
         # Root service cache

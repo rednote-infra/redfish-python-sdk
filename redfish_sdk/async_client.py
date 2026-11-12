@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from requests.structures import CaseInsensitiveDict
 
 from ._errors import error_from_response
+from ._tls import configure_tls_warnings
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishCancelledError,
@@ -72,12 +73,17 @@ class AsyncRedfishClient:
     catch asyncio.CancelledError for portable cancellation handling.
     Async contexts clean up SDK-created Redfish sessions, including on failed
     entry and cancellation. Supplied tokens are not deleted by close().
+
+    Unverified-session warnings for this BMC hostname are hidden by default.
+    Set suppress_insecure_warnings=False to show them. This warning policy is
+    process-wide per hostname; verified sessions do not change warning filters.
     """
 
     def __init__(self, host: str, username: str, password: str, *, session: requests.Session,
                  scheme: str = "https", auth_mode=AuthenticationMode.SESSION,
                  session_key: Optional[str] = None, session_location: Optional[str] = None,
-                 connect_timeout: float = 10, read_timeout: float = 30):
+                 connect_timeout: float = 10, read_timeout: float = 30,
+                 suppress_insecure_warnings: bool = True):
         if scheme.lower() != "https":
             raise RedfishValidationError("Async authentication requires HTTPS")
         self._origin = f"https://{host}"
@@ -96,6 +102,7 @@ class AsyncRedfishClient:
         self._validate_headers(session.headers)
         if session.auth is not None:
             raise RedfishValidationError("Caller session must not supply default authentication")
+        configure_tls_warnings(host, session.verify, suppress_insecure_warnings)
         self.host = host
         self._username, self._password = username, password
         self._basic = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
