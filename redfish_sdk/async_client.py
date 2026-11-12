@@ -17,6 +17,7 @@ from requests.structures import CaseInsensitiveDict
 
 from ._errors import error_from_response
 from ._tls import configure_tls_warnings
+from ._transport import NoDefaultAuthentication, validate_session
 from .auth import AuthenticationMode
 from .exceptions import (
     RedfishCancelledError,
@@ -40,13 +41,6 @@ _TOKEN = "X-Auth-Token"
 _MANAGED_HEADERS = frozenset({_AUTHORIZATION.lower(), _TOKEN.lower()})
 _SAFE_METHODS = frozenset({HttpMethod.GET, HttpMethod.HEAD})
 logger = logging.getLogger(__name__)
-
-
-class _NoDefaultAuthentication(requests.auth.AuthBase):
-    """Suppress implicit netrc authentication without changing the caller's session."""
-
-    def __call__(self, request):
-        return request
 
 
 class AsyncRedfishClient:
@@ -223,9 +217,10 @@ class AsyncRedfishClient:
 
     def _send(self, method, url, headers, params, timeout, options):
         """Use the caller's Requests session exclusively until its response is buffered."""
+        validate_session(self._session)
         with self._transport_lock, self._session.request(method.value, url, headers=headers,
                 params=params, timeout=timeout, allow_redirects=False, stream=True,
-                auth=_NoDefaultAuthentication(), **options) as raw:
+                auth=NoDefaultAuthentication(), **options) as raw:
             try:
                 return GenericResponse.from_response(raw), None
             except requests.exceptions.RequestException as exc:
