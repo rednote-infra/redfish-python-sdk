@@ -126,6 +126,9 @@ def test_async_root_discovery_fallback_and_relative_requests():
 
 
 def test_async_default_root_preserves_legacy_bare_request_paths():
-    with requests.Session() as session:
-        client = AsyncRedfishClient("bmc.example", "user", "password", session=session)
-        assert client._url("vendor/resource") == "https://bmc.example/vendor/resource"
+    async def run():
+        with requests.Session() as session:
+            client = AsyncRedfishClient("bmc.example", "user", "password", session=session)
+            assert client._url("vendor/resource") == "https://bmc.example/vendor/resource"
+            await client.close()
+    asyncio.run(run())
