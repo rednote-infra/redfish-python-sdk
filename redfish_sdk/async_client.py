@@ -9,13 +9,14 @@ import threading
 from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from typing import Any, Optional, Type, TypeVar
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 import requests
 from pydantic import BaseModel
 from requests.structures import CaseInsensitiveDict
 
 from ._errors import error_from_response
+from ._service_root import DEFAULT_SERVICE_ROOT, SESSION_COLLECTION_PATH, normalize_service_root, resolve_service_url
 from ._tls import configure_tls_warnings
 from ._transport import NoDefaultAuthentication, validate_session
 from .auth import AuthenticationMode
@@ -34,8 +35,6 @@ from .request import _JSON_NULL, _UNSET_BODY, HttpMethod, QueryParameters
 from .response import GenericResponse
 
 T = TypeVar("T", bound=BaseModel)
-_ROOT = "/redfish/v1/"
-_SESSIONS = "/redfish/v1/SessionService/Sessions"
 _AUTHORIZATION = "Authorization"
 _TOKEN = "X-Auth-Token"
 _MANAGED_HEADERS = frozenset({_AUTHORIZATION.lower(), _TOKEN.lower()})
@@ -52,6 +51,11 @@ class AsyncRedfishClient:
     with other clients or use it concurrently outside this client. Requests on
     this client are serialized in worker threads to protect session state;
     different clients can make progress concurrently without blocking the loop.
+
+    ``service_root`` defaults to /redfish/v1/ and accepts a custom absolute path.
+    Bare request paths resolve under custom roots; the default retains legacy
+    origin-relative requests. Absolute same-origin paths remain unchanged.
+    Root discovery and session fallbacks share this configuration.
 
     HTTPS and same-origin targets are required; redirects are returned, never
     followed. GET/HEAD refresh an expired Redfish session once, coordinated among
@@ -77,7 +81,8 @@ class AsyncRedfishClient:
                  scheme: str = "https", auth_mode=AuthenticationMode.SESSION,
                  session_key: Optional[str] = None, session_location: Optional[str] = None,
                  connect_timeout: float = 10, read_timeout: float = 30,
-                 suppress_insecure_warnings: bool = True):
+                 suppress_insecure_warnings: bool = True,
+                 service_root: str = DEFAULT_SERVICE_ROOT):
         if scheme.lower() != "https":
             raise RedfishValidationError("Async authentication requires HTTPS")
         self._origin = f"https://{host}"
@@ -98,6 +103,7 @@ class AsyncRedfishClient:
             raise RedfishValidationError("Caller session must not supply default authentication")
         configure_tls_warnings(host, session.verify, suppress_insecure_warnings)
         self.host = host
+        self.service_root = normalize_service_root(service_root)
         self._username, self._password = username, password
         self._basic = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
         self._session = session
@@ -130,7 +136,7 @@ class AsyncRedfishClient:
     def _url(self, path):
         if not isinstance(path, str) or not path or path.startswith("//") or "\\" in path or any(ord(c) < 32 for c in path):
             raise RedfishValidationError("Invalid Redfish request target")
-        url = urljoin(self._origin + "/", path)
+        url = resolve_service_url(self._origin, self.service_root, path)
         parts = urlsplit(url)
         try:
             valid = (parts.scheme == "https" and parts.hostname == urlsplit(self._origin).hostname
@@ -277,10 +283,10 @@ class AsyncRedfishClient:
         return response
 
     async def _discover_sessions(self):
-        response = await self._wire(HttpMethod.GET, _ROOT, authenticated=False)
+        response = await self._wire(HttpMethod.GET, self.service_root, authenticated=False)
         if response.status_code == HTTPStatus.UNAUTHORIZED:
-            return _SESSIONS
-        failure = self._error(response, HttpMethod.GET, _ROOT)
+            return self.service_root + SESSION_COLLECTION_PATH
+        failure = self._error(response, HttpMethod.GET, self.service_root)
         if failure:
             raise failure
         root = RootService.model_validate_json(response.text)
@@ -295,7 +301,7 @@ class AsyncRedfishClient:
             service = SessionService.model_validate_json(response.text)
             if service.sessions and service.sessions.odata_id:
                 return service.sessions.odata_id
-        return _SESSIONS
+        return self.service_root + SESSION_COLLECTION_PATH
 
     async def _login(self):
         if not self._sessions_uri:

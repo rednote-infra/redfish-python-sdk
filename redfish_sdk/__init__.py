@@ -29,6 +29,7 @@ Quick start:
 from .async_client import AsyncRedfishClient
 from .auth import AuthenticationMode
 from .client import CollectionFailure, CollectionResult, RedfishClient
+from .discovery import DiscoveredService, DiscoveryProtocol, discover_ssdp
 from .exceptions import (
     LogCollectFailedError,
     RedfishAsyncOperationError,
@@ -37,6 +38,7 @@ from .exceptions import (
     RedfishCancelledError,
     RedfishConflictError,
     RedfishConnectionError,
+    RedfishDiscoveryError,
     RedfishException,
     RedfishMissingAttributeError,
     RedfishNotFoundError,
@@ -148,6 +150,7 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "DiscoveredService", "DiscoveryProtocol", "discover_ssdp", "RedfishDiscoveryError",
     "AsyncRedfishClient",
     "RedfishCancelledError",
     "HttpMethod",

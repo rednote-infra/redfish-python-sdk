@@ -32,6 +32,7 @@ from requests.structures import CaseInsensitiveDict
 from ._errors import error_from_response
 from ._redaction import redact_diagnostic
 from ._redaction import redact_for_log as _redact_for_log
+from ._service_root import DEFAULT_SERVICE_ROOT, SESSION_COLLECTION_PATH, normalize_service_root, resolve_service_url
 from ._tls import configure_tls_warnings
 from ._transport import (
     MANAGED_AUTH_HEADERS,
@@ -182,6 +183,7 @@ class RedfishHttpClient:
         session: Optional[requests.Session] = None,
         ca_bundle: Optional[CaBundle] = None,
         external_session: Optional[requests.Session] = None,
+        service_root: str = DEFAULT_SERVICE_ROOT,
     ):
         """
         Initialize the Redfish HTTP client.
@@ -240,6 +242,10 @@ class RedfishHttpClient:
                 BMC CA/proxy settings. Injected sessions never follow redirects
                 automatically; request(..., allow_redirects=True) supports safe
                 same-origin redirects explicitly.
+            service_root: Service-root path, default /redfish/v1/. Bare request
+                paths resolve under custom prefixes; the default retains legacy
+                origin-relative requests. Absolute same-origin paths remain
+                unchanged. Configuration is normalized to a trailing slash.
         """
         if session is not None:
             validate_session(session)
@@ -258,6 +264,7 @@ class RedfishHttpClient:
                 stacklevel=3,
             )
         self._validate_endpoint(host, scheme, username, allow_insecure_http_auth)
+        self.service_root = normalize_service_root(service_root)
         configure_tls_warnings(host, effective_verify, suppress_insecure_warnings)
         self.host = host
         self.scheme = scheme.lower()
@@ -300,8 +307,9 @@ class RedfishHttpClient:
         self._auth_mode = auth_mode
         self._session_key: Optional[str] = None
         self._session_location: Optional[str] = None
-        self._session_collection_uri = self._session_collection_from_location(
-            session_location
+        self._session_collection_uri = (
+            self._session_collection_from_location(session_location) if session_location
+            else self.service_root + SESSION_COLLECTION_PATH
         )
         self._session_refresh_lock = threading.Lock()
         self._session_refresh_failure: Optional[tuple[Optional[str], Exception]] = None
@@ -399,11 +407,7 @@ class RedfishHttpClient:
     def _resolve_url(self, path: str) -> str:
         """Resolve a request target and require the configured BMC origin."""
         base = urlsplit(f"{self.scheme}://{self.host}")
-        target = (
-            urlsplit(path)
-            if path.startswith(("http://", "https://"))
-            else urlsplit(self._build_url(path))
-        )
+        target = urlsplit(self._build_url(path))
         try:
             same_origin = (
                 target.scheme.lower() == base.scheme.lower()
@@ -451,8 +455,7 @@ class RedfishHttpClient:
 
     def _build_url(self, path: str) -> str:
         """Build a full URL from a Redfish path."""
-        path = path if path.startswith("/") else f"/{path}"
-        return f"{self.scheme}://{self.host}{path}"
+        return resolve_service_url(f"{self.scheme}://{self.host}", self.service_root, path)
 
     def _get_etag(self, path: str, data: Optional[BaseModel]) -> str:
         """
@@ -486,7 +489,7 @@ class RedfishHttpClient:
     _MANAGED_AUTH_HEADERS = MANAGED_AUTH_HEADERS
     _AUTHORIZATION_HEADER = "Authorization"
     _TOKEN_HEADER = "X-Auth-Token"
-    _DEFAULT_SESSION_COLLECTION = "/redfish/v1/SessionService/Sessions"
+    _DEFAULT_SESSION_COLLECTION = DEFAULT_SERVICE_ROOT + SESSION_COLLECTION_PATH
 
     @property
     def auth_mode(self) -> AuthenticationMode:

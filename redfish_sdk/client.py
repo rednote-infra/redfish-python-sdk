@@ -49,6 +49,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
+from ._service_root import DEFAULT_SERVICE_ROOT
 from ._transport import CaBundle
 from .auth import AuthenticationMode
 from .exceptions import (
@@ -214,6 +215,7 @@ class RedfishClient:
         session: Optional[requests.Session] = None,
         ca_bundle: Optional[CaBundle] = None,
         external_session: Optional[requests.Session] = None,
+        service_root: str = DEFAULT_SERVICE_ROOT,
     ):
         """
         Initialize the Redfish Client.
@@ -274,6 +276,9 @@ class RedfishClient:
                 supports explicit same-origin following. Custom adapters control
                 their own retries. Avoid concurrent mutation/use of supplied
                 sessions outside the client.
+            service_root: Service-root path, default /redfish/v1/. Bare request
+                paths resolve beneath custom roots. The default retains legacy
+                origin-relative requests; absolute same-origin paths are preserved.
         """
         if oem_providers is not None and not isinstance(oem_providers, OemProviderRegistry):
             raise RedfishValidationError("oem_providers must be an OemProviderRegistry")
@@ -301,6 +306,7 @@ class RedfishClient:
             session=session,
             ca_bundle=ca_bundle,
             external_session=external_session,
+            service_root=service_root,
         )
 
         # Root service cache
@@ -769,6 +775,11 @@ class RedfishClient:
         """Return the configured BMC host."""
         return self._http_client.host
 
+    @property
+    def service_root(self) -> str:
+        """Return the normalized configured service-root path."""
+        return self._http_client.service_root
+
     def root(self):
         """
         Get the Redfish root service document.
@@ -802,12 +813,12 @@ class RedfishClient:
         Fetch the Redfish root service document.
         Endpoint: GET /redfish/v1/
         """
-        return self._http_client.get("/redfish/v1/", RootService)
+        return self._http_client.get(self.service_root, RootService)
 
     def _collection_path(self, link: str, current_page: str) -> str:
         """Resolve a collection link and reject cross-origin destinations."""
         base_url = f"{self._http_client.scheme}://{self._http_client.host}/"
-        current_url = urljoin(base_url, current_page)
+        current_url = self._http_client._resolve_url(current_page)
         resolved = urlsplit(urljoin(current_url, link))
         origin = urlsplit(base_url)
 
@@ -865,7 +876,7 @@ class RedfishClient:
         visited_pages = set()
         visited_members = set()
         saw_member_link = False
-        page_path = self._collection_path(odata_id, "/")
+        page_path = self._collection_path(odata_id, self.service_root)
         first_page = True
 
         def handle_failure(
@@ -995,7 +1006,7 @@ class RedfishClient:
     def _get_chassis_collection_odata_id(self) -> str:
         """Get the Chassis collection @odata.id from the root service."""
         root = self._get_root()
-        return root.chassis.odata_id or "/redfish/v1/Chassis"
+        return root.chassis.odata_id or self.service_root + "Chassis"
 
     def _get_event_service(self) -> EventService:
         """Get the EventService resource."""
@@ -1045,7 +1056,7 @@ class RedfishClient:
         link = getattr(root, "task_service", None) or getattr(root, "tasks", None)
         odata_id = getattr(link, "odata_id", None) if link is not None else None
         if not odata_id:
-            odata_id = "/redfish/v1/TaskService"
+            odata_id = self.service_root + "TaskService"
         return self._http_client.get(odata_id, TaskService)
 
     def _get_update_service(self) -> UpdateService:
@@ -2822,7 +2833,7 @@ class RedfishClient:
 
         # Step 1: Search in RootService
         try:
-            root_data = self._http_client.get_raw("/redfish/v1/")
+            root_data = self._http_client.get_raw(self.service_root)
             result = self._extract_odata_id(root_data, field_name)
             if result is not None:
                 return result
@@ -2878,7 +2889,7 @@ class RedfishClient:
             Raw JSON dict of the first member, or None if not available
         """
         # Get collection @odata.id from root
-        root_data = self._http_client.get_raw("/redfish/v1/")
+        root_data = self._http_client.get_raw(self.service_root)
         col_ref = root_data.get(collection_key)
         if col_ref is None:
             return None
