@@ -25,11 +25,13 @@
 # Install from PyPI
 pip install redfish-python-sdk
 
-# Or install the current main branch from GitHub
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@main
-```
+# Or install from GitHub
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
-To pin a release, use `redfish-python-sdk==VERSION` for PyPI or replace `@main` with `@TAG` in the Git URL.
+# Install a specific version
+pip install redfish-python-sdk==1.2.3
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
+```
 
 ## Quick Start
 
@@ -64,10 +66,6 @@ with RedfishClient(
         capacity = "unknown" if drive.capacity_bytes is None else f"{drive.capacity_bytes / 1e12:.1f} TB"
         print(f"Drive: {drive.model} {capacity}")
 ```
-
-The example enables TLS certificate verification. For a BMC using a private or self-signed CA, supply `ca_bundle="/path/to/bmc-ca.pem"`. For a trusted test environment, explicitly setting `verify_ssl=False` disables verification.
-
-For BMCs exposing multiple systems or chassis, pass `system_id` or `chassis_id` to the corresponding getters.
 
 ## Contributing
 

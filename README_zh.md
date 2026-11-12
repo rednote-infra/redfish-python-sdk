@@ -25,11 +25,13 @@
 # Install from PyPI
 pip install redfish-python-sdk
 
-# Or install the current main branch from GitHub
-pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@main
-```
+# Or install from GitHub
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git
 
-如需固定发布版本，PyPI 使用 `redfish-python-sdk==VERSION`，Git 安装则将 URL 中的 `@main` 替换为 `@TAG`。
+# Install a specific version
+pip install redfish-python-sdk==1.2.3
+pip install git+https://github.com/rednote-infra/redfish-python-sdk.git@v1.2.3
+```
 
 ## 快速开始
 
@@ -64,10 +66,6 @@ with RedfishClient(
         capacity = "unknown" if drive.capacity_bytes is None else f"{drive.capacity_bytes / 1e12:.1f} TB"
         print(f"Drive: {drive.model} {capacity}")
 ```
-
-示例开启 TLS 证书校验。对于使用私有或自签名 CA 的 BMC，可传入 `ca_bundle="/path/to/bmc-ca.pem"`。在可信测试环境中，显式设置 `verify_ssl=False` 可关闭证书校验。
-
-如果 BMC 暴露多个系统或机箱，请向对应的查询方法传入 `system_id` 或 `chassis_id`。
 
 ## 贡献
 
