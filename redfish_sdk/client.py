@@ -129,6 +129,13 @@ from .models.update import (
     UpdateServiceCapabilities,
 )
 from .request import _UNSET_BODY, HttpMethod, QueryParameters
+from .resource_index import (
+    DEFAULT_DISCOVERY_MAX_DEPTH,
+    DEFAULT_DISCOVERY_MAX_RESOURCES,
+    ResourceIndex,
+    _validate_selection,
+    discover_resources,
+)
 from .response import GenericResponse
 from .retry import RetryPolicy
 
@@ -3018,6 +3025,44 @@ class RedfishClient:
             connect_timeout=connect_timeout, read_timeout=read_timeout,
             allow_redirects=allow_redirects, retry_policy=retry_policy,
         )
+
+    def discover_resources(
+        self, *, start: Optional[str] = None,
+        max_depth: int = DEFAULT_DISCOVERY_MAX_DEPTH,
+        max_resources: int = DEFAULT_DISCOVERY_MAX_RESOURCES,
+        include_expensive: bool = False,
+    ) -> ResourceIndex:
+        """Index a bounded subtree, starting at service_root by default.
+
+        The returned iterable contains lightweight descriptors and exposes sorted
+        ``types``, ``failures``, ``limits_reached``, ``excluded`` and ``is_partial``.
+        Links must be same-origin and inside the starting subtree. Logs and
+        telemetry require include_expensive=True. No redirects are followed.
+        Root depth is zero; pagination stays at the same depth. max_resources
+        bounds unique scheduled GETs plus rejected links, including failures.
+        This is a fresh traversal; no inventory is cached or implicitly fetched
+        by existing typed APIs. See ResourceIndex.find for filter semantics.
+        """
+        return discover_resources(self, start=start, max_depth=max_depth,
+                                  max_resources=max_resources, include_expensive=include_expensive)
+
+    def find_resources(
+        self, *, odata_type: Optional[str] = None,
+        where: Optional[Mapping[str, Any]] = None, start: Optional[str] = None,
+        max_depth: int = DEFAULT_DISCOVERY_MAX_DEPTH,
+        max_resources: int = DEFAULT_DISCOVERY_MAX_RESOURCES,
+        include_expensive: bool = False,
+    ) -> ResourceIndex:
+        """Discover and select full/unversioned types with exact property filters.
+
+        Diagnostics survive filtering, including when no resources match. Inspect
+        is_partial before treating an empty result as an absent resource type.
+        Reuse discover_resources().find(...) for multiple selections without
+        fetching the inventory again. Invalid selectors fail before any request.
+        """
+        _validate_selection(odata_type, where)
+        return self.discover_resources(start=start, max_depth=max_depth, max_resources=max_resources,
+                                       include_expensive=include_expensive).find(odata_type=odata_type, where=where)
 
     def get_raw(self, odata_id: str) -> dict:
         """

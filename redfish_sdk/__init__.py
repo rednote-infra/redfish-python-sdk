@@ -143,6 +143,7 @@ from .models.update import (
 )
 from .oem import OemCategory, OemProviderConflictError, OemProviderLoadError, OemProviderRegistry
 from .request import HttpMethod
+from .resource_index import ResourceDescriptor, ResourceDiscoveryFailure, ResourceIndex
 from .response import GenericResponse
 from .retry import RetryPolicy
 
@@ -150,6 +151,7 @@ __version__ = "1.3.1"
 __author__ = "RedNote Infrastructure"
 
 __all__ = [
+    "ResourceDescriptor", "ResourceDiscoveryFailure", "ResourceIndex",
     "DiscoveredService", "DiscoveryProtocol", "discover_ssdp", "RedfishDiscoveryError",
     "AsyncRedfishClient",
     "RedfishCancelledError",
