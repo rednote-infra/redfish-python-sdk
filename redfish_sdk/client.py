@@ -54,6 +54,7 @@ from .exceptions import (
     RedfishValidationError,
 )
 from .http_client import RedfishHttpClient
+from .managers.oem_providers import OemProviderRegistry
 from .models.account import Account, AccountCreate, AccountPatch, AccountService, Role
 from .models.attribute_registry import AttributeRegistry
 from .models.chassis import Chassis
@@ -123,7 +124,6 @@ from .models.update import (
     UpdateService,
     UpdateServiceCapabilities,
 )
-from .oem import OemProviderRegistry
 from .response import GenericResponse
 
 logger = logging.getLogger(__name__)

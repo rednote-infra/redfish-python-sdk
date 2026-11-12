@@ -202,7 +202,7 @@ def test_metadata_failure_preserves_builtins_and_is_reported_for_unknown_vendor(
 def test_python39_mapping_entry_points_are_supported(monkeypatch):
     from redfish_sdk.oem import OemCategory, OemProviderRegistry
     point = entry("extractor", "example")
-    monkeypatch.setattr("redfish_sdk.oem.metadata.entry_points", lambda: {point.group: [point]})
+    monkeypatch.setattr("redfish_sdk.managers.oem_providers.metadata.entry_points", lambda: {point.group: [point]})
     assert isinstance(OemProviderRegistry().get(OemCategory.EXTRACTOR, "example"), Extractor)
 
 
@@ -238,3 +238,16 @@ def test_provider_operation_errors_propagate_without_fallback():
             client.simple_update("https://example.test/image")
         assert caught.value is failure
         implementation.execute.assert_called_once()
+
+
+def test_public_facade_reexports_the_shared_manager_implementation():
+    from redfish_sdk import oem
+    from redfish_sdk.managers import oem_providers
+    for name in oem.__all__:
+        assert getattr(oem, name) is getattr(oem_providers, name)
+    assert oem.OemProviderRegistry.__module__ == "redfish_sdk.managers.oem_providers"
+
+
+@pytest.mark.parametrize("module", ["redfish_sdk.oem", "redfish_sdk.managers.oem_providers", "redfish_sdk.client"])
+def test_provider_import_paths_work_in_fresh_interpreter(module):
+    subprocess.run([sys.executable, "-c", f"import {module}"], check=True, capture_output=True, text=True)
