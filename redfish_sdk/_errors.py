@@ -26,8 +26,12 @@ _PASSWORD_CHANGE_MESSAGE = "PasswordChangeRequired"
 _BASE_REGISTRY = "Base"
 
 
-def error_from_response(status_code, body, headers, *, method="", path="", secrets=()):
-    """Preserve the downstream message and structured details without rewriting raw data."""
+def error_from_response(status_code, body, headers, *, method="", path="", secrets=(), allow_redirect_success=True):
+    """Preserve downstream messages and structured details without rewriting raw data.
+
+    Legacy callers accept explicit redirect success codes. Workflows that reject
+    redirects can disable that compatibility without changing error decoding.
+    """
     try:
         envelope = RedfishErrorResponse.model_validate_json(body)
     except ValueError:
@@ -62,7 +66,9 @@ def error_from_response(status_code, body, headers, *, method="", path="", secre
     code = status_code
     if password_required:
         return RedfishPasswordChangeRequiredError(code, message, body, account_uri=account_uri, **details)
-    if HTTPStatus.OK <= code < HTTPStatus.MULTIPLE_CHOICES or code in _EXPLICIT_REDIRECT_SUCCESS_CODES:
+    if HTTPStatus.OK <= code < HTTPStatus.MULTIPLE_CHOICES or (
+        allow_redirect_success and code in _EXPLICIT_REDIRECT_SUCCESS_CODES
+    ):
         return None
     if code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
         return RedfishAuthError(code, message, body, **details)

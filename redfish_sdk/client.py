@@ -52,6 +52,7 @@ import requests
 from ._service_root import DEFAULT_SERVICE_ROOT
 from ._transport import CaBundle
 from .auth import AuthenticationMode
+from .changes import ChangeSet
 from .exceptions import (
     RedfishException,
     RedfishMissingAttributeError,
@@ -3025,6 +3026,15 @@ class RedfishClient:
             connect_timeout=connect_timeout, read_timeout=read_timeout,
             allow_redirects=allow_redirects, retry_policy=retry_policy,
         )
+
+    def change_set(self) -> ChangeSet:
+        """Create an optional client-side plan; existing mutations stay immediate.
+
+        Stage explicit requests, inspect plan()/to_json(), optionally capture
+        ETags, then commit(). No atomicity, rollback or automatic retry is implied.
+        Settings/ApplyTime annotations can be included in staged request bodies.
+        """
+        return ChangeSet(self)
 
     def discover_resources(
         self, *, start: Optional[str] = None,
