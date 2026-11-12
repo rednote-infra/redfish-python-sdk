@@ -1,15 +1,17 @@
-"""Optional asyncio transport using a caller-owned aiohttp session."""
+"""Async API backed by the existing Requests transport and worker threads."""
 from __future__ import annotations
 
 import asyncio
 import base64
 import logging
 import math
+import threading
 from collections.abc import Mapping, Sequence
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Optional, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar
 from urllib.parse import urljoin, urlsplit
 
+import requests
 from pydantic import BaseModel
 from requests.structures import CaseInsensitiveDict
 
@@ -29,45 +31,51 @@ from .models.session import SessionService
 from .request import _JSON_NULL, _UNSET_BODY, HttpMethod, QueryParameters
 from .response import GenericResponse
 
-if TYPE_CHECKING:
-    import aiohttp
-
 T = TypeVar("T", bound=BaseModel)
 _ROOT = "/redfish/v1/"
 _SESSIONS = "/redfish/v1/SessionService/Sessions"
 _AUTHORIZATION = "Authorization"
 _TOKEN = "X-Auth-Token"
-_LOCATION = "Location"
 _MANAGED_HEADERS = frozenset({_AUTHORIZATION.lower(), _TOKEN.lower()})
 _SAFE_METHODS = frozenset({HttpMethod.GET, HttpMethod.HEAD})
 logger = logging.getLogger(__name__)
 
 
-class AsyncRedfishClient:
-    """Additive async JSON client; install ``redfish-python-sdk[async]``.
+class _NoDefaultAuthentication(requests.auth.AuthBase):
+    """Suppress implicit netrc authentication without changing the caller's session."""
 
-    Supply an open ``aiohttp.ClientSession`` created in the running event loop.
-    The caller controls TLS verification, proxies, pooling, tracing and transport
-    shutdown. The SDK never closes that session or changes its default headers.
-    Use a session without default authentication or credential headers.
+    def __call__(self, request):
+        return request
+
+
+class AsyncRedfishClient:
+    """Async JSON API using ``requests`` and ``asyncio.to_thread``; no new dependency.
+
+    Supply a caller-owned ``requests.Session``. Its TLS verification, proxies,
+    adapters and pooling configuration remain under caller control. The SDK never
+    closes the session or changes its default headers. Do not share the session
+    with other clients or use it concurrently outside this client. Requests on
+    this client are serialized in worker threads to protect session state;
+    different clients can make progress concurrently without blocking the loop.
 
     HTTPS and same-origin targets are required; redirects are returned, never
     followed. GET/HEAD refresh an expired Redfish session once, coordinated among
-    concurrent readers. Writes are never replayed. Timeouts become
-    RedfishTimeoutError; transport failures become RedfishConnectionError.
-    RedfishCancelledError inherits asyncio.CancelledError, preserving cancellation.
+    concurrent readers. The SDK never replays writes; caller-installed adapters
+    must also disable retries for writes. Timeouts become RedfishTimeoutError;
+    transport failures become RedfishConnectionError.
+
+    Threads cannot interrupt an in-flight HTTP request. Cancellation waits for
+    the worker to finish (using the configured connect/read timeouts) and then
+    raises RedfishCancelledError, an asyncio.CancelledError subclass. A cancelled
+    write may still have succeeded on the BMC; cancellation does not roll it back.
     Async contexts clean up SDK-created Redfish sessions, including on failed
     entry and cancellation. Supplied tokens are not deleted by close().
     """
 
-    def __init__(self, host: str, username: str, password: str, *, session: aiohttp.ClientSession,
+    def __init__(self, host: str, username: str, password: str, *, session: requests.Session,
                  scheme: str = "https", auth_mode=AuthenticationMode.SESSION,
                  session_key: Optional[str] = None, session_location: Optional[str] = None,
                  connect_timeout: float = 10, read_timeout: float = 30):
-        try:
-            import aiohttp
-        except ImportError as exc:
-            raise ImportError("Install redfish-python-sdk[async] to use AsyncRedfishClient") from exc
         if scheme.lower() != "https":
             raise RedfishValidationError("Async authentication requires HTTPS")
         self._origin = f"https://{host}"
@@ -81,15 +89,17 @@ class AsyncRedfishClient:
             raise RedfishValidationError("Invalid endpoint port or authentication mode") from exc
         if ":" in username:
             raise RedfishValidationError("Basic authentication usernames cannot contain a colon")
-        if not isinstance(session, aiohttp.ClientSession) or session.closed:
-            raise RedfishValidationError("session must be an open aiohttp.ClientSession")
+        if not isinstance(session, requests.Session):
+            raise RedfishValidationError("session must be a requests.Session")
         self._validate_headers(session.headers)
         if session.auth is not None:
             raise RedfishValidationError("Caller session must not supply default authentication")
         self.host = host
         self._username, self._password = username, password
         self._basic = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
-        self._session, self._aiohttp = session, aiohttp
+        self._session = session
+        self._transport_lock = threading.Lock()
+        self._workers = set()
         self.connect_timeout = self._timeout(connect_timeout)
         self.read_timeout = self._timeout(read_timeout)
         self.session_key = session_key
@@ -161,30 +171,59 @@ class AsyncRedfishClient:
                 request_headers.setdefault("Content-Type", "application/json")
             else:
                 options["json"] = body
-        timeout = self._aiohttp.ClientTimeout(total=None,
-            connect=self._timeout(self.connect_timeout if connect_timeout is None else connect_timeout),
-            sock_read=self._timeout(self.read_timeout if read_timeout is None else read_timeout))
+        timeout = (
+            self._timeout(self.connect_timeout if connect_timeout is None else connect_timeout),
+            self._timeout(self.read_timeout if read_timeout is None else read_timeout),
+        )
+        worker = asyncio.create_task(asyncio.to_thread(self._send, method, self._url(path),
+            request_headers, params, timeout, options))
+        self._workers.add(worker)
+        cancelled = False
         try:
-            async with self._session.request(method.value, self._url(path), headers=request_headers,
-                    params=params, timeout=timeout, allow_redirects=False, raise_for_status=False, **options) as raw:
-                headers = CaseInsensitiveDict(raw.headers)
-                # Capture ownership before awaiting the body, so cancelled login can be cleaned up.
-                if capture_session and HTTPStatus.OK <= raw.status < HTTPStatus.MULTIPLE_CHOICES:
-                    self._install_session(headers.get(_TOKEN), headers.get(_LOCATION))
+            # Shield and drain the worker before releasing login locks or cleaning up.
+            # Cancelling an asyncio waiter cannot stop a running Requests operation.
+            while True:
                 try:
-                    content = await raw.read()
-                except self._aiohttp.ClientPayloadError:
-                    if raw.status < HTTPStatus.BAD_REQUEST:
-                        raise
-                    content = b""
-                return GenericResponse.from_content(raw.status, headers, content, encoding=raw.charset or "utf-8")
-        except asyncio.CancelledError:
-            raise RedfishCancelledError("Async Redfish operation cancelled") from None
-        except asyncio.TimeoutError as exc:
+                    response, failure = await asyncio.shield(worker)
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+                    if worker.cancelled():
+                        raise RedfishCancelledError("Async Redfish operation cancelled") from None
+            if capture_session and HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
+                location = response.location
+                if not location and response.has_json:
+                    location = Link.model_validate_json(response.text).odata_id
+                self._install_session(response.headers.get(_TOKEN), location)
+            if cancelled:
+                raise RedfishCancelledError("Async Redfish operation cancelled") from None
+            if failure is not None:
+                raise failure
+            return response
+        except requests.exceptions.Timeout as exc:
+            if cancelled:
+                raise RedfishCancelledError("Async Redfish operation cancelled") from None
             raise RedfishTimeoutError(self.host) from exc
-        except self._aiohttp.ClientError as exc:
+        except requests.exceptions.RequestException as exc:
+            if cancelled:
+                raise RedfishCancelledError("Async Redfish operation cancelled") from None
             # Keep transport exception text out of display surfaces; it may echo credentials.
             raise RedfishConnectionError(self.host, type(exc).__name__) from None
+        finally:
+            self._workers.discard(worker)
+
+    def _send(self, method, url, headers, params, timeout, options):
+        """Use the caller's Requests session exclusively until its response is buffered."""
+        with self._transport_lock, self._session.request(method.value, url, headers=headers,
+                params=params, timeout=timeout, allow_redirects=False, stream=True,
+                auth=_NoDefaultAuthentication(), **options) as raw:
+            try:
+                return GenericResponse.from_response(raw), None
+            except requests.exceptions.RequestException as exc:
+                response = GenericResponse.from_content(raw.status_code, raw.headers, b"")
+                # A broken error body must not mask HTTP status or prevent refresh.
+                failure = exc if raw.status_code < HTTPStatus.BAD_REQUEST else None
+                return response, failure
 
     async def request(self, method, path: str, *, params: Optional[QueryParameters] = None,
                       headers=None, body: Any = _UNSET_BODY, connect_timeout=None,
@@ -214,6 +253,7 @@ class AsyncRedfishClient:
                 self._timeout(value)
         if self.auth_mode == AuthenticationMode.SESSION and not self.session_key:
             await self._refresh(self._generation)
+        self._check_open()
         generation = self._generation
         secrets = (self.session_key,)
         response = await self._wire(method, path, params=params, headers=headers, body=body,
@@ -223,6 +263,7 @@ class AsyncRedfishClient:
                 and self.auth_mode == AuthenticationMode.SESSION
                 and not isinstance(failure, RedfishPasswordChangeRequiredError)):
             await self._refresh(generation)
+            self._check_open()
             secrets = (self.session_key,)
             response = await self._wire(method, path, params=params, headers=headers,
                 connect_timeout=connect_timeout, read_timeout=read_timeout)
@@ -260,7 +301,6 @@ class AsyncRedfishClient:
         location = response.location
         if HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES and not location:
             location = Link.model_validate_json(response.text).odata_id
-            self._install_session(response.headers.get(_TOKEN), location)
         failure = self._error(response, HttpMethod.POST, self._sessions_uri)
         if failure:
             raise failure
@@ -308,6 +348,8 @@ class AsyncRedfishClient:
 
     async def _cleanup(self):
         try:
+            # Drain worker requests before deleting a session they may still be using.
+            await asyncio.gather(*tuple(self._workers), return_exceptions=True)
             # Wait for an in-flight login before deciding whether a session is owned.
             async with self._lock:
                 owned = self._owned
@@ -322,10 +364,16 @@ class AsyncRedfishClient:
         """Clean up SDK-owned remote sessions without closing the caller's transport."""
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._cleanup())
-        try:
-            await asyncio.shield(self._close_task)
-        except asyncio.CancelledError:
-            await asyncio.shield(self._close_task)
+        cancelled = False
+        while True:
+            try:
+                await asyncio.shield(self._close_task)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                if self._close_task.cancelled():
+                    raise RedfishCancelledError("Async Redfish cleanup cancelled") from None
+        if cancelled:
             raise RedfishCancelledError("Async Redfish cleanup cancelled") from None
 
     async def __aenter__(self):

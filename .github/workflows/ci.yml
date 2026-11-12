@@ -30,7 +30,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install development dependencies
-        run: python -m pip install --upgrade pip build .[dev,async]
+        run: python -m pip install --upgrade pip build .[dev]
 
       - name: Run Ruff
         run: python -m ruff check redfish_sdk
