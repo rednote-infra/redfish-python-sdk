@@ -500,10 +500,50 @@ class SystemsManager:
                     return fru
 
         # 2) Standard OEM Fru link
-        if system.oem is None or system.oem.bmc is None or system.oem.bmc.fru is None:
-            return None
-        fru_link = system.oem.bmc.fru
-        return self._http.get(fru_link.odata_id, Fru)
+        if system.oem is not None and system.oem.bmc is not None and system.oem.bmc.fru is not None:
+            fru_link = system.oem.bmc.fru
+            return self._http.get(fru_link.odata_id, Fru)
+
+        return self._fru_from_chassis(system)
+
+    def _fru_from_chassis(self, system: System) -> Optional[Fru]:
+        links = getattr(system, "links", None)
+        chassis_links = (getattr(links, "chassis", None) or []) if links is not None else []
+        for chassis_link in chassis_links:
+            chassis_uri = getattr(chassis_link, "odata_id", None)
+            if not chassis_uri:
+                continue
+            try:
+                chassis = self._client.get_chassis(chassis_uri.rstrip("/").rsplit("/", 1)[-1])
+                if chassis.oem is None or chassis.oem.bmc is None or chassis.oem.bmc.fru is None:
+                    continue
+                collection_raw = self._http.get_raw(chassis.oem.bmc.fru.odata_id)
+                for member in collection_raw.get("Members", []):
+                    member_id = member.get("@odata.id", "")
+                    if not (member_id.endswith("/0") or member_id.lower().endswith("mainboardid0")):
+                        continue
+                    raw = self._http.get_raw(member_id)
+                    return Fru.model_validate(
+                        {
+                            "@odata.id": raw.get("@odata.id"),
+                            "MainBoard": raw,
+                            "Product": {
+                                "Manufacturer": raw.get("ProductManufacturer"),
+                                "Name": raw.get("ProductName"),
+                                "PartNumber": raw.get("ProductPartNumber"),
+                                "SerialNumber": raw.get("ProductSerial"),
+                                "Version": raw.get("ProductVersion"),
+                                "AssetTag": raw.get("ProductAssetTag"),
+                            },
+                            "Chassis": {
+                                "ChassisPartNumber": raw.get("ChassisPartNumber"),
+                                "ChassisSerialNumber": raw.get("ChassisSerial"),
+                            },
+                        }
+                    )
+            except RedfishException as exc:
+                logger.debug("Chassis FRU fetch failed (%s): %s", chassis_uri, exc)
+        return None
 
     def gpus(self, system_id: Optional[str] = None) -> List[Gpu]:
         """

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict
+from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, field_validator
 
 from .check import Field
 from .common import Entity, Link, Status
@@ -24,6 +24,13 @@ class ProcessorId(BaseModel):
     microcode_info: Optional[str] = Field(None, alias="MicrocodeInfo")
     step: Optional[str] = Field(None, alias="Step")
     vendor_id: Optional[str] = Field(None, alias="VendorId")
+
+    @field_validator("effective_family", "effective_model", "step", mode="before")
+    @classmethod
+    def _coerce_numeric_to_str(cls, value):
+        if isinstance(value, int):
+            return str(value)
+        return value
 
 
 class Processor(Entity):

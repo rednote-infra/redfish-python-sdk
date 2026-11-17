@@ -227,6 +227,9 @@ class EventServiceManager:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
+        event_id: Optional[str] = None,
+        event_timestamp: Optional[str] = None,
+        origin_of_condition: Optional[Any] = None,
     ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
@@ -282,6 +285,12 @@ class EventServiceManager:
             body["MessageArgs"] = message_args
         if message_severity is not None:
             body["MessageSeverity"] = message_severity
+        if event_id is not None:
+            body["EventId"] = event_id
+        if event_timestamp is not None:
+            body["EventTimestamp"] = event_timestamp
+        if origin_of_condition is not None:
+            body["OriginOfCondition"] = origin_of_condition
 
         logger.info("POST SubmitTestEvent -> %s", target)
         self._http.post(target, RedfishResponse, raw_body=body)
