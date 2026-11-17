@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Link, Status
@@ -15,7 +15,9 @@ from .common import Entity, Link, Status
 class PCIeInterface(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
     lanes_in_use: Optional[int] = Field(None, alias="LanesInUse")
-    max_lanes: Optional[int] = Field(None, alias="MaxLanes")
+    max_lanes: Optional[int] = Field(
+        None, validation_alias=AliasChoices("MaxLanes", "Maxlanes")
+    )
     max_pcie_type: Optional[str] = Field(None, alias="MaxPCIeType")
     pcie_type: Optional[str] = Field(None, alias="PCIeType")
 

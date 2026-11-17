@@ -46,17 +46,36 @@ class MainBoard(Entity):
     """
 
     chassis_part_number: Optional[str] = Field(None, alias="ChassisPartNumber")
-    part_number: Optional[str] = Field(None, alias="PartNumber")
-    product_name: Optional[str] = Field(None, alias="ProductName")
-    serial_number: Optional[str] = Field(None, alias="SerialNumber")
-    manufacturer: Optional[str] = Field(None, alias="Manufacturer")
+    part_number: Optional[str] = Field(
+        None, alias="PartNumber", validation_alias=AliasChoices("PartNumber", "BoardPartNumber")
+    )
+    product_name: Optional[str] = Field(
+        None, alias="ProductName", validation_alias=AliasChoices("ProductName", "BoardProduct")
+    )
+    serial_number: Optional[str] = Field(
+        None, alias="SerialNumber",
+        validation_alias=AliasChoices("SerialNumber", "BoardSerial", "ProductSerial"),
+    )
+    manufacturer: Optional[str] = Field(
+        None, alias="Manufacturer", validation_alias=AliasChoices("Manufacturer", "BoardMfg")
+    )
     # Enginetech mainboard FRUs report the build date as "MfgDate", which is
     # neither the Redfish-standard "BuildDate" nor the "ManufactureDate" used by
     # some other vendors. Alias choices are tried in priority order.
     build_date: Optional[str] = Field(
         None,
-        validation_alias=AliasChoices("BuildDate", "ManufactureDate", "MfgDate"),
+        validation_alias=AliasChoices("BuildDate", "ManufactureDate", "MfgDate", "BoardMfgDate"),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_blank(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {
+                key: value for key, value in data.items()
+                if not (isinstance(value, str) and not value.strip())
+            }
+        return data
     pretty_name: Optional[str] = Field(None, alias="PrettyName")
 
 
