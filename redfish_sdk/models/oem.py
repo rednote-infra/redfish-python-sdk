@@ -174,6 +174,9 @@ class Bmc(BaseModel):
     snmp_service: Optional[Link] = Field(None, alias="SnmpService")
     lldp_service: Optional[Link] = Field(None, alias="LldpService")
     dns_service: Optional[Link] = Field(None, alias="DnsService")
+    # VNC/RFB: DMTF names it "RfbService", xFusion publishes "VncService".
+    # Keep both so either naming resolves.
+    vnc_service: Optional[Link] = Field(None, alias="VncService")
     rfb_service: Optional[Link] = Field(None, alias="RfbService")
     security_service: Optional[Link] = Field(None, alias="SecurityService")
     firewall_rules: Optional[Link] = Field(None, alias="FirewallRules")
