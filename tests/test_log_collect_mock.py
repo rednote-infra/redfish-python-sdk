@@ -365,22 +365,27 @@ class TestCollectDiagnosticData(VendorRestoreMixin):
     def test_explicit_type_overrides_default(self) -> None:
         client = _make_client()
         _stub_manager(client)
-        _stub_log_service(
-            client,
-            actions={"#LogService.CollectDiagnosticData": {"target": COLLECT_TARGET}},
-        )
-        _force_vendor("xfusion")  # default would be OEM
+        _force_vendor("xfusion")
+
+        dump_target = "/redfish/v1/Managers/1/Actions/Oem/xFusion/Manager.Dump"
+        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+            "Id": "1",
+            "Actions": {"Oem": {"xFusion": {"#Manager.Dump": {"target": dump_target}}}},
+        }
 
         recorder = _CallRecorder()
 
         def fake_post(path, mc, body=None, raw_body=None):
-            recorder.record(raw_body=raw_body)
+            recorder.record(path=path, raw_body=raw_body)
             return Task.model_construct(id="1")
 
         client._http_client.post = fake_post  # type: ignore[assignment]
 
         client.collect_diagnostic_data(diagnostic_data_type="Manager")
-        self.assertEqual(recorder.last["raw_body"]["DiagnosticDataType"], "Manager")
+        self.assertEqual(recorder.last["path"], dump_target)
+        self.assertEqual(recorder.last["raw_body"]["Type"], "URI")
+        self.assertTrue(recorder.last["raw_body"]["Content"].startswith("/tmp/web/"))
+        self.assertNotIn("DiagnosticDataType", recorder.last["raw_body"])
         client.close()
 
     def test_oem_params_merged(self) -> None:
@@ -1389,11 +1394,6 @@ class TestStrategies(unittest.TestCase):
         body = GenericLogCollectStrategy().build_body(None)
         self.assertEqual(body, {"DiagnosticDataType": "Manager"})
 
-    def test_xfusion_oem_default(self) -> None:
-        body = XFusionLogCollectStrategy().build_body(None)
-        self.assertEqual(body["DiagnosticDataType"], "OEM")
-        self.assertEqual(body["OEMDiagnosticDataType"], "Manager")
-
     def test_inspur_registered(self) -> None:
         self.assertIsInstance(
             LogCollectStrategyRegistry.get("inspur"), InspurLogCollectStrategy
@@ -2130,6 +2130,70 @@ class TestSmoothcomputeStrategy(VendorRestoreMixin):
         path = client.download_diagnostic_data(task, output_path="/tmp/out/")
         self.assertEqual(path, "/tmp/out/6415_X2_SN_ts.zip.gz")
         self.assertEqual(recorder.last["path"], self._EXPORT)
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# xFusion Manager.Dump + Manager.GeneralDownload
+# ---------------------------------------------------------------------------
+
+
+class TestXFusionStrategy(VendorRestoreMixin):
+    """xFusion uses Manager.Dump + Manager.GeneralDownload for the dump."""
+
+    _MANAGER = "/redfish/v1/Managers/1"
+    _DUMP = f"{_MANAGER}/Actions/Oem/xFusion/Manager.Dump"
+    _DOWNLOAD = f"{_MANAGER}/Actions/Oem/xFusion/Manager.GeneralDownload"
+    _TASK = "/redfish/v1/TaskService/Tasks/1"
+
+    def test_end_to_end_uses_xfusion_dump_actions(self) -> None:
+        client = _make_client()
+        manager = Manager.model_validate({
+            "@odata.id": self._MANAGER,
+            "Id": "1",
+            "Actions": {"Oem": {"xFusion": {
+                "#Manager.Dump": {"target": self._DUMP},
+                "#Manager.GeneralDownload": {"target": self._DOWNLOAD},
+            }}},
+            "LogServices": {"@odata.id": f"{self._MANAGER}/LogServices"},
+        })
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
+
+        def get_raw(path):
+            if path == self._TASK:
+                return {"@odata.id": self._TASK, "Id": "1",
+                        "TaskState": "Completed", "TaskStatus": "OK"}
+            return client._managers.get().model_dump(by_alias=True, exclude_none=True)
+
+        client._http_client.get_raw = get_raw  # type: ignore[assignment]
+        _force_vendor("xfusion")
+
+        recorder = _CallRecorder()
+
+        def post(path, model_class, body=None, raw_body=None):
+            recorder.record(kind="collect", path=path, body=raw_body)
+            return Task.model_construct(id="1", odata_id=self._TASK)
+
+        def download_via_post(path, output_path=None, raw_body=None):
+            recorder.record(kind="download", path=path, body=raw_body)
+            return os.path.abspath(output_path)
+
+        client._http_client.post = post  # type: ignore[assignment]
+        client._http_client.download_via_post = download_via_post  # type: ignore[assignment]
+
+        path = client.collect_and_download_diagnostic_data(
+            "/tmp/xf-dump.tar.gz", reuse_existing=False
+        )
+
+        self.assertEqual(path, os.path.abspath("/tmp/xf-dump.tar.gz"))
+        self.assertEqual(recorder.calls[0]["path"], self._DUMP)
+        content = recorder.calls[0]["body"]["Content"]
+        self.assertEqual(recorder.calls[0]["body"]["Type"], "URI")
+        self.assertTrue(content.startswith("/tmp/web/"))
+        self.assertEqual(recorder.calls[1]["path"], self._DOWNLOAD)
+        self.assertEqual(
+            recorder.calls[1]["body"], {"TransferProtocol": "HTTPS", "Path": content}
+        )
         client.close()
 
 

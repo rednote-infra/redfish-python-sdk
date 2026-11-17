@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict
 
 from .check import Field
 from .common import Entity, Link, Status
@@ -58,7 +58,9 @@ class PowerSupply(Entity):
     line_input_voltage: Optional[float] = Field(None, alias="LineInputVoltage")
     line_input_voltage_type: Optional[str] = Field(None, alias="LineInputVoltageType")
     manufacturer: Optional[str] = Field(None, alias="Manufacturer", validate="type=str")
-    member_id: Optional[str] = Field(None, alias="MemberId")
+    member_id: Optional[str] = Field(
+        None, alias="MemberId", validation_alias=AliasChoices("MemberId", "Id")
+    )
     model: Optional[str] = Field(None, alias="Model", validate="type=str")
     part_number: Optional[str] = Field(None, alias="PartNumber")
     power_capacity_watts: Optional[int] = Field(None, alias="PowerCapacityWatts", validate="type=int,gt=0")
