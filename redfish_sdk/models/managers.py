@@ -6,7 +6,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+)
 
 from .actions import ActionDescriptor, ActionMap
 from .common import Entity, Link, Status
@@ -444,17 +451,34 @@ class SyslogService(Entity):
 # ---------------------------------------------------------------------------
 
 class TrapServer(BaseModel):
-    """Individual SNMP trap server entry."""
+    """Individual SNMP trap server entry.
+
+    DMTF names the identity/address fields ``Id`` / ``Destination``, whereas
+    OEM implementations (xFusion iBMC, Lenovo XCC) publish ``MemberId`` /
+    ``TrapServerAddress`` / ``TrapServerPort``.  Both spellings are accepted.
+    """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
-    id: Optional[int] = Field(None, alias="Id")
+    id: Optional[Union[int, str]] = Field(
+        None, validation_alias=AliasChoices("Id", "MemberId"),
+    )
+    member_id: Optional[Union[int, str]] = Field(None, alias="MemberId")
     enabled: Optional[bool] = Field(None, alias="Enabled")
-    destination: Optional[str] = Field(None, alias="Destination")
-    port: Optional[int] = Field(None, alias="Port")
+    destination: Optional[str] = Field(
+        None, validation_alias=AliasChoices("Destination", "TrapServerAddress"),
+    )
+    destination_address: Optional[str] = Field(None, alias="TrapServerAddress")
+    port: Optional[int] = Field(
+        None, validation_alias=AliasChoices("Port", "TrapServerPort"),
+    )
+    destination_port: Optional[int] = Field(None, alias="TrapServerPort")
+    bob_enabled: Optional[bool] = Field(None, alias="BobEnabled")
+    message_delimiter: Optional[str] = Field(None, alias="MessageDelimiter")
 
 
 class SnmpTrapNotification(BaseModel):
     """SNMP trap notification configuration."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+    service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
     trap_version: Optional[str] = Field(None, alias="TrapVersion")
     event_level_limit: Optional[str] = Field(None, alias="EventLevelLimit")
     community: Optional[str] = Field(None, alias="Community", repr=False)
@@ -480,9 +504,17 @@ class SnmpService(Entity):
     Prefer the DMTF-standard ``ManagerNetworkProtocol.SNMP`` section.
 
     """
-    snmp_v1_enable: Optional[bool] = Field(None, alias="SnmpV1Enable")
-    snmp_v2c_enable: Optional[bool] = Field(None, alias="SnmpV2CEnable")
-    snmp_v3_enable: Optional[bool] = Field(None, alias="SnmpV3Enable")
+    snmp_v1_enable: Optional[bool] = Field(
+        None, validation_alias=AliasChoices("SnmpV1Enable", "SnmpV1Enabled"),
+    )
+    snmp_v2c_enable: Optional[bool] = Field(
+        None, validation_alias=AliasChoices("SnmpV2CEnable", "SnmpV2CEnabled"),
+    )
+    snmp_v3_enable: Optional[bool] = Field(
+        None, validation_alias=AliasChoices("SnmpV3Enable", "SnmpV3Enabled"),
+    )
+    long_password_enabled: Optional[bool] = Field(None, alias="LongPasswordEnabled")
+    rw_community_enabled: Optional[bool] = Field(None, alias="RWCommunityEnabled")
     read_only_community: Optional[str] = Field(
         None, alias="ReadOnlyCommunity", repr=False
     )
@@ -568,6 +600,23 @@ class VncService(Entity):
     non_secure_access_port: Optional[int] = Field(None, alias="NonSecureAccessPort")
     secure_access_port: Optional[int] = Field(None, alias="SecureAccessPort")
     timeout: Optional[int] = Field(None, alias="Timeout")
+
+    # ---- xFusion / Huawei style VncService fields ---------------------
+    # These are what /redfish/v1/Managers/{id}/VncService actually returns;
+    # the DMTF RFB names above only appear on vendor implementations that
+    # follow the standard RFB schema.
+    ssl_encryption_enabled: Optional[bool] = Field(
+        None, alias="SSLEncryptionEnabled")
+    password_validity_days: Optional[int] = Field(
+        None, alias="PasswordValidityDays")
+    keyboard_layout: Optional[str] = Field(None, alias="KeyboardLayout")
+    maximum_number_of_sessions: Optional[int] = Field(
+        None, alias="MaximumNumberOfSessions")
+    number_of_activated_sessions: Optional[int] = Field(
+        None, alias="NumberOfActivatedSessions")
+    session_timeout_minutes: Optional[int] = Field(
+        None, alias="SessionTimeoutMinutes")
+    session_mode: Optional[str] = Field(None, alias="SessionMode")
     current_active_session: Optional[int] = Field(None, alias="CurrentActiveSession")
 
 
