@@ -795,7 +795,13 @@ class RedfishHttpClient:
         except RedfishMissingAttributeError:
             raise
         except Exception as exc:
-            logger.error("Failed to parse response as %s", model_class.__name__)
+            logger.error(
+                "Failed to parse response as %s (uri=%s): %s; body=%s",
+                model_class.__name__,
+                resource_uri or getattr(response.request, "url", ""),
+                exc,
+                str(_redact_for_log(response.text))[:2000],
+            )
             raise RedfishException(
                 response.status_code,
                 f"Failed to parse response as {model_class.__name__}",

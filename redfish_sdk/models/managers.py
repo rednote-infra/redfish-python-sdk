@@ -4,7 +4,7 @@ Manager (BMC) resource models.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -378,13 +378,41 @@ class NtpService(Entity):
 # ---------------------------------------------------------------------------
 
 class SyslogServer(BaseModel):
-    """Individual syslog server configuration entry."""
+    """Individual syslog server configuration entry.
+
+    Vendors are inconsistent about scalar types here: AMI MegaRAC reports
+    ``Enabled`` as a JSON boolean (true/false) while others send the string
+    ``"true"``/``"false"``; ``Port`` may arrive as ``""`` when unconfigured and
+    ``MemberId`` as either a number or a numeric string. Accept all of these
+    shapes so one odd field cannot take down parsing of the whole service.
+    """
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @field_validator("member_id", "port", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v):
+        return None if isinstance(v, str) and not v.strip() else v
+
     member_id: Optional[int] = Field(None, alias="MemberId")
-    enabled: Optional[str] = Field(None, alias="Enabled")
+    enabled: Optional[Union[bool, str]] = Field(None, alias="Enabled")
     logtype: Optional[str] = Field(None, alias="Logtype")
     address: Optional[str] = Field(None, alias="Address")
     port: Optional[int] = Field(None, alias="Port")
+
+
+def _coerce_bool(v):
+    """Best-effort bool coercion for OEM fields that mix bool and enum strings."""
+    if isinstance(v, bool) or v is None:
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("true", "yes", "on", "1", "enabled", "enable"):
+            return True
+        if s in ("false", "no", "off", "0", "disabled", "disable", ""):
+            return False
+    return v
 
 
 class SyslogService(Entity):
@@ -398,6 +426,11 @@ class SyslogService(Entity):
     DMTF Redfish has no generic Manager syslog-configuration resource.
 
     """
+    @field_validator("service_enabled", mode="before")
+    @classmethod
+    def _coerce_service_enabled(cls, v):
+        return _coerce_bool(v)
+
     service_enabled: Optional[bool] = Field(None, alias="ServiceEnabled")
     service_syslog_tag: Optional[str] = Field(None, alias="ServiceSyslogTag")
     service_syslog_enable: Optional[str] = Field(None, alias="ServiceSyslogEnable")
