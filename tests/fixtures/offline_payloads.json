@@ -1,0 +1,64 @@
+{
+  "redfish_v1_Systems_1_Memory.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Memory",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Systems/1/Memory/CPU0_DIMMA0"}]
+  },
+  "redfish_v1_Systems_1_Storage_1.json": {
+    "@odata.id": "/redfish/v1/Systems/1/Storage/1",
+    "Id": "1",
+    "Name": "Synthetic storage",
+    "Drives": [{"@odata.id": "/redfish/v1/Chassis/1/Drives/HDDPlaneDisk1"}],
+    "StorageControllers": [{"MemberId": "1", "Name": "Synthetic controller"}],
+    "Status": {"State": "Enabled", "Health": "OK"}
+  },
+  "redfish_v1_Systems_1_GraphicsControllers.json": {
+    "@odata.id": "/redfish/v1/Systems/1/GraphicsControllers",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Systems/1/GraphicsControllers/1"}]
+  },
+  "redfish_v1_Systems_1_GraphicsControllers_1.json": {
+    "@odata.id": "/redfish/v1/Systems/1/GraphicsControllers/1",
+    "Id": "1",
+    "Name": "Synthetic GPU",
+    "Manufacturer": "Example",
+    "Model": "Example GPU",
+    "Version": "1.0",
+    "PowerWatts": "150"
+  },
+  "redfish_v1_Chassis_1_Drives.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/Drives",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Chassis/1/Drives/HDDPlaneDisk1"}]
+  },
+  "redfish_v1_Chassis_1_NetworkAdapters.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/NIC_RiserA_Slot3"}]
+  },
+  "redfish_v1_Chassis_1_PCIeDevices.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/PCIeDevices",
+    "Members@odata.count": 1,
+    "Members": [{"@odata.id": "/redfish/v1/Chassis/1/PCIeDevices/EthernetCard0"}]
+  },
+  "redfish_v1_Chassis_1_Thermal.json": {
+    "@odata.id": "/redfish/v1/Chassis/1/Thermal",
+    "Id": "Thermal",
+    "Fans": [{
+      "MemberId": "1",
+      "Name": "Synthetic fan",
+      "Reading": 4000,
+      "ReadingUnits": "RPM",
+      "MinReadingRange": 0,
+      "MaxReadingRange": 12000,
+      "Status": {"State": "Enabled", "Health": "OK"}
+    }],
+    "Temperatures": [{
+      "MemberId": "1",
+      "Name": "Synthetic inlet temperature",
+      "PhysicalContext": "Intake",
+      "ReadingCelsius": 25.0,
+      "Status": {"State": "Enabled", "Health": "OK"}
+    }]
+  }
+}
