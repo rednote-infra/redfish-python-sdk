@@ -1596,20 +1596,15 @@ class RedfishClient:
         """
         Get air inlet historical temperature samples for a chassis.
 
-        Wraps ``ChassisManager.inlet_history_temperature``. The method first
-        resolves the sub-resource URL via ``get_thermal()`` (Redfish link
-        discovery), then GETs the InletHistoryTemperature resource.
+        Wraps ``ChassisManager.inlet_history_temperature``. The method resolves
+        the Thermal resource via ``get_thermal()`` (Redfish link discovery),
+        then GETs the fixed AMI MegaRAC vendor-segmented URL directly — no
+        candidate probing::
 
-        Both vendor URL layouts are supported, tried in order:
-          - ``/redfish/v1/Chassis/{id}/Thermal/InletHistoryTemperature``
-            (top-level Thermal link, legacy firmware)
-          - ``/redfish/v1/Chassis/{id}/Thermal/Oem/{vendor}/InletHistoryTemperature``
-            (vendor-segmented layout, e.g. AMI MegaRAC ``.../Oem/Ami/...``;
-            either advertised in ``Thermal.Oem`` or derived from the Thermal
-            resource's own ``@odata.id`` — also covers chassis id ``Self``)
+            /redfish/v1/Chassis/{chassisId}/Thermal/Oem/Ami/InletHistoryTemperature
 
-        Returns ``None`` when the BMC does not advertise the sub-resource or
-        returns 404; other errors (auth/network/parse) propagate.
+        Returns ``None`` when that URL responds 404 (the BMC does not implement
+        the feature); other errors (auth/network/parse) propagate.
 
         Args:
             chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
