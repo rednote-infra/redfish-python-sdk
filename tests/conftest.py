@@ -8,7 +8,9 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -55,6 +57,18 @@ def bmc_client():
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="session")
+def json_loader(tmp_path_factory):
+    """Use bundled synthetic resources when no external capture is selected."""
+    fixture_dir = Path(__file__).parent / "fixtures"
+    payloads = json.loads((fixture_dir / "model_payloads.json").read_text(encoding="utf-8"))
+    payloads.update(json.loads((fixture_dir / "offline_payloads.json").read_text(encoding="utf-8")))
+    json_dir = tmp_path_factory.mktemp("redfish-offline")
+    for filename, payload in payloads.items():
+        (json_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
+    return RedfishJsonLoader(str(json_dir))
+
+
 def pytest_generate_tests(metafunc):
     """
     Generate one test set for each JSON data directory.
@@ -68,13 +82,7 @@ def pytest_generate_tests(metafunc):
 
     json_dir = os.environ.get("REDFISH_JSON_DIR")
     if not json_dir:
-        # Provide a placeholder when the environment variable is absent. The
-        # test checks for a None loader and skips itself.
-        metafunc.parametrize(
-            "json_loader",
-            [None],
-            ids=["no-REDFISH_JSON_DIR"],
-        )
+        # The session fixture supplies deterministic data without a BMC capture.
         return
 
     dirs = discover_json_dirs(json_dir)
@@ -93,8 +101,8 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture(autouse=True)
 def _skip_if_no_json_loader(request):
-    """Skip automatically when no JSON data directory is configured."""
+    """Skip when an explicitly selected JSON data directory has no resources."""
     if "json_loader" in request.fixturenames:
         loader = request.getfixturevalue("json_loader")
         if loader is None:
-            pytest.skip("REDFISH_JSON_DIR is not set; skipping offline tests")
+            pytest.skip("REDFISH_JSON_DIR has no JSON resources; skipping offline tests")
