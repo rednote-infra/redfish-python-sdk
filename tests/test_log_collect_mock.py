@@ -364,14 +364,16 @@ class TestCollectDiagnosticData(VendorRestoreMixin):
 
     def test_explicit_type_overrides_default(self) -> None:
         client = _make_client()
-        _stub_manager(client)
         _force_vendor("xfusion")
 
         dump_target = "/redfish/v1/Managers/1/Actions/Oem/xFusion/Manager.Dump"
-        client._http_client.get_raw = lambda path: {  # type: ignore[assignment]
+        manager = Manager.model_validate({
+            "@odata.id": "/redfish/v1/Managers/1",
             "Id": "1",
             "Actions": {"Oem": {"xFusion": {"#Manager.Dump": {"target": dump_target}}}},
-        }
+            "LogServices": {"@odata.id": "/redfish/v1/Managers/1/LogServices"},
+        })
+        client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
 
         recorder = _CallRecorder()
 
@@ -2159,13 +2161,14 @@ class TestXFusionStrategy(VendorRestoreMixin):
         })
         client._managers.get = lambda manager_id="1": manager  # type: ignore[assignment]
 
-        def get_raw(path):
-            if path == self._TASK:
-                return {"@odata.id": self._TASK, "Id": "1",
-                        "TaskState": "Completed", "TaskStatus": "OK"}
-            return client._managers.get().model_dump(by_alias=True, exclude_none=True)
-
-        client._http_client.get_raw = get_raw  # type: ignore[assignment]
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_id, poll_interval=5, timeout=1800: Task.model_construct(
+                id=task_id,
+                odata_id=self._TASK,
+                task_state="Completed",
+                task_status="OK",
+            )
+        )
         _force_vendor("xfusion")
 
         recorder = _CallRecorder()
@@ -2194,6 +2197,49 @@ class TestXFusionStrategy(VendorRestoreMixin):
         self.assertEqual(
             recorder.calls[1]["body"], {"TransferProtocol": "HTTPS", "Path": content}
         )
+        client.close()
+
+    def test_wait_until_ready_polls_task_uri_and_keeps_content(self) -> None:
+        strategy = XFusionLogCollectStrategy()
+        task = Task.model_construct(id="1", odata_id=self._TASK)
+        task._xfusion_content = "/tmp/web/xf_sdk_test.tar.gz"
+
+        client = _make_client()
+        captured = {}
+
+        def fake_wait(task_ref, poll_interval, timeout):
+            captured["task_ref"] = task_ref
+            return Task.model_construct(
+                id="1", task_state="Completed", task_status="OK",
+            )
+
+        client.wait_for_task = fake_wait  # type: ignore[assignment]
+
+        finished = strategy.wait_until_ready(client, task, poll_interval=1, timeout=5)
+        # Must poll the Task URI, not the id resolved through the collection.
+        self.assertEqual(captured["task_ref"], self._TASK)
+        self.assertEqual(
+            getattr(finished, "_xfusion_content", None),
+            "/tmp/web/xf_sdk_test.tar.gz",
+        )
+        client.close()
+
+    def test_wait_until_ready_raises_on_failed_state(self) -> None:
+        strategy = XFusionLogCollectStrategy()
+        task = Task.model_construct(id="1", odata_id=self._TASK)
+
+        client = _make_client()
+        client.wait_for_task = (  # type: ignore[assignment]
+            lambda task_ref, poll_interval, timeout: Task.model_construct(
+                id="1",
+                task_state="Exception",
+                task_status="Warning",
+                messages=[],
+            )
+        )
+
+        with self.assertRaises(LogCollectFailedError):
+            strategy.wait_until_ready(client, task, poll_interval=1, timeout=5)
         client.close()
 
 

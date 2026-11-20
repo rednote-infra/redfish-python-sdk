@@ -28,7 +28,7 @@ from ..models.actions import ActionInfo, ActionMap
 from ..models.chassis import PCIeDevice
 from ..models.common import ApplyTime, MaintenanceWindow, RedfishResponse, SettingsApplyTime
 from ..models.drive import Drive
-from ..models.fru import Fru
+from ..models.fru import Fru, XFusionFru, XFusionFruCollection
 from ..models.logs import Log, LogEntry
 from ..models.systems import (
     Bios,
@@ -517,30 +517,14 @@ class SystemsManager:
                 chassis = self._client.get_chassis(chassis_uri.rstrip("/").rsplit("/", 1)[-1])
                 if chassis.oem is None or chassis.oem.bmc is None or chassis.oem.bmc.fru is None:
                     continue
-                collection_raw = self._http.get_raw(chassis.oem.bmc.fru.odata_id)
-                for member in collection_raw.get("Members", []):
-                    member_id = member.get("@odata.id", "")
+                collection = self._http.get(
+                    chassis.oem.bmc.fru.odata_id, XFusionFruCollection
+                )
+                for member in collection.members or []:
+                    member_id = member.odata_id or ""
                     if not (member_id.endswith("/0") or member_id.lower().endswith("mainboardid0")):
                         continue
-                    raw = self._http.get_raw(member_id)
-                    return Fru.model_validate(
-                        {
-                            "@odata.id": raw.get("@odata.id"),
-                            "MainBoard": raw,
-                            "Product": {
-                                "Manufacturer": raw.get("ProductManufacturer"),
-                                "Name": raw.get("ProductName"),
-                                "PartNumber": raw.get("ProductPartNumber"),
-                                "SerialNumber": raw.get("ProductSerial"),
-                                "Version": raw.get("ProductVersion"),
-                                "AssetTag": raw.get("ProductAssetTag"),
-                            },
-                            "Chassis": {
-                                "ChassisPartNumber": raw.get("ChassisPartNumber"),
-                                "ChassisSerialNumber": raw.get("ChassisSerial"),
-                            },
-                        }
-                    )
+                    return self._http.get(member_id, XFusionFru).to_fru()
             except RedfishException as exc:
                 logger.debug("Chassis FRU fetch failed (%s): %s", chassis_uri, exc)
         return None

@@ -80,6 +80,7 @@ from redfish_sdk.models.managers import (
     IPv4Address,
     IPv6Address,
     ProtocolConfig,
+    SyslogServer,
     Vlan,
 )
 from redfish_sdk.models.systems import MemoryLocation, ProcessorId
@@ -619,6 +620,24 @@ class TestManager:
         assert isinstance(self.mgr.network_protocol, Link)
         assert self.mgr.log_services is not None
         assert isinstance(self.mgr.log_services, Link)
+
+
+class TestSyslogServer:
+    """Syslog server entries are boolean on the wire, but not everywhere."""
+
+    def test_boolean_enabled(self):
+        server = SyslogServer(**{"MemberId": "0", "Enabled": False})
+        assert server.enabled is False
+
+    def test_string_enabled(self):
+        for value, expected in (
+            ("true", True),
+            ("Enabled", True),
+            ("FALSE", False),
+            ("disabled", False),
+        ):
+            server = SyslogServer(**{"MemberId": 0, "Enabled": value})
+            assert server.enabled is expected
 
 
 class TestNetworkProtocol:
@@ -1186,6 +1205,18 @@ class TestModelsWithoutDirectTestdata:
             }
         )
         assert task.task_state == "Completed"
+        assert task.percent_complete == 100
+
+    def test_task_percent_complete_as_percentage_string(self):
+        """Some firmwares append the unit to PercentComplete."""
+        task = Task.model_validate(
+            {
+                "@odata.id": "/redfish/v1/TaskService/Tasks/1",
+                "Id": "1",
+                "TaskState": "Running",
+                "PercentComplete": "100%",
+            }
+        )
         assert task.percent_complete == 100
 
     # ---- Volume ----

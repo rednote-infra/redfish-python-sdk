@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import datetime
 import logging
-import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ...models.task import Task
-from .base import BaseLogCollectStrategy
+from .base import (
+    BaseLogCollectStrategy,
+    _format_failure_message,
+    _merge_task_context,
+    _serialise_messages,
+)
 
 if TYPE_CHECKING:
     from ...client import RedfishClient
@@ -36,10 +40,10 @@ GENERAL_DOWNLOAD_ACTION = "#Manager.GeneralDownload"
 CONTENT_DIR = "/tmp/web"
 
 
-def _action_target(actions: Optional[Dict[str, Any]], name: str) -> Optional[str]:
-    """Return ``Actions.Oem.<vendor>.<name>.target`` from a raw resource."""
-    for inner in ((actions or {}).get("Oem") or {}).values():
-        node = inner.get(name) if isinstance(inner, dict) else None
+def _oem_action_target(oem: Optional[Dict[str, Any]], name: str) -> Optional[str]:
+    """Return ``Actions.Oem.<vendor>.<name>.target`` from an OEM actions block."""
+    for block in (oem or {}).values():
+        node = block.get(name) if isinstance(block, dict) else None
         if isinstance(node, dict) and node.get("target"):
             return node["target"]
     return None
@@ -63,24 +67,23 @@ class XFusionLogCollectStrategy(BaseLogCollectStrategy):
         """POST the OEM dump (or single-log export) action."""
         from ...exceptions import RedfishValidationError
 
-        manager_raw = client._http_client.get_raw(
-            client.get_manager(manager_id).odata_id
-        )
+        manager = client.get_manager(manager_id)
+        manager_oem = manager.actions.oem if manager.actions else None
         if log_id:
             from .._log_helpers import resolve_log_service
 
             log = resolve_log_service(client, log_services_odata_id, log_id)
-            target = _action_target(
-                (client._http_client.get_raw(log.odata_id) or {}).get("Actions"),
-                EXPORT_LOG_ACTION,
+            log_actions = log.actions
+            target = _oem_action_target(
+                log_actions.get("Oem") if log_actions else None, EXPORT_LOG_ACTION
             )
             suffix = ".tar"
         else:
-            target = _action_target(manager_raw.get("Actions"), DUMP_ACTION)
+            target = _oem_action_target(manager_oem, DUMP_ACTION)
             suffix = ".tar.gz"
         if not target:
             raise RedfishValidationError(
-                f"xBMC exposes neither {DUMP_ACTION} nor "
+                f"BMC exposes neither {DUMP_ACTION} nor "
                 f"{EXPORT_LOG_ACTION} for log collection"
             )
 
@@ -100,39 +103,37 @@ class XFusionLogCollectStrategy(BaseLogCollectStrategy):
         poll_interval: int = 5,
         timeout: int = 1800,
     ) -> Task:
-        """Poll the task resource until the dump finishes.
+        """Poll the Task resource until the dump reaches a terminal state.
 
-        Reads the raw JSON: iBMC reports ``PercentComplete`` as ``"100%"``,
-        which the strict ``Task`` model rejects.
+        The Task URI from ``@odata.id`` is polled directly: the default waiter
+        resolves a bare Task id through the Task collection, which iBMC answers
+        with 5xx while a dump is running. The path the BMC writes to is only
+        known from the trigger response, so it is carried onto the polled task
+        for :meth:`download_artifact`.
         """
-        from ...exceptions import LogCollectFailedError
+        from ...exceptions import LogCollectFailedError, RedfishException
 
-        target = task.odata_id or task.id
-        deadline = time.monotonic() + timeout
-        state = status = ""
-        messages: list = []
-        while time.monotonic() < deadline:
-            raw = client._http_client.get_raw(target)
-            state = raw.get("TaskState") or ""
-            status = raw.get("TaskStatus") or ""
-            messages = raw.get("Messages") or []
-            if state in ("Completed", "Exception", "Killed", "Cancelled"):
-                break
-            time.sleep(poll_interval)
-        if state != "Completed" or (status and status != "OK"):
-            detail = "; ".join(
-                f"{m.get('MessageId', '')}: {m.get('Message', '')}"
-                for m in messages
-                if isinstance(m, dict)
+        task_ref = task.odata_id
+        if not task_ref:
+            raise RedfishException(
+                500,
+                "xFusion dump did not return a Task URI; cannot poll for completion",
             )
+
+        finished = client.wait_for_task(task_ref, poll_interval, timeout)
+        state = finished.task_state or ""
+        status = finished.task_status or ""
+        if state != "Completed" or (status and status != "OK"):
             raise LogCollectFailedError(
-                f"Diagnostic collection task {target} did not succeed: "
-                f"state={state!r}, status={status!r} | {detail}",
-                task_id=str(target),
+                _format_failure_message(task_ref, state, status, finished.messages),
+                task_id=str(finished.id or task_ref),
                 task_state=state,
                 task_status=status,
+                messages=_serialise_messages(finished.messages),
             )
-        return task
+        finished = _merge_task_context(task, finished)
+        finished._xfusion_content = getattr(task, "_xfusion_content", None)
+        return finished
 
     def download_artifact(
         self,
@@ -150,9 +151,8 @@ class XFusionLogCollectStrategy(BaseLogCollectStrategy):
             )
 
         manager = client.get_manager(None)
-        target = _action_target(
-            (client._http_client.get_raw(manager.odata_id) or {}).get("Actions"),
-            GENERAL_DOWNLOAD_ACTION,
+        target = _oem_action_target(
+            manager.actions.oem if manager.actions else None, GENERAL_DOWNLOAD_ACTION
         )
         if not target:
             raise RedfishValidationError(
