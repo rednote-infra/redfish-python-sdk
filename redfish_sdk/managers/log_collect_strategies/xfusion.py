@@ -84,11 +84,8 @@ class XFusionLogCollectStrategy(BaseLogCollectStrategy):
                 f"{EXPORT_LOG_ACTION} for log collection"
             )
 
-        content = "%s/xf_sdk_%s%s" % (
-            CONTENT_DIR,
-            datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-            suffix,
-        )
+        stamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        content = f"{CONTENT_DIR}/xf_sdk_{stamp}{suffix}"
         body = {"Type": "URI", "Content": content}
         logger.info("xFusion OEM collect POST %s body=%s", target, body)
         task = client._http_client.post(target, Task, raw_body=body)
