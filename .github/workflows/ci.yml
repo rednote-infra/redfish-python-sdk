@@ -9,16 +9,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    name: Python ${{ matrix.python-version }}
+    name: Python 3.9
     # Python 3.9 is not published for the Ubuntu 26.04 image currently used
     # by ubuntu-latest. Pin the supported image so the declared minimum can run.
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout code
@@ -27,7 +27,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.9"
 
       - name: Install development dependencies
         run: python -m pip install --upgrade pip build .[dev]
@@ -38,8 +38,25 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q redfish_sdk
 
-      - name: Run offline tests
-        run: python -m pytest --ignore=tests/test_real_bmc.py
+      - name: Run all offline tests
+        run: python -m pytest --ignore=tests/test_real_bmc.py --strict-markers -ra --junitxml=test-results.xml
+
+      - name: Reject skipped offline tests
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          report = ET.parse("test-results.xml")
+          skipped = sum(int(suite.get("skipped", "0")) for suite in report.iter("testsuite"))
+          if skipped:
+              raise SystemExit(f"All offline tests must run; {skipped} tests were skipped")
+          PY
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-python-3.9
+          path: test-results.xml
 
       - name: Build distributions
         run: python -m build

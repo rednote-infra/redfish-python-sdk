@@ -10,13 +10,9 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Python ${{ matrix.python-version }}
+    name: Validate Python 3.9
     # Keep the release gate aligned with CI and the Python 3.9 support floor.
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout code
@@ -25,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.9"
 
       - name: Install development dependencies
         run: python -m pip install --upgrade pip build .[dev]
@@ -36,8 +32,25 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q redfish_sdk
 
-      - name: Run offline tests
-        run: python -m pytest --ignore=tests/test_real_bmc.py
+      - name: Run all offline tests
+        run: python -m pytest --ignore=tests/test_real_bmc.py --strict-markers -ra --junitxml=test-results.xml
+
+      - name: Reject skipped offline tests
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          report = ET.parse("test-results.xml")
+          skipped = sum(int(suite.get("skipped", "0")) for suite in report.iter("testsuite"))
+          if skipped:
+              raise SystemExit(f"All offline tests must run; {skipped} tests were skipped")
+          PY
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results-python-3.9
+          path: test-results.xml
 
       - name: Build distributions
         run: python -m build
@@ -50,7 +63,7 @@ jobs:
 
   release:
     name: Create Release & Publish to PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: validate
 
     steps:
@@ -60,7 +73,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.9"
 
       - name: Install build tools
         run: pip install build
