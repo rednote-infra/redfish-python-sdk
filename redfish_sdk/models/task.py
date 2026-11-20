@@ -141,6 +141,15 @@ class Task(IdentifiedEntity):
             return [value]
         return value
 
+    @field_validator("percent_complete", mode="before")
+    @classmethod
+    def _parse_percent_complete(cls, value: Any) -> Any:
+        """Accept a percentage string such as ``"100%"`` as an integer."""
+        if isinstance(value, str):
+            text = value.strip().rstrip("%").strip()
+            return int(text) if text.isdigit() else None
+        return value
+
 
 @dataclass(frozen=True)
 class TaskRecoveryPolicy:

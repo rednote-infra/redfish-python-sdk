@@ -28,7 +28,7 @@ from ..models.actions import ActionInfo, ActionMap
 from ..models.chassis import PCIeDevice
 from ..models.common import ApplyTime, MaintenanceWindow, RedfishResponse, SettingsApplyTime
 from ..models.drive import Drive
-from ..models.fru import Fru
+from ..models.fru import Fru, XFusionFru, XFusionFruCollection
 from ..models.logs import Log, LogEntry
 from ..models.systems import (
     Bios,
@@ -500,10 +500,34 @@ class SystemsManager:
                     return fru
 
         # 2) Standard OEM Fru link
-        if system.oem is None or system.oem.bmc is None or system.oem.bmc.fru is None:
-            return None
-        fru_link = system.oem.bmc.fru
-        return self._http.get(fru_link.odata_id, Fru)
+        if system.oem is not None and system.oem.bmc is not None and system.oem.bmc.fru is not None:
+            fru_link = system.oem.bmc.fru
+            return self._http.get(fru_link.odata_id, Fru)
+
+        return self._fru_from_chassis(system)
+
+    def _fru_from_chassis(self, system: System) -> Optional[Fru]:
+        links = getattr(system, "links", None)
+        chassis_links = (getattr(links, "chassis", None) or []) if links is not None else []
+        for chassis_link in chassis_links:
+            chassis_uri = getattr(chassis_link, "odata_id", None)
+            if not chassis_uri:
+                continue
+            try:
+                chassis = self._client.get_chassis(chassis_uri.rstrip("/").rsplit("/", 1)[-1])
+                if chassis.oem is None or chassis.oem.bmc is None or chassis.oem.bmc.fru is None:
+                    continue
+                collection = self._http.get(
+                    chassis.oem.bmc.fru.odata_id, XFusionFruCollection
+                )
+                for member in collection.members or []:
+                    member_id = member.odata_id or ""
+                    if not (member_id.endswith("/0") or member_id.lower().endswith("mainboardid0")):
+                        continue
+                    return self._http.get(member_id, XFusionFru).to_fru()
+            except RedfishException as exc:
+                logger.debug("Chassis FRU fetch failed (%s): %s", chassis_uri, exc)
+        return None
 
     def gpus(self, system_id: Optional[str] = None) -> List[Gpu]:
         """
