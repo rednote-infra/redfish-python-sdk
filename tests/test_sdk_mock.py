@@ -1337,19 +1337,16 @@ class TestNewDelegateMethods:
     # -- get_inlet_history_temperature --
 
     def test_get_inlet_history_temperature_returns_typed_model(self, monkeypatch):
-        """get_inlet_history_temperature() returns typed model when BMC supports it."""
-        from redfish_sdk.models.common import Link
+        """get_inlet_history_temperature() GETs the fixed AMI URL and returns the typed model."""
         from redfish_sdk.models.thermal import InletHistoryTemperature, Thermal
 
         client = self._make_client()
 
-        ihx_path = "/redfish/v1/Chassis/1/Thermal/InletHistoryTemperature"
-        thermal = Thermal.model_construct(
-            inlet_history_temperature=Link.model_construct(odata_id=ihx_path),
-        )
+        ami_path = "/redfish/v1/Chassis/1/Thermal/Oem/Ami/InletHistoryTemperature"
+        thermal = Thermal.model_construct(odata_id="/redfish/v1/Chassis/1/Thermal")
         ihx_model = InletHistoryTemperature(
             **{
-                "@odata.id": ihx_path,
+                "@odata.id": ami_path,
                 "Id": "InletHistoryTemperature",
                 "Name": "InletHistoryTemperature",
                 "Description": "Air Inlet Historical Temperature",
@@ -1362,12 +1359,15 @@ class TestNewDelegateMethods:
             }
         )
 
+        requested = []
+
+        def _get(path, model_class):
+            requested.append(path)
+            assert model_class is InletHistoryTemperature
+            return ihx_model
+
         monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-        monkeypatch.setattr(
-            client._http_client,
-            "get",
-            lambda path, model_class: ihx_model,
-        )
+        monkeypatch.setattr(client._http_client, "get", _get)
 
         result = client.get_inlet_history_temperature()
         assert isinstance(result, InletHistoryTemperature)
@@ -1377,147 +1377,19 @@ class TestNewDelegateMethods:
         assert result.historical_inlet_temp[0].avg == 20.74
         assert result.historical_inlet_temp[0].time == "2026-06-03T13:30:46+08:00"
         assert result.historical_inlet_temp[1].max == 23.0
+        # Exactly one request: the fixed AMI MegaRAC URL.
+        assert requested == [ami_path]
         client.close()
 
-    def test_get_inlet_history_temperature_returns_none_when_link_missing(self, monkeypatch):
-        """Returns None when Thermal does not advertise InletHistoryTemperature link."""
-        from redfish_sdk.models.thermal import Thermal
-
-        client = self._make_client()
-        thermal = Thermal.model_construct(inlet_history_temperature=None)
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-
-        def _should_not_call(_path, _model_class):
-            pytest.fail("HTTP layer must not be invoked when link is missing")
-
-        monkeypatch.setattr(client._http_client, "get", _should_not_call)
-        assert client.get_inlet_history_temperature() is None
-        client.close()
-
-    def test_get_inlet_history_temperature_returns_none_on_404(self, monkeypatch):
-        """Returns None when sub-resource URL responds with 404."""
-        from redfish_sdk.exceptions import RedfishNotFoundError
-        from redfish_sdk.models.common import Link
-        from redfish_sdk.models.thermal import Thermal
-
-        client = self._make_client()
-        ihx_path = "/redfish/v1/Chassis/1/Thermal/InletHistoryTemperature"
-        thermal = Thermal.model_construct(
-            inlet_history_temperature=Link.model_construct(odata_id=ihx_path),
-        )
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-        monkeypatch.setattr(
-            client._http_client,
-            "get",
-            lambda path, model_class: (_ for _ in ()).throw(RedfishNotFoundError(path)),
-        )
-
-        assert client.get_inlet_history_temperature() is None
-        client.close()
-
-    def test_get_inlet_history_temperature_propagates_auth_error(self, monkeypatch):
-        """Auth/network errors must propagate (not silently swallowed)."""
-        from redfish_sdk.exceptions import RedfishAuthError
-        from redfish_sdk.models.common import Link
-        from redfish_sdk.models.thermal import Thermal
-
-        client = self._make_client()
-        thermal = Thermal.model_construct(
-            inlet_history_temperature=Link.model_construct(odata_id="/x"),
-        )
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-        monkeypatch.setattr(
-            client._http_client,
-            "get",
-            lambda path, model_class: (_ for _ in ()).throw(RedfishAuthError(401)),
-        )
-
-        with pytest.raises(RedfishAuthError):
-            client.get_inlet_history_temperature()
-        client.close()
-
-    def test_get_inlet_history_temperature_via_oem_nested_link(self, monkeypatch):
-        """Uses the InletHistoryTemperature link nested in Thermal.Oem when the
-        top-level Thermal link is absent (e.g. Oem/InletHistoryTemperature layout)."""
-        from redfish_sdk.models.oem import Oem
+    def test_get_inlet_history_temperature_uses_chassis_id_in_fixed_url(self, monkeypatch):
+        """The fixed URL embeds the requested chassis id (e.g. "Self" on AMI
+        MegaRAC BMCs such as 172.19.102.14)."""
         from redfish_sdk.models.thermal import InletHistoryTemperature, Thermal
 
         client = self._make_client()
 
-        ihx_path = "/redfish/v1/Chassis/Self/Thermal/Oem/InletHistoryTemperature"
-        thermal = Thermal.model_construct(
-            odata_id="/redfish/v1/Chassis/Self/Thermal",
-            oem=Oem.model_validate(
-                {"InletHistoryTemperature": {"@odata.id": ihx_path}}
-            ),
-        )
-        ihx_model = InletHistoryTemperature(
-            **{
-                "@odata.id": ihx_path,
-                "Id": "InletHistoryTemperature",
-                "Name": "InletHistoryTemperature",
-                "HistoricalInletTemp": [
-                    {"avg": 20.0, "max": 21.0, "min": 19.0, "time": "2026-11-17T10:00:00+08:00"},
-                ],
-            }
-        )
-
-        requested = []
-
-        def _get(path, model_class):
-            requested.append(path)
-            assert model_class is InletHistoryTemperature
-            return ihx_model
-
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-        monkeypatch.setattr(client._http_client, "get", _get)
-
-        result = client.get_inlet_history_temperature()
-        assert isinstance(result, InletHistoryTemperature)
-        assert requested == [ihx_path]
-        assert result.historical_inlet_temp[0].avg == 20.0
-        client.close()
-
-    def test_get_inlet_history_temperature_falls_back_to_oem_url(self, monkeypatch):
-        """When no link is advertised, derives {thermal}/Oem/InletHistoryTemperature
-        from the Thermal resource's own @odata.id (covers chassis id "Self")."""
-        from redfish_sdk.models.thermal import InletHistoryTemperature, Thermal
-
-        client = self._make_client()
-
-        ihx_path = "/redfish/v1/Chassis/Self/Thermal/Oem/InletHistoryTemperature"
+        ami_path = "/redfish/v1/Chassis/Self/Thermal/Oem/Ami/InletHistoryTemperature"
         thermal = Thermal.model_construct(odata_id="/redfish/v1/Chassis/Self/Thermal")
-        ihx_model = InletHistoryTemperature(**{"@odata.id": ihx_path})
-
-        requested = []
-
-        def _get(path, model_class):
-            requested.append(path)
-            assert model_class is InletHistoryTemperature
-            return ihx_model
-
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
-        monkeypatch.setattr(client._http_client, "get", _get)
-
-        result = client.get_inlet_history_temperature()
-        assert isinstance(result, InletHistoryTemperature)
-        assert requested == [ihx_path]
-        client.close()
-
-    def test_get_inlet_history_temperature_falls_back_to_vendor_oem_url(self, monkeypatch):
-        """AMI MegaRAC layout: when neither the direct link nor the plain
-        ``{thermal}/Oem/InletHistoryTemperature`` URL exists, the vendor-segmented
-        ``{thermal}/Oem/Ami/InletHistoryTemperature`` is tried next (covers
-        chassis id "Self", as seen on 172.19.102.14 firmware)."""
-        from redfish_sdk.exceptions import RedfishNotFoundError
-        from redfish_sdk.models.thermal import InletHistoryTemperature, Thermal
-
-        client = self._make_client()
-
-        thermal_url = "/redfish/v1/Chassis/Self/Thermal"
-        plain_oem = f"{thermal_url}/Oem/InletHistoryTemperature"
-        ami_path = f"{thermal_url}/Oem/Ami/InletHistoryTemperature"
-        thermal = Thermal.model_construct(odata_id=thermal_url)
         ihx_model = InletHistoryTemperature(
             **{
                 "@odata.id": ami_path,
@@ -1531,56 +1403,56 @@ class TestNewDelegateMethods:
 
         def _get(path, model_class):
             requested.append(path)
-            assert model_class is InletHistoryTemperature
-            if path != ami_path:
-                raise RedfishNotFoundError(path)
             return ihx_model
 
-        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
+        monkeypatch.setattr(client._chassis, "thermal", lambda cid="Self": thermal)
         monkeypatch.setattr(client._http_client, "get", _get)
 
-        result = client.get_inlet_history_temperature()
+        result = client.get_inlet_history_temperature(chassis_id="Self")
         assert isinstance(result, InletHistoryTemperature)
-        # First candidate is the plain Oem URL (404); the first success must be
-        # the Ami-segmented URL from the OEM_VENDOR_KEYS whitelist and no later
-        # candidate is ever requested.
-        assert requested[0] == plain_oem
-        assert ami_path in requested
-        assert requested[-1] == ami_path
+        assert requested == [ami_path]
         assert result.historical_inlet_temp[0].avg == 20.0
         client.close()
 
-    def test_get_inlet_history_temperature_falls_back_after_direct_link_404(self, monkeypatch):
-        """A 404 on the legacy direct link must not abort discovery: the Oem
-        fallback URL is tried next."""
+    def test_get_inlet_history_temperature_returns_none_on_404(self, monkeypatch):
+        """Returns None when the fixed AMI URL responds with 404 — and no other
+        URL is probed afterwards."""
         from redfish_sdk.exceptions import RedfishNotFoundError
-        from redfish_sdk.models.common import Link
-        from redfish_sdk.models.thermal import InletHistoryTemperature, Thermal
+        from redfish_sdk.models.thermal import Thermal
 
         client = self._make_client()
-
-        legacy_path = "/redfish/v1/Chassis/1/Thermal/InletHistoryTemperature"
-        oem_path = "/redfish/v1/Chassis/1/Thermal/Oem/InletHistoryTemperature"
-        thermal = Thermal.model_construct(
-            odata_id="/redfish/v1/Chassis/1/Thermal",
-            inlet_history_temperature=Link.model_construct(odata_id=legacy_path),
-        )
-        ihx_model = InletHistoryTemperature(**{"@odata.id": oem_path})
+        ami_path = "/redfish/v1/Chassis/1/Thermal/Oem/Ami/InletHistoryTemperature"
+        thermal = Thermal.model_construct(odata_id="/redfish/v1/Chassis/1/Thermal")
 
         requested = []
 
         def _get(path, model_class):
             requested.append(path)
-            if path == legacy_path:
-                raise RedfishNotFoundError(path)
-            return ihx_model
+            raise RedfishNotFoundError(path)
 
         monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
         monkeypatch.setattr(client._http_client, "get", _get)
 
-        result = client.get_inlet_history_temperature()
-        assert isinstance(result, InletHistoryTemperature)
-        assert requested == [legacy_path, oem_path]
+        assert client.get_inlet_history_temperature() is None
+        assert requested == [ami_path]
+        client.close()
+
+    def test_get_inlet_history_temperature_propagates_auth_error(self, monkeypatch):
+        """Auth/network errors must propagate (not silently swallowed)."""
+        from redfish_sdk.exceptions import RedfishAuthError
+        from redfish_sdk.models.thermal import Thermal
+
+        client = self._make_client()
+        thermal = Thermal.model_construct(odata_id="/redfish/v1/Chassis/1/Thermal")
+        monkeypatch.setattr(client._chassis, "thermal", lambda cid="1": thermal)
+        monkeypatch.setattr(
+            client._http_client,
+            "get",
+            lambda path, model_class: (_ for _ in ()).throw(RedfishAuthError(401)),
+        )
+
+        with pytest.raises(RedfishAuthError):
+            client.get_inlet_history_temperature()
         client.close()
 
     # -- ManagersManager promoted methods --
