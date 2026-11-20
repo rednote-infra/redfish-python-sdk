@@ -401,10 +401,19 @@ class SyslogServer(BaseModel):
         return None if isinstance(v, str) and not v.strip() else v
 
     member_id: Optional[int] = Field(None, alias="MemberId")
-    enabled: Optional[Union[bool, str]] = Field(None, alias="Enabled")
-    logtype: Optional[str] = Field(None, alias="Logtype")
+    enabled: Optional[bool] = Field(None, alias="Enabled")
+    logtype: Optional[Union[str, List[str]]] = Field(
+        None, validation_alias=AliasChoices("LogType", "Logtype")
+    )
     address: Optional[str] = Field(None, alias="Address")
     port: Optional[int] = Field(None, alias="Port")
+
+    @field_validator("enabled", mode="before")
+    @classmethod
+    def _parse_enabled(cls, value: Any) -> Any:
+        """Accept the string spellings some BMCs emit instead of a boolean."""
+        coerced = _coerce_bool(value)
+        return coerced if coerced is None or isinstance(coerced, bool) else None
 
 
 def _coerce_bool(v):
@@ -451,12 +460,7 @@ class SyslogService(Entity):
 # ---------------------------------------------------------------------------
 
 class TrapServer(BaseModel):
-    """Individual SNMP trap server entry.
-
-    DMTF names the identity/address fields ``Id`` / ``Destination``, whereas
-    OEM implementations (xFusion iBMC, Lenovo XCC) publish ``MemberId`` /
-    ``TrapServerAddress`` / ``TrapServerPort``.  Both spellings are accepted.
-    """
+    """Individual SNMP trap server entry."""
     model_config = ConfigDict(populate_by_name=True, extra="allow")
     id: Optional[Union[int, str]] = Field(
         None, validation_alias=AliasChoices("Id", "MemberId"),
