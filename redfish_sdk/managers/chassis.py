@@ -154,14 +154,18 @@ class ChassisManager:
         """
         Get air inlet historical temperature samples for a chassis.
 
-        Discovery flow:
-          1. Fetch the Thermal resource via ``thermal(chassis_id)``.
-          2. Read ``Thermal.inlet_history_temperature.odata_id``.
-          3. GET that URL and parse as :class:`InletHistoryTemperature`.
+        Requests the fixed AMI MegaRAC vendor-segmented URL directly — no
+        link discovery or candidate probing::
 
-        Returns ``None`` when the sub-resource is not advertised by the BMC
-        or returns 404 (vendor does not implement it). Other transport errors
-        (auth failure, network issues, etc.) propagate to the caller.
+            /redfish/v1/Chassis/{chassisId}/Thermal/Oem/Ami/InletHistoryTemperature
+
+        The response body matches the shared ``InletHistoryTemperature`` model
+        (``HistoricalInletTemp`` entries with ``avg`` / ``max`` / ``min`` /
+        ``time``), so only the URL placement differs from other vendors.
+
+        Returns ``None`` when the URL responds 404 (the BMC does not implement
+        the feature). Other transport errors (auth failure, network issues,
+        etc.) propagate to the caller.
 
         Args:
             chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
@@ -170,15 +174,12 @@ class ChassisManager:
             InletHistoryTemperature model, or None when not supported.
         """
         thermal = self.thermal(chassis_id)
-        if thermal.inlet_history_temperature is None:
-            logger.debug("Thermal resource has no InletHistoryTemperature link")
-            return None
-
-        odata_id = thermal.inlet_history_temperature.odata_id
+        base = (thermal.odata_id or f"/redfish/v1/Chassis/{chassis_id or '1'}/Thermal").rstrip("/")
+        url = f"{base}/Oem/Ami/InletHistoryTemperature"
         try:
-            return self._http.get(odata_id, InletHistoryTemperature)
+            return self._http.get(url, InletHistoryTemperature)
         except RedfishNotFoundError as exc:
-            logger.debug("InletHistoryTemperature not found at %s: %s", odata_id, exc)
+            logger.debug("InletHistoryTemperature not found at %s: %s", url, exc)
             return None
 
     def power(self, chassis_id: Optional[str] = None) -> Power:

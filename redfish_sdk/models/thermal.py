@@ -89,10 +89,13 @@ class HistoricalInletTempEntry(BaseModel):
 class InletHistoryTemperature(Entity):
     """
     Air inlet historical temperature samples for a chassis.
-    Endpoint: /redfish/v1/Chassis/{chassisId}/Thermal/InletHistoryTemperature
 
-    Vendor-specific sub-resource (for example, Huawei or xFusion iBMC) referenced from
-    the Thermal resource via the ``InletHistoryTemperature`` odata link.
+    Vendor-specific AMI MegaRAC sub-resource requested at the fixed URL::
+
+        /redfish/v1/Chassis/{chassisId}/Thermal/Oem/Ami/InletHistoryTemperature
+
+    The response body matches this shared model (``HistoricalInletTemp``
+    entries with ``avg`` / ``max`` / ``min`` / ``time``).
     """
     description: Optional[str] = Field(None, alias="Description")
     historical_inlet_temp: Optional[List[HistoricalInletTempEntry]] = Field(
