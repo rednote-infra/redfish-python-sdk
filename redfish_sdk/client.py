@@ -1600,6 +1600,14 @@ class RedfishClient:
         resolves the sub-resource URL via ``get_thermal()`` (Redfish link
         discovery), then GETs the InletHistoryTemperature resource.
 
+        Both vendor URL layouts are supported, tried in order:
+          - ``/redfish/v1/Chassis/{id}/Thermal/InletHistoryTemperature``
+            (top-level Thermal link, legacy firmware)
+          - ``/redfish/v1/Chassis/{id}/Thermal/Oem/{vendor}/InletHistoryTemperature``
+            (vendor-segmented layout, e.g. AMI MegaRAC ``.../Oem/Ami/...``;
+            either advertised in ``Thermal.Oem`` or derived from the Thermal
+            resource's own ``@odata.id`` — also covers chassis id ``Self``)
+
         Returns ``None`` when the BMC does not advertise the sub-resource or
         returns 404; other errors (auth/network/parse) propagate.
 

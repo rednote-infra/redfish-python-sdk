@@ -89,10 +89,16 @@ class HistoricalInletTempEntry(BaseModel):
 class InletHistoryTemperature(Entity):
     """
     Air inlet historical temperature samples for a chassis.
-    Endpoint: /redfish/v1/Chassis/{chassisId}/Thermal/InletHistoryTemperature
+    Endpoints (vendor firmware dependent, all supported by the SDK):
+      - /redfish/v1/Chassis/{chassisId}/Thermal/InletHistoryTemperature
+      - /redfish/v1/Chassis/{chassisId}/Thermal/Oem/InletHistoryTemperature
+      - /redfish/v1/Chassis/{chassisId}/Thermal/Oem/{vendor}/InletHistoryTemperature
+        (e.g. AMI MegaRAC: .../Thermal/Oem/Ami/InletHistoryTemperature)
 
-    Vendor-specific sub-resource (for example, Huawei or xFusion iBMC) referenced from
-    the Thermal resource via the ``InletHistoryTemperature`` odata link.
+    Vendor-specific sub-resource (for example, AMI MegaRAC, Huawei or
+    xFusion iBMC) referenced from the Thermal resource either via the
+    top-level ``InletHistoryTemperature`` odata link or via a link nested in
+    ``Thermal.Oem``.
     """
     description: Optional[str] = Field(None, alias="Description")
     historical_inlet_temp: Optional[List[HistoricalInletTempEntry]] = Field(

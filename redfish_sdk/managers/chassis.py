@@ -32,6 +32,7 @@ from ..models.chassis import (
     PowerSupplyMetrics,
     Thermal,
 )
+from ..models.oem import OEM_VENDOR_KEYS
 from ..models.thermal import InletHistoryTemperature
 from .oem_providers import OemCategory
 from .system_resources import select_member
@@ -43,6 +44,47 @@ logger = logging.getLogger(__name__)
 
 # Allowed IndicatorLED states per Redfish spec.
 _INDICATOR_LED_STATES = ("Lit", "Blinking", "Off")
+
+
+def _find_oem_inlet_link(oem) -> Optional[str]:
+    """
+    Recursively search an :class:`~redfish_sdk.models.oem.Oem` block for an
+    ``InletHistoryTemperature`` odata link.
+
+    Some vendors publish the inlet-history sub-resource under the Thermal
+    resource's OEM extension, e.g. AMI MegaRAC firmware publishes
+    ``/redfish/v1/Chassis/Self/Thermal/Oem/Ami/InletHistoryTemperature``. The
+    key may live at the OEM root or inside a vendor sub-object (vendor keys are
+    listed in :data:`~redfish_sdk.models.oem.OEM_VENDOR_KEYS`), so walk the
+    whole structure.
+
+    Returns the ``@odata.id`` URL, or ``None`` when not present.
+    """
+    if oem is None:
+        return None
+
+    def _walk(node):
+        if isinstance(node, dict):
+            link = node.get("InletHistoryTemperature")
+            if isinstance(link, dict) and link.get("@odata.id"):
+                return str(link["@odata.id"])
+            for value in node.values():
+                found = _walk(value)
+                if found:
+                    return found
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                found = _walk(item)
+                if found:
+                    return found
+        return None
+
+    try:
+        dumped = oem.model_dump(by_alias=True, exclude_none=True)
+    except Exception:  # pragma: no cover - defensive, never fail discovery
+        logger.debug("Failed to dump Thermal.Oem for link discovery", exc_info=True)
+        return None
+    return _walk(dumped)
 
 
 class ChassisManager:
@@ -154,14 +196,24 @@ class ChassisManager:
         """
         Get air inlet historical temperature samples for a chassis.
 
-        Discovery flow:
-          1. Fetch the Thermal resource via ``thermal(chassis_id)``.
-          2. Read ``Thermal.inlet_history_temperature.odata_id``.
-          3. GET that URL and parse as :class:`InletHistoryTemperature`.
+        Discovery flow (candidate URLs tried in order, first success wins):
+          1. ``Thermal.InletHistoryTemperature`` odata link
+             (``/redfish/v1/Chassis/{id}/Thermal/InletHistoryTemperature``).
+          2. An ``InletHistoryTemperature`` link nested somewhere inside
+             ``Thermal.Oem`` (vendor firmware revisions publish it there,
+             e.g. under ``Oem.Ami`` on AMI MegaRAC BMCs).
+          3. Conventional URL derived from the Thermal resource's own
+             ``@odata.id``: ``{thermal}/Oem/InletHistoryTemperature`` —
+             this also covers chassis ids such as ``Self``.
+          4. Vendor-segmented conventional URLs derived from the OEM vendor
+             whitelist (:data:`~redfish_sdk.models.oem.OEM_VENDOR_KEYS`):
+             ``{thermal}/Oem/{vendor}/InletHistoryTemperature``, covering e.g.
+             ``/redfish/v1/Chassis/Self/Thermal/Oem/Ami/InletHistoryTemperature``.
+          5. Fallback conventional URL ``{thermal}/InletHistoryTemperature``.
 
-        Returns ``None`` when the sub-resource is not advertised by the BMC
-        or returns 404 (vendor does not implement it). Other transport errors
-        (auth failure, network issues, etc.) propagate to the caller.
+        Returns ``None`` when every candidate is either not advertised by the
+        BMC or responds 404 (vendor does not implement it). Other transport
+        errors (auth failure, network issues, etc.) propagate to the caller.
 
         Args:
             chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
@@ -170,16 +222,42 @@ class ChassisManager:
             InletHistoryTemperature model, or None when not supported.
         """
         thermal = self.thermal(chassis_id)
-        if thermal.inlet_history_temperature is None:
+
+        candidates: List[str] = []
+        if thermal.inlet_history_temperature and thermal.inlet_history_temperature.odata_id:
+            candidates.append(thermal.inlet_history_temperature.odata_id)
+
+        oem_link = _find_oem_inlet_link(thermal.oem)
+        if oem_link:
+            candidates.append(oem_link)
+
+        thermal_url = thermal.odata_id
+        if thermal_url:
+            base = thermal_url.rstrip("/")
+            candidates.append(f"{base}/Oem/InletHistoryTemperature")
+            # Vendor-segmented conventional layouts, e.g. AMI MegaRAC
+            # /redfish/v1/Chassis/Self/Thermal/Oem/Ami/InletHistoryTemperature.
+            for vendor_key in OEM_VENDOR_KEYS:
+                candidates.append(f"{base}/Oem/{vendor_key}/InletHistoryTemperature")
+            candidates.append(f"{base}/InletHistoryTemperature")
+
+        # De-duplicate while preserving discovery order.
+        seen = set()
+        candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+
+        if not candidates:
             logger.debug("Thermal resource has no InletHistoryTemperature link")
             return None
 
-        odata_id = thermal.inlet_history_temperature.odata_id
-        try:
-            return self._http.get(odata_id, InletHistoryTemperature)
-        except RedfishNotFoundError as exc:
-            logger.debug("InletHistoryTemperature not found at %s: %s", odata_id, exc)
-            return None
+        for url in candidates:
+            try:
+                return self._http.get(url, InletHistoryTemperature)
+            except RedfishNotFoundError as exc:
+                logger.debug("InletHistoryTemperature not found at %s: %s", url, exc)
+                continue
+
+        logger.debug("InletHistoryTemperature not found at any candidate URL: %s", candidates)
+        return None
 
     def power(self, chassis_id: Optional[str] = None) -> Power:
         """
