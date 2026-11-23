@@ -90,12 +90,10 @@ class InletHistoryTemperature(Entity):
     """
     Air inlet historical temperature samples for a chassis.
 
-    Vendor-specific AMI MegaRAC sub-resource requested at the fixed URL::
-
-        /redfish/v1/Chassis/{chassisId}/Thermal/Oem/Ami/InletHistoryTemperature
-
-    The response body matches this shared model (``HistoricalInletTemp``
-    entries with ``avg`` / ``max`` / ``min`` / ``time``).
+    Shared response model for vendor-specific inlet history resources.
+    The default strategy follows the link advertised by Thermal; AMI MegaRAC
+    uses its OEM sub-resource. Both return ``HistoricalInletTemp`` entries
+    with ``avg`` / ``max`` / ``min`` / ``time``.
     """
     description: Optional[str] = Field(None, alias="Description")
     historical_inlet_temp: Optional[List[HistoricalInletTempEntry]] = Field(

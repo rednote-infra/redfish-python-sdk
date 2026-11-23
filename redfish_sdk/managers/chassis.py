@@ -154,18 +154,13 @@ class ChassisManager:
         """
         Get air inlet historical temperature samples for a chassis.
 
-        Requests the fixed AMI MegaRAC vendor-segmented URL directly — no
-        link discovery or candidate probing::
+        The default OEM extractor follows Thermal.InletHistoryTemperature.
+        AMI MegaRAC uses Thermal/Oem/Ami/InletHistoryTemperature instead.
+        An explicit client OEM vendor takes precedence over local detection
+        of Thermal.Oem.Ami. No additional System requests are needed.
 
-            /redfish/v1/Chassis/{chassisId}/Thermal/Oem/Ami/InletHistoryTemperature
-
-        The response body matches the shared ``InletHistoryTemperature`` model
-        (``HistoricalInletTemp`` entries with ``avg`` / ``max`` / ``min`` /
-        ``time``), so only the URL placement differs from other vendors.
-
-        Returns ``None`` when the URL responds 404 (the BMC does not implement
-        the feature). Other transport errors (auth failure, network issues,
-        etc.) propagate to the caller.
+        Returns ``None`` when the selected strategy has no URI or that URI
+        returns 404. Other transport and parsing errors propagate unchanged.
 
         Args:
             chassis_id: Chassis ID. Uses default "1" when omitted; discovers a collection member only after a 404.
@@ -173,9 +168,19 @@ class ChassisManager:
         Returns:
             InletHistoryTemperature model, or None when not supported.
         """
+        from .oem_extractors import AmiOemExtractor
+        from .oem_extractors.ami import AMI_OEM_VENDOR
+        from .oem_extractors.base import GENERIC_OEM_VENDOR
+
         thermal = self.thermal(chassis_id)
-        base = (thermal.odata_id or f"/redfish/v1/Chassis/{chassis_id or '1'}/Thermal").rstrip("/")
-        url = f"{base}/Oem/Ami/InletHistoryTemperature"
+        vendor = self._client.oem_vendor
+        if vendor is None:
+            vendor = AMI_OEM_VENDOR if AmiOemExtractor.matches_thermal(thermal) else GENERIC_OEM_VENDOR
+        extractor = self._client.oem_providers.get(OemCategory.EXTRACTOR, vendor)
+        url = extractor.get_inlet_history_temperature_uri(thermal)
+        if not url:
+            logger.debug("No inlet history URI for OEM vendor %s", vendor)
+            return None
         try:
             return self._http.get(url, InletHistoryTemperature)
         except RedfishNotFoundError as exc:

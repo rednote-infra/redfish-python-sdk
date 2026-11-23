@@ -1,5 +1,5 @@
 """
-OEM extractors for multi-vendor Redfish fan/drive telemetry.
+OEM extractors for multi-vendor Redfish telemetry and history resource links.
 
 This package implements the Strategy Pattern for reading vendor-specific
 fields out of the ``Oem`` payload on Fan and Drive resources, so the
@@ -33,7 +33,8 @@ Vendor detection is shared with the ``update_strategies`` and
 All extractors are auto-registered when this package is imported.
 """
 from ..update_strategies.vendor_detect import VendorDetector
-from .base import BaseOemExtractor, GenericOemExtractor
+from .ami import AMI_OEM_VENDOR, AmiOemExtractor
+from .base import GENERIC_OEM_VENDOR, BaseOemExtractor, GenericOemExtractor
 from .h3c import H3cOemExtractor
 from .inspur import InspurOemExtractor
 from .lenovo import LenovoOemExtractor
@@ -43,7 +44,8 @@ from .xfusion import XFusionOemExtractor
 from .zte import ZteOemExtractor
 
 # --- Auto-register the vendor extractors ---
-OemExtractorRegistry.register("generic", GenericOemExtractor())
+OemExtractorRegistry.register(GENERIC_OEM_VENDOR, GenericOemExtractor())
+OemExtractorRegistry.register(AMI_OEM_VENDOR, AmiOemExtractor())
 OemExtractorRegistry.register("xfusion", XFusionOemExtractor())
 OemExtractorRegistry.register("inspur", InspurOemExtractor())
 OemExtractorRegistry.register("lenovo", LenovoOemExtractor())
@@ -54,6 +56,7 @@ OemExtractorRegistry.register("zte", ZteOemExtractor())
 __all__ = [
     "BaseOemExtractor",
     "GenericOemExtractor",
+    "AmiOemExtractor",
     "XFusionOemExtractor",
     "InspurOemExtractor",
     "LenovoOemExtractor",
