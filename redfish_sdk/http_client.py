@@ -341,6 +341,22 @@ class RedfishHttpClient:
                 self._session.proxies = {"http": proxy, "https": proxy}
             if self._owns_external_session:
                 self._external_session.proxies = {"http": proxy, "https": proxy}
+        else:
+            # No explicit proxy: never let an ambient corporate proxy hijack
+            # BMC traffic. Without this, requests inherits ``http_proxy`` /
+            # ``https_proxy`` from the environment and routes requests to the
+            # BMC through the egress proxy — which cannot reach an internal
+            # BMC and answers with "504 Gateway Time-out". A BMC endpoint is
+            # always expected to be directly reachable, so environment proxies
+            # are ignored for both sessions entirely.
+            #
+            # Note: requests only consults ``proxies["no_proxy"]`` when it is
+            # passed *per request*; putting it on ``session.proxies`` has no
+            # effect. Disabling ``trust_env`` is both simpler and safer here.
+            if self._owns_session:
+                self._session.trust_env = False
+            if self._owns_external_session:
+                self._external_session.trust_env = False
 
         # Track the last ETag received for use in subsequent PATCH requests
         self._last_etag: Dict[str, str] = {}

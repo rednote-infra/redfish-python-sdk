@@ -521,8 +521,14 @@ class ManagersManager:
         """
         Generic helper to discover and fetch an OEM service resource.
 
-        Checks ``manager.oem.bmc.{attr}`` (and optionally ``{fallback_attr}``)
-        for the ``@odata.id`` link.
+        Looks for the ``@odata.id`` link in two passes:
+
+        1. **Merged OEM view** — ``manager.oem.bmc`` (the merged vendor block,
+           whose ``bmc`` field is aliased to ``Public`` on the wire).
+        2. **Raw OEM dictionary** — scan every known vendor key directly.
+           This covers cases the merge step misses, e.g. a vendor publishing
+           ``VncService`` under ``Oem.xFusion`` while ``Oem.Public`` also
+           exists (the merge keeps ``Public`` and drops the rest).
 
         Args:
             manager_id: Manager ID
@@ -539,15 +545,35 @@ class ManagersManager:
         """
         manager = self.get(manager_id)
         link = None
+
+        # ---- Pass 1: merged OEM view -------------------------------------
         if manager.oem and manager.oem.bmc:
             bmc = manager.oem.bmc
-            primary = getattr(bmc, attr, None)
-            if primary and primary.odata_id:
-                link = primary.odata_id
-            elif fallback_attr:
-                fallback = getattr(bmc, fallback_attr, None)
-                if fallback and fallback.odata_id:
-                    link = fallback.odata_id
+            for name in filter(None, (attr, fallback_attr)):
+                obj = getattr(bmc, name, None)
+                if obj is not None and getattr(obj, "odata_id", None):
+                    link = obj.odata_id
+                    break
+
+        # ---- Pass 2: raw OEM dict, per-vendor ----------------------------
+        if not link:
+            raw_oem = (getattr(manager, "model_extra", None) or {}).get("Oem") or {}
+            if not raw_oem and manager.oem is not None:
+                raw_oem = (manager.oem.model_extra or {})
+            for vendor_key in ("Public", "BMC", "xFusion", "Lenovo",
+                               "Hpe", "Dell", "gOemCustomeString"):
+                block = raw_oem.get(vendor_key)
+                if not isinstance(block, dict):
+                    continue
+                for name in filter(None, (resource_label, attr, fallback_attr)):
+                    cand = block.get(name)
+                    if isinstance(cand, dict):
+                        oid = cand.get("@odata.id")
+                        if oid:
+                            link = oid
+                            break
+                if link:
+                    break
 
         if not link:
             raise RedfishNotFoundError(

@@ -2357,6 +2357,9 @@ class RedfishClient:
         message_args: Optional[List[str]] = None,
         *,
         message_severity: Optional[str] = None,
+        event_id: Optional[str] = None,
+        event_timestamp: Optional[str] = None,
+        origin_of_condition: Optional[Any] = None,
     ) -> None:
         """
         Invoke ``#EventService.SubmitTestEvent`` on the BMC.
@@ -2370,6 +2373,9 @@ class RedfishClient:
             severity=severity,
             message_args=message_args,
             message_severity=message_severity,
+            event_id=event_id,
+            event_timestamp=event_timestamp,
+            origin_of_condition=origin_of_condition,
         )
 
     # ==================================================================

@@ -394,16 +394,23 @@ class ChassisManager:
 
         """
         chassis = self.get(chassis_id)
-        if chassis.oem is None or chassis.oem.fru_service is None:
+        fru_service_url = chassis.oem.fru_service if chassis.oem is not None else None
+        if (
+            not fru_service_url
+            and chassis.oem is not None
+            and chassis.oem.bmc is not None
+            and chassis.oem.bmc.fru is not None
+        ):
+            fru_service_url = chassis.oem.bmc.fru.odata_id
+        if not fru_service_url:
             return None
 
-        fru_service_url = chassis.oem.fru_service
         try:
             collection_raw = self._http.get_raw(fru_service_url)
             members = collection_raw.get("Members", [])
             for member in members:
                 member_id = member.get("@odata.id", "")
-                if member_id.endswith("/0"):
+                if member_id.endswith("/0") or member_id.lower().endswith("mainboardid0"):
                     return self._http.get_raw(member_id)
         except RedfishException as exc:
             logger.warning("FRU service board fetch failed: %s", exc)
