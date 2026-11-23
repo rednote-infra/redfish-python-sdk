@@ -202,24 +202,6 @@ class Bmc(BaseModel):
     fru_part_number: Optional[str] = Field(None, alias="FruPartNumber")
 
 
-#: Vendor root keys that may appear inside an ``Oem`` block on a BMC response.
-#: Used both for merging vendor data into the common ``Bmc`` view and for
-#: deriving conventional ``.../Oem/{vendor}/...`` sub-resource URLs (see e.g.
-#: :meth:`ChassisManager.inlet_history_temperature`). AMI MegaRAC BMCs publish
-#: their extensions under the ``Ami`` key; Enginetech BMCs (AMI based) may use
-#: either ``Ami`` or ``Enginetech``.
-OEM_VENDOR_KEYS = (
-    "BMC",
-    "xFusion",
-    "Lenovo",
-    "Hpe",
-    "Dell",
-    "gOemCustomeString",
-    "Ami",
-    "Enginetech",
-)
-
-
 class Oem(BaseModel):
     """
     Top-level OEM wrapper. Merges vendor-specific keys into a single 'bmc' view.
@@ -239,8 +221,8 @@ class Oem(BaseModel):
     # BMC response, not vendor labels, so neither may be renamed. Enginetech BMCs
     # are AMI MegaRAC based: some SKUs publish their root OEM block as "Ami",
     # others publish it directly as "Enginetech". Keep both entries so OEM
-    # merging never silently stops working. See :data:`OEM_VENDOR_KEYS`.
-    _VENDOR_KEYS = OEM_VENDOR_KEYS
+    # merging never silently stops working.
+    _VENDOR_KEYS = ("BMC", "xFusion", "Lenovo", "Hpe", "Dell", "gOemCustomeString", "Ami", "Enginetech")
 
     def model_post_init(self, __context: Any) -> None:
         extra = self.model_extra or {}

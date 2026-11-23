@@ -7,10 +7,11 @@ gOemCustomeString / DiskTemperatureCelsius, ...). Rather than modelling
 every vendor's private field on :class:`Bmc`, we route the read through
 a vendor strategy so the model layer stays vendor-agnostic.
 
-Two extension points are provided:
+Telemetry extension points are provided:
 
 - :meth:`get_fan_speed_ratio` — normalized fan speed as percent (0-100).
 - :meth:`get_drive_temperature_celsius` — drive temperature in Celsius.
+- :meth:`get_inlet_history_temperature_uri` — vendor-specific history placement.
 
 The default implementations here match the standard DMTF behaviour:
 :meth:`get_fan_speed_ratio` derives the ratio from
@@ -29,17 +30,18 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from ...models.drive import Drive
     from ...models.oem import Oem
-    from ...models.thermal import Fan
+    from ...models.thermal import Fan, Thermal
 
 logger = logging.getLogger(__name__)
+GENERIC_OEM_VENDOR = "generic"
 
 
 class BaseOemExtractor:
     """
     Base class for vendor-specific OEM field extraction.
 
-    The default methods implement the DMTF-standard behaviour. Vendors
-    override only the readings whose location differs.
+    The default methods retain standard readings and legacy resource links.
+    Vendors override only the readings or resource locations that differ.
     """
 
     # ------------------------------------------------------------------
@@ -79,6 +81,11 @@ class BaseOemExtractor:
         override this to read their OEM field.
         """
         return None
+
+    def get_inlet_history_temperature_uri(self, thermal: Thermal) -> Optional[str]:
+        """Resolve the legacy history link without assuming an OEM layout."""
+        link = thermal.inlet_history_temperature
+        return link.odata_id if link is not None else None
 
 
 class GenericOemExtractor(BaseOemExtractor):
