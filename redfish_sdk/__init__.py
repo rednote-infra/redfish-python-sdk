@@ -80,6 +80,14 @@ from .models.fabric import (
     PortMetrics,
     ResetTransceiversRequest,
 )
+from .models.firewall import (
+    Firewall,
+    FirewallConfigEntry,
+    FirewallIpRule,
+    FirewallPortRule,
+    FirewallRule,
+    FirewallTimeout,
+)
 from .models.logs import Log, LogEntry
 from .models.managers import (
     DnsService,
@@ -239,6 +247,12 @@ __all__ = [
     "PortMetrics",
     "CXLLogicalDevice",
     "ResetTransceiversRequest",
+    "Firewall",
+    "FirewallConfigEntry",
+    "FirewallIpRule",
+    "FirewallPortRule",
+    "FirewallRule",
+    "FirewallTimeout",
     "FirewallRules",
     "HttpsCert",
     "KvmService",

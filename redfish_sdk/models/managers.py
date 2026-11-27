@@ -588,10 +588,12 @@ class VncService(Entity):
     VNC/RFB service configuration for a manager (BMC).
 
     OEM extension resource dynamically discovered from
-    ``Oem.{vendor}.RfbService``.  Typical endpoint:
-    ``/redfish/v1/Managers/{managerId}/VncService``
+    ``Oem.{vendor}.RfbService``.  Typical endpoints:
+    ``/redfish/v1/Managers/{managerId}/VncService`` (generic) and
+    ``/redfish/v1/Managers/{managerId}/Oem/Ami/VncService`` (AMI MegaRAC).
 
-    Note: The OEM key is ``RfbService`` but the resource URI is ``VncService``.
+    Note: The OEM key is ``RfbService`` but the resource URI is ``VncService``
+    on most vendors; AMI publishes both the key and the URI as ``VncService``.
 
     Prefer the DMTF-standard ``ManagerNetworkProtocol.RFB`` section.
 
@@ -604,6 +606,7 @@ class VncService(Entity):
     non_secure_access_port: Optional[int] = Field(None, alias="NonSecureAccessPort")
     secure_access_port: Optional[int] = Field(None, alias="SecureAccessPort")
     timeout: Optional[int] = Field(None, alias="Timeout")
+    session_mode: Optional[str] = Field(None, alias="SessionMode")
 
     # ---- xFusion / Huawei style VncService fields ---------------------
     # These are what /redfish/v1/Managers/{id}/VncService actually returns;
