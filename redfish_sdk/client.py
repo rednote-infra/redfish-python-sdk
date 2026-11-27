@@ -56,6 +56,7 @@ from .changes import ChangeSet
 from .exceptions import (
     RedfishException,
     RedfishMissingAttributeError,
+    RedfishNotFoundError,
     RedfishValidationError,
 )
 from .http_client import RedfishHttpClient
@@ -77,6 +78,12 @@ from .models.cooling import (
 from .models.drive import Drive
 from .models.event import EventService, Subscription
 from .models.fabric import CXLLogicalDevice, Port, PortMetrics
+from .models.firewall import (
+    Firewall,
+    FirewallConfigEntry,
+    FirewallIpRule,
+    FirewallPortRule,
+)
 from .models.fru import Fru
 from .models.logs import Log, LogEntry
 from .models.managers import (
@@ -141,6 +148,17 @@ from .response import GenericResponse
 from .retry import RetryPolicy
 
 logger = logging.getLogger(__name__)
+
+_FIREWALL_COLLECTION_FIELDS = {
+    "FirewallConfig": "firewall_config",
+    "IPRules": "ip_rules",
+    "PortRules": "port_rules",
+}
+_FIREWALL_COLLECTION_MODELS = {
+    "FirewallConfig": FirewallConfigEntry,
+    "IPRules": FirewallIpRule,
+    "PortRules": FirewallPortRule,
+}
 
 T = TypeVar("T", bound=Entity)
 
@@ -2006,20 +2024,67 @@ class RedfishClient:
         """
         return self._managers.https_certificates(manager_id)
 
+    def get_firewall(self, manager_id: Optional[str] = None) -> Firewall:
+        """
+        Get the manager's firewall navigation container.
+
+        The URI is discovered from the Manager's OEM block (including AMI
+        MegaRAC ``Oem/Ami/Firewall``); no resource ID or vendor path is assumed.
+        """
+        return self._managers.firewall(manager_id)
+
     def get_firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
         Get Firewall rules collection for a BMC manager.
 
-        Args:
-            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
-
-        Returns:
-            FirewallRules collection resource
-
-        Raises:
-            RedfishNotFoundError: If the manager does not expose FirewallRules
+        Deprecated compatibility getter: prefer :meth:`get_firewall` and the
+        typed collection getters below for AMI/Enginetech BMCs.
         """
         return self._managers.firewall_rules(manager_id)
+
+    def get_firewall_rule_collection(
+        self, manager_id: Optional[str] = None, kind: str = "IPRules"
+    ) -> Firewall:
+        """
+        Get one firewall sub-collection index (links only).
+
+        Args:
+            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
+            kind: ``FirewallConfig``, ``IPRules`` or ``PortRules``
+
+        Returns:
+            Firewall collection resource with ``members`` / ``members_count``
+        """
+        if kind not in _FIREWALL_COLLECTION_FIELDS:
+            raise RedfishValidationError(
+                f"Unknown firewall collection kind {kind!r}; "
+                f"expected one of {sorted(_FIREWALL_COLLECTION_FIELDS)}"
+            )
+        fw = self.get_firewall(manager_id)
+        link = getattr(fw, _FIREWALL_COLLECTION_FIELDS[kind], None)
+        if not link or not link.odata_id:
+            raise RedfishNotFoundError(f"{fw.odata_id}/{kind}")
+        return self._http_client.get(link.odata_id, Firewall)
+
+    def _get_firewall_rule_members(self, manager_id: Optional[str], kind: str):
+        collection = self.get_firewall_rule_collection(manager_id, kind)
+        if not collection.odata_id:
+            raise RedfishNotFoundError(f"Invalid {kind} collection @odata.id")
+        return self._get_collection(
+            collection.odata_id, _FIREWALL_COLLECTION_MODELS[kind]
+        )
+
+    def get_firewall_ip_rules(self, manager_id: Optional[str] = None):
+        """Get fully populated members of the firewall ``IPRules`` collection."""
+        return self._get_firewall_rule_members(manager_id, "IPRules")
+
+    def get_firewall_port_rules(self, manager_id: Optional[str] = None):
+        """Get fully populated members of the firewall ``PortRules`` collection."""
+        return self._get_firewall_rule_members(manager_id, "PortRules")
+
+    def get_firewall_config_entries(self, manager_id: Optional[str] = None):
+        """Get fully populated members of the firewall ``FirewallConfig`` collection."""
+        return self._get_firewall_rule_members(manager_id, "FirewallConfig")
 
     def get_virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
         """

@@ -20,6 +20,7 @@ from .. import models
 from ..exceptions import RedfishException, RedfishNotFoundError, RedfishValidationError
 from ..models.actions import ActionInfo
 from ..models.common import Collection, Link, RedfishResponse
+from ..models.firewall import Firewall
 from ..models.logs import Log, LogActions, LogEntry
 from ..models.managers import (
     DnsService,
@@ -582,6 +583,41 @@ class ManagersManager:
 
         return self._http.get(link, model_class)
 
+    @staticmethod
+    def _find_oem_link_by_suffix(manager_oem, suffix: str) -> Optional[str]:
+        """
+        Recursively scan OEM payloads for an ``@odata.id`` ending with ``suffix``.
+
+        AMI/Enginetech BMCs publish firewall links under vendor keys that are
+        not modelled as typed ``Bmc`` fields. ``extra="allow"`` keeps the raw
+        vendor blocks available, so a case-insensitive suffix scan recovers
+        them without composing an absolute Redfish path.
+        """
+        if manager_oem is None:
+            return None
+        try:
+            data = manager_oem.model_dump(by_alias=True, exclude_none=True)
+        except Exception:  # pragma: no cover - defensive, never fail discovery
+            return None
+
+        def _walk(node):
+            if isinstance(node, dict):
+                odata_id = node.get("@odata.id")
+                if isinstance(odata_id, str) and odata_id.lower().endswith(suffix):
+                    return odata_id
+                for value in node.values():
+                    found = _walk(value)
+                    if found:
+                        return found
+            elif isinstance(node, list):
+                for value in node:
+                    found = _walk(value)
+                    if found:
+                        return found
+            return None
+
+        return _walk(data)
+
     def ntp_service(self, manager_id: Optional[str] = None) -> NtpService:
         """
         Get NTP service configuration from OEM links.
@@ -759,24 +795,87 @@ class ManagersManager:
 
         return self._http.get(link, HttpsCert)
 
+    def _get_firewall_link(self, manager_id: Optional[str] = None) -> str:
+        """
+        Discover the manager's firewall resource URI.
+
+        Discovery order:
+        1. Typed ``Oem.{vendor}.FirewallRules`` link (legacy vendors).
+        2. Any ``@odata.id`` ending in ``/Firewall`` inside the raw OEM blocks.
+           Covers ``Oem.Firewall``, ``Oem.Ami.Firewall`` (AMI MegaRAC) and
+           ``Oem.Enginetech.Firewall`` without composing an absolute path.
+        3. Any raw link ending in ``/FirewallRules`` (AMI variants that keep
+           the legacy key under ``Oem.Ami``).
+        4. ``Links.FirewallRules`` on the OEM SecurityService resource.
+        5. AMI/Enginetech OEM paths, only when that vendor key is present but
+           omitted the link.
+
+        Raises:
+            RedfishNotFoundError: If the manager does not expose a firewall resource
+        """
+        manager_id = manager_id or "1"
+        managers_odata_id = self._client._get_managers_collection_odata_id().rstrip("/")
+        try:
+            manager = self._http.get(f"{managers_odata_id}/{manager_id}", Manager)
+        except RedfishNotFoundError:
+            manager = self.get(manager_id)
+
+        bmc = manager.oem.bmc if manager.oem else None
+
+        if bmc and bmc.firewall_rules and bmc.firewall_rules.odata_id:
+            return bmc.firewall_rules.odata_id
+
+        link = self._find_oem_link_by_suffix(manager.oem, "/firewall")
+        if link:
+            return link
+
+        link = self._find_oem_link_by_suffix(manager.oem, "/firewallrules")
+        if link:
+            return link
+
+        if bmc and bmc.security_service and bmc.security_service.odata_id:
+            try:
+                sec_raw = self._http.get_raw(bmc.security_service.odata_id)
+            except RedfishException as exc:
+                if exc.status_code != 404:
+                    raise
+            else:
+                links = sec_raw.get("Links") if isinstance(sec_raw, dict) else None
+                fw_link = links.get("FirewallRules") if isinstance(links, dict) else None
+                if isinstance(fw_link, dict) and fw_link.get("@odata.id"):
+                    return fw_link["@odata.id"]
+
+        raw_oem = (manager.oem.model_extra or {}) if manager.oem is not None else {}
+        if manager.odata_id and any(key in raw_oem for key in ("Ami", "Enginetech")):
+            for oem_path in ("/Oem/Ami/Firewall", "/Oem/Enginetech/Firewall"):
+                candidate = f"{manager.odata_id}{oem_path}"
+                try:
+                    self._http.get(candidate, Firewall)
+                except RedfishException as exc:
+                    if exc.status_code != 404:
+                        raise
+                else:
+                    return candidate
+
+        raise RedfishNotFoundError(f"{manager.odata_id}/Firewall")
+
+    def firewall(self, manager_id: Optional[str] = None) -> Firewall:
+        """Get the manager's firewall navigation container by discovered URI."""
+        return self._http.get(self._get_firewall_link(manager_id), Firewall)
+
     def firewall_rules(self, manager_id: Optional[str] = None) -> FirewallRules:
         """
         Get Firewall rules collection from OEM links.
 
-        DMTF Redfish has no generic Manager firewall-rules resource; this
-        optional helper must not be required from standards-compliant BMCs.
-
-        Args:
-            manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
-
-        Returns:
-            FirewallRules collection resource
+        Kept for pre-1.3.0 callers. The resource is discovered with the same
+        chain as :meth:`firewall`, so AMI/Enginetech navigation containers no
+        longer produce a 404 on a guessed ``FirewallRules`` path.
 
         Raises:
-            RedfishNotFoundError: If the manager does not expose FirewallRules
+            RedfishNotFoundError: If the manager does not expose a firewall resource
         """
-        return self._get_oem_service(
-            manager_id, "firewall_rules", None, FirewallRules, "FirewallRules"
+        return self._http.get(
+            self._get_firewall_link(manager_id), FirewallRules
         )
 
     def virtual_media(self, manager_id: Optional[str] = None) -> List[VirtualMedia]:
