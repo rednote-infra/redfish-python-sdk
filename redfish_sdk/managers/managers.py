@@ -726,8 +726,11 @@ class ManagersManager:
         Prefer the DMTF-standard ``ManagerNetworkProtocol.RFB`` section.
         This helper is only an optional, dynamically discovered OEM fallback.
 
-        Note: The OEM key is ``RfbService`` but the resource URI is
-        ``VncService``.
+        Discovery order:
+        1. ``Oem.{vendor}.RfbService`` link on the Manager resource.
+        2. Any ``@odata.id`` ending in ``/VncService`` inside the raw OEM
+           blocks (AMI MegaRAC publishes the key as ``VncService``).
+        3. Constructed AMI-style paths ``{manager}/Oem/Ami/VncService``.
 
         Args:
             manager_id: Manager ID. Uses default "1" when omitted; discovers a collection member only after a 404.
@@ -738,9 +741,30 @@ class ManagersManager:
         Raises:
             RedfishNotFoundError: If the manager does not expose VncService
         """
-        return self._get_oem_service(
-            manager_id, "rfb_service", None, VncService, "VncService"
-        )
+        manager = self.get(manager_id)
+        link = None
+        if manager.oem and manager.oem.bmc:
+            primary = getattr(manager.oem.bmc, "rfb_service", None)
+            if primary and primary.odata_id:
+                link = primary.odata_id
+
+        if not link:
+            link = self._find_oem_link_by_suffix(manager.oem, "/vncservice")
+
+        if link:
+            return self._http.get(link, VncService)
+
+        for candidate in (
+            f"{manager.odata_id}/Oem/Ami/VncService",
+            f"{manager.odata_id}/Oem/Ami/RfbService",
+        ):
+            try:
+                return self._http.get(candidate, VncService)
+            except RedfishException as exc:
+                if exc.status_code != 404:
+                    raise
+
+        raise RedfishNotFoundError(f"{manager.odata_id}/VncService")
 
     def security_service(self, manager_id: Optional[str] = None) -> SecurityService:
         """
